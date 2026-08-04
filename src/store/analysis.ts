@@ -1,7 +1,16 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 import type { AnalysisReport, Finding } from '@/types/analysis';
-import { afterReport, beforeReport } from '@/data/fixture';
+import { afterReport as fixtureAfter, beforeReport as fixtureBefore } from '@/data/fixture';
 import { sortFindings, type FindingSort } from '@/lib/findings';
+import { injectedAfterReport, injectedReport } from '@/lib/reportSource';
+
+/**
+ * The report the deck renders. Real CLI output when report.html injected it,
+ * the demo fixture otherwise. Resolved once at module load so every selector
+ * agrees on which report it is reading.
+ */
+export const BEFORE: AnalysisReport = injectedReport() ?? fixtureBefore;
+export const AFTER: AnalysisReport = injectedAfterReport() ?? fixtureAfter;
 
 export type DetailTab = 'EVIDENCE' | 'POLICY' | 'ADVERSARIAL';
 
@@ -25,7 +34,7 @@ interface AnalysisState {
 
 export const useAnalysis = create<AnalysisState>((set) => ({
   applied: false,
-  selectedFindingId: beforeReport.findings[0]?.id ?? null,
+  selectedFindingId: BEFORE.findings[0]?.id ?? null,
   categoryFilter: null,
   sortBy: 'severity',
   detailTab: 'EVIDENCE',
@@ -33,7 +42,7 @@ export const useAnalysis = create<AnalysisState>((set) => ({
 
   setApplied: (applied) =>
     set(() => {
-      const next = applied ? afterReport : beforeReport;
+      const next = applied ? AFTER : BEFORE;
       return { applied, selectedFindingId: next.findings[0]?.id ?? null, categoryFilter: null };
     }),
   select: (selectedFindingId) => set({ selectedFindingId }),
@@ -48,7 +57,7 @@ export const useAnalysis = create<AnalysisState>((set) => ({
 /* ------------------------------------------------------------------ */
 
 export function useReport(): AnalysisReport {
-  return useAnalysis((s) => (s.applied ? afterReport : beforeReport));
+  return useAnalysis((s) => (s.applied ? AFTER : BEFORE));
 }
 
 /** Findings after the category filter and the active sort. */
@@ -68,3 +77,4 @@ export function useSelectedFinding(): Finding | null {
   const id = useAnalysis((s) => s.selectedFindingId);
   return report.findings.find((f) => f.id === id) ?? report.findings[0] ?? null;
 }
+
