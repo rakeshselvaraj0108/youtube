@@ -18,12 +18,35 @@ export function RiskTimeline() {
   const report = useReport();
   const selected = useSelectedFinding();
   const hoveredOpIndex = useAnalysis((s) => s.hoveredOpIndex);
+  const select = useAnalysis((s) => s.select);
 
   const duration = report.video.durationMs;
   const ticks = timelineTicks(duration);
   const pins = localisedFindings(report.findings, duration);
 
   const hoveredOp = report.remediation.ops.find((o) => o.index === hoveredOpIndex);
+
+  /** Select whichever finding is nearest the clicked point on the timeline. */
+  const selectNearest = (t: number) => {
+    if (pins.length === 0) return;
+    const ms = t * duration;
+    let best = pins[0]!;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const finding of pins) {
+      // Zero distance anywhere inside the finding's own span.
+      const distance =
+        ms < finding.startMs
+          ? finding.startMs - ms
+          : ms > finding.endMs
+            ? ms - finding.endMs
+            : 0;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = finding;
+      }
+    }
+    select(best.id);
+  };
 
   return (
     <Panel
@@ -43,11 +66,14 @@ export function RiskTimeline() {
             const isSelected = selected?.id === f.id;
             const tone = severityHex(f.severity);
             return (
-              <div
+              <button
                 key={f.id}
-                className="absolute bottom-0 flex -translate-x-1/2 flex-col items-center"
-                style={{ left: `${t}%` }}
+                type="button"
+                onClick={() => select(f.id)}
+                aria-label={`${formatTimecode(f.startMs)} — ${f.title}`}
                 title={`${formatTimecode(f.startMs)} — ${f.title}`}
+                className="absolute bottom-0 flex h-full w-8 -translate-x-1/2 cursor-pointer flex-col items-center justify-end"
+                style={{ left: `${t}%` }}
               >
                 {isSelected && (
                   <span className="num mb-0.5 whitespace-nowrap text-[9px]" style={{ color: tone }}>
@@ -55,20 +81,26 @@ export function RiskTimeline() {
                   </span>
                 )}
                 <span
-                  className="rounded-[1px]"
+                  className="rounded-[1px] transition-all duration-instant"
                   style={{
                     width: isSelected ? 3 : 2,
                     height: isSelected ? 12 : 7,
                     background: tone,
                   }}
                 />
-              </div>
+              </button>
             );
           })}
         </div>
 
         {/* terrain */}
-        <div className="relative">
+        <div
+          className="relative cursor-pointer"
+          onClick={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            selectNearest((event.clientX - rect.left) / rect.width);
+          }}
+        >
           <div className="flex h-12 w-full items-end gap-px overflow-hidden rounded-bar bg-abyss">
             {report.riskBands.map((band) => {
               const height = 22 + band.risk * 78; // never zero — the track stays readable
