@@ -1,0 +1,190 @@
+import { useState } from 'react';
+import { Film, Pause, Play, SkipForward, Volume2 } from 'lucide-react';
+import { Panel } from '@/components/ui';
+import { useAnalysis } from '@/store/analysis';
+import { afterReport, beforeReport } from '@/data/fixture';
+import { readinessHex, SIGNAL_HEX, VERDICT_META } from '@/lib/scoring';
+import { formatTimecode } from '@/lib/time';
+import type { AnalysisReport } from '@/types/analysis';
+
+/**
+ * The proof panel.
+ *
+ * Phase 3 links the two scrub bars so dragging one drags the other — that is
+ * what demonstrates the fix is the same footage rather than a second clip.
+ * Phase 2 renders both players with the remediated spans marked.
+ */
+
+const DEMO_POSITION = 0.404; // where the demo is parked: just after the blur op
+
+function PlayerFrame({
+  report,
+  variant,
+  positionT,
+}: {
+  report: AnalysisReport;
+  variant: 'BEFORE' | 'AFTER';
+  positionT: number;
+}) {
+  const [failed, setFailed] = useState(false);
+  const duration = report.video.durationMs;
+  const isAfter = variant === 'AFTER';
+  const ops = beforeReport.remediation.ops;
+
+  return (
+    <Panel className="min-w-0" flush>
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-edge px-3 py-2">
+        <span
+          className="text-micro uppercase"
+          style={{ color: isAfter ? SIGNAL_HEX.clear : '#8A97AE' }}
+        >
+          {isAfter ? 'After (Safe)' : 'Before (Original)'}
+        </span>
+        <span className="num text-[10px] text-inkFaint">
+          {formatTimecode(duration * positionT)} / {formatTimecode(duration)}
+        </span>
+      </div>
+
+      <div className="relative aspect-video w-full shrink-0 overflow-hidden bg-abyss">
+        {!failed ? (
+          <video
+            src={report.video.srcUrl}
+            poster={report.video.posterUrl}
+            className="h-full w-full object-cover"
+            preload="metadata"
+            muted
+            playsInline
+            onError={() => setFailed(true)}
+          />
+        ) : (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 text-inkFaint">
+            <Film className="h-5 w-5" strokeWidth={1.5} />
+            <span className="num text-[9px] uppercase tracking-[0.1em]">
+              {report.video.filename}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* scrub bar */}
+      <div className="shrink-0 px-3 pt-2.5">
+        <div className="relative h-1 w-full rounded-bar bg-edge">
+          <div
+            className="absolute inset-y-0 left-0 rounded-bar"
+            style={{
+              width: `${positionT * 100}%`,
+              background: isAfter ? SIGNAL_HEX.clear : SIGNAL_HEX.critical,
+            }}
+          />
+          {/* remediated spans — only meaningful on the safe render */}
+          {isAfter &&
+            ops.map((op) => (
+              <span
+                key={op.index}
+                className="absolute inset-y-0 rounded-bar"
+                style={{
+                  left: `${(op.startMs / duration) * 100}%`,
+                  width: `${Math.max(0.5, ((op.endMs - op.startMs) / duration) * 100)}%`,
+                  background: SIGNAL_HEX.clear,
+                }}
+                title={`${op.op} · ${formatTimecode(op.startMs)}`}
+              />
+            ))}
+          <span
+            className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-void"
+            style={{
+              left: `${positionT * 100}%`,
+              background: isAfter ? SIGNAL_HEX.clear : SIGNAL_HEX.critical,
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-3 px-3 py-2.5 text-inkFaint">
+        <Play className="h-3.5 w-3.5" fill="currentColor" />
+        <SkipForward className="h-3.5 w-3.5" />
+        <Volume2 className="h-3.5 w-3.5" />
+        <span className="ml-auto num text-[9px] uppercase tracking-[0.08em]">
+          {isAfter ? `${ops.length} spans remediated` : `${beforeReport.findings.length} findings`}
+        </span>
+      </div>
+    </Panel>
+  );
+}
+
+function FixBridge() {
+  const applied = useAnalysis((s) => s.applied);
+  const setApplied = useAnalysis((s) => s.setApplied);
+
+  const before = beforeReport.scores;
+  const after = afterReport.scores;
+  const delta = after.overall - before.overall;
+  const ops = beforeReport.remediation.ops.length;
+
+  return (
+    <div className="flex min-w-0 flex-col items-center justify-center gap-3 px-2">
+      <span className="num text-data text-inkDim">{ops} operations</span>
+
+      {/* a thin arrow, not a glowing shield */}
+      <div className="relative h-px w-full bg-edge">
+        <span
+          className="absolute -top-0.5 h-1.5 w-1.5 rounded-full"
+          style={{ left: '20%', background: SIGNAL_HEX.clear }}
+        />
+        <span
+          className="absolute -top-0.5 h-1.5 w-1.5 rounded-full opacity-50"
+          style={{ left: '55%', background: SIGNAL_HEX.clear }}
+        />
+        <span
+          className="absolute -right-1 -top-1 h-0 w-0"
+          style={{
+            borderTop: '4px solid transparent',
+            borderBottom: '4px solid transparent',
+            borderLeft: `5px solid ${SIGNAL_HEX.clear}`,
+          }}
+        />
+      </div>
+
+      <div className="flex flex-col items-center gap-0.5">
+        <span className="num text-data" style={{ color: SIGNAL_HEX.clear }}>
+          +{delta} readiness
+        </span>
+        <span className="num text-[9px] text-inkFaint">
+          <span style={{ color: readinessHex(before.overall) }}>{before.overall}</span>
+          {' → '}
+          <span style={{ color: readinessHex(after.overall) }}>{after.overall}</span>
+        </span>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setApplied(!applied)}
+        className="flex w-full items-center justify-center gap-1.5 rounded-chip border px-2.5 py-2 text-micro uppercase transition-colors duration-fast"
+        style={{
+          color: applied ? '#8A97AE' : SIGNAL_HEX.clear,
+          borderColor: applied ? '#26324A' : `${SIGNAL_HEX.clear}66`,
+          background: applied ? 'transparent' : `${SIGNAL_HEX.clear}14`,
+        }}
+      >
+        {applied ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+        {applied ? 'Revert' : 'Apply Fix'}
+      </button>
+
+      <span className="num text-center text-[9px] uppercase leading-relaxed tracking-[0.06em] text-inkFaint">
+        {VERDICT_META[before.verdict].label}
+        <br />↓<br />
+        {VERDICT_META[after.verdict].label}
+      </span>
+    </div>
+  );
+}
+
+export function BeforeAfterPlayers() {
+  return (
+    <>
+      <PlayerFrame report={beforeReport} variant="BEFORE" positionT={DEMO_POSITION} />
+      <FixBridge />
+      <PlayerFrame report={afterReport} variant="AFTER" positionT={DEMO_POSITION} />
+    </>
+  );
+}
