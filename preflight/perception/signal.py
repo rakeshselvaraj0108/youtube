@@ -1,0 +1,156 @@
+"""Raw audio and luminance sampling, on numpy alone.
+
+Deliberately no librosa. Everything here is RMS, FFT and differencing, all of
+which numpy does directly — and every dependency that is not required is one
+more way a clean clone fails on a stranger's machine.
+"""
+
+from __future__ import annotations
+
+import subprocess
+import wave
+from dataclasses import dataclass
+from pathlib import Path
+
+import numpy as np
+
+from preflight import ffmpeg
+
+
+@dataclass
+class Audio:
+    """Decoded PCM, shaped (channels, samples), float32 in [-1, 1]."""
+
+    samples: np.ndarray
+    sample_rate: int
+
+    @property
+    def channels(self) -> int:
+        return int(self.samples.shape[0])
+
+    @property
+    def duration_ms(self) -> int:
+        return int(self.samples.shape[1] / self.sample_rate * 1000)
+
+    @property
+    def mono(self) -> np.ndarray:
+        return self.samples.mean(axis=0)
+
+
+def read_wav(path: Path) -> Audio:
+    """Read a PCM wav with the stdlib, normalised to float32."""
+    with wave.open(str(path), "rb") as handle:
+        channels = handle.getnchannels()
+        width = handle.getsampwidth()
+        rate = handle.getframerate()
+        raw = handle.readframes(handle.getnframes())
+
+    dtype = {1: np.uint8, 2: np.int16, 4: np.int32}.get(width)
+    if dtype is None:
+        raise ValueError(f"unsupported sample width: {width} bytes")
+
+    data = np.frombuffer(raw, dtype=dtype).astype(np.float32)
+    if width == 1:  # 8-bit wav is unsigned, centred on 128
+        data = (data - 128.0) / 128.0
+    else:
+        data /= float(np.iinfo(dtype).max)
+
+    if channels > 1:
+        usable = (data.size // channels) * channels
+        data = data[:usable].reshape(-1, channels).T
+    else:
+        data = data.reshape(1, -1)
+
+    return Audio(samples=np.ascontiguousarray(data), sample_rate=rate)
+
+
+def frame_signal(signal: np.ndarray, frame: int, hop: int) -> np.ndarray:
+    """Split into overlapping frames without copying more than necessary."""
+    if signal.size < frame:
+        return np.empty((0, frame), dtype=signal.dtype)
+    count = 1 + (signal.size - frame) // hop
+    strides = (signal.strides[0] * hop, signal.strides[0])
+    return np.lib.stride_tricks.as_strided(
+        signal, shape=(count, frame), strides=strides, writeable=False
+    )
+
+
+def rms_envelope(signal: np.ndarray, sample_rate: int, window_ms: int = 100) -> np.ndarray:
+    frame = max(1, int(sample_rate * window_ms / 1000))
+    frames = frame_signal(signal, frame, frame)
+    if frames.size == 0:
+        return np.array([float(np.sqrt(np.mean(signal**2)))]) if signal.size else np.array([])
+    return np.sqrt((frames.astype(np.float64) ** 2).mean(axis=1))
+
+
+def spectral_flatness(signal: np.ndarray, sample_rate: int, window_ms: int = 100) -> np.ndarray:
+    """Geometric mean over arithmetic mean of the power spectrum.
+
+    Near 1 for noise, near 0 for tonal content. Sustained low flatness under
+    speech is the signature of a music bed — which is a licensing question even
+    when no fingerprint matches.
+    """
+    frame = max(256, int(sample_rate * window_ms / 1000))
+    frames = frame_signal(signal, frame, frame)
+    if frames.size == 0:
+        return np.array([])
+
+    windowed = frames * np.hanning(frame)
+    power = np.abs(np.fft.rfft(windowed, axis=1)) ** 2
+    power = np.maximum(power, 1e-12)
+
+    geometric = np.exp(np.log(power).mean(axis=1))
+    arithmetic = power.mean(axis=1)
+    return geometric / np.maximum(arithmetic, 1e-12)
+
+
+def luminance_series(source: Path, fps: int = 10, width: int = 64, height: int = 36) -> np.ndarray:
+    """Mean luminance per frame, sampled at a fixed rate.
+
+    Scene-cut keyframes are far too sparse for flash analysis — a strobe lives
+    entirely between two cuts. This pipes downscaled greyscale frames straight
+    out of ffmpeg, so an 18-minute file costs about 24MB of transfer and no
+    intermediate files.
+    """
+    command = [
+        "ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-i",
+        str(source),
+        "-vf",
+        f"fps={fps},scale={width}:{height},format=gray",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "gray",
+        "-",
+    ]
+    result = subprocess.run(command, capture_output=True, check=False)
+    if result.returncode != 0:
+        raise ffmpeg.FfmpegFailed(command, result.returncode, result.stderr.decode(errors="replace"))
+
+    frame_bytes = width * height
+    usable = (len(result.stdout) // frame_bytes) * frame_bytes
+    if usable == 0:
+        return np.array([])
+
+    frames = np.frombuffer(result.stdout[:usable], dtype=np.uint8).reshape(-1, frame_bytes)
+    return frames.astype(np.float32).mean(axis=1)
+
+
+def spans_where(mask: np.ndarray, step_ms: float, min_ms: int) -> list[tuple[int, int]]:
+    """Contiguous True runs in `mask`, as (start_ms, end_ms), filtered by length."""
+    if mask.size == 0:
+        return []
+    padded = np.concatenate(([False], mask, [False]))
+    edges = np.flatnonzero(padded[1:] != padded[:-1])
+    spans: list[tuple[int, int]] = []
+    for start, stop in zip(edges[0::2], edges[1::2]):
+        start_ms = int(start * step_ms)
+        end_ms = int(stop * step_ms)
+        if end_ms - start_ms >= min_ms:
+            spans.append((start_ms, end_ms))
+    return spans
