@@ -75,6 +75,72 @@
   }
 }
 
+@layer components {
+  /* --- Agent flow -------------------------------------------------- */
+
+  /* Data travelling a wire. A short dash chasing along the edge path reads as
+     a packet moving parent -> child, which is exactly what it represents. */
+  .edge-flow {
+    stroke-dasharray: 5 999;
+    animation: edge-flow 1.25s linear infinite;
+  }
+
+  @keyframes edge-flow {
+    from {
+      stroke-dashoffset: 1004;
+    }
+    to {
+      stroke-dashoffset: 999;
+    }
+  }
+
+  /* A running agent breathes. Transform + opacity only. */
+  .node-running {
+    animation: node-running 1.15s ease-in-out infinite;
+  }
+
+  @keyframes node-running {
+    0%,
+    100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.12);
+    }
+  }
+
+  .node-halo {
+    animation: node-halo 1.15s ease-in-out infinite;
+  }
+
+  @keyframes node-halo {
+    0%,
+    100% {
+      opacity: 0.22;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.5;
+      transform: scale(1.35);
+    }
+  }
+
+  /* Degraded agents pulse amber rather than going silent. */
+  .ring-degraded {
+    animation: ring-degraded 2s ease-in-out infinite;
+  }
+
+  @keyframes ring-degraded {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 0.9;
+    }
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
