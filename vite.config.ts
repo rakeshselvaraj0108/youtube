@@ -12,15 +12,8 @@ export default defineConfig({
   },
   build: {
     target: 'es2022',
-    // The 3D agent graph is the only heavy dependency on the page; keep it out
-    // of the critical bundle so first contentful paint stays under 1.2s (§9).
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          three: ['three', '@react-three/fiber', '@react-three/drei'],
-        },
-      },
-    },
+    // three/R3F land in Phase 5 behind React.lazy, which produces its own chunk.
+    // Declaring a manual chunk before anything imports it only ships dead bytes.
   },
   test: {
     environment: 'node',
