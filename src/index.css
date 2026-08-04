@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --elev-0: none;
+    --elev-1: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 1px 2px rgba(0, 0, 0, 0.6);
+    --elev-2: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 8px 24px -8px rgba(0, 0, 0, 0.8);
+    --elev-3: 0 1px 0 rgba(255, 255, 255, 0.07) inset, 0 20px 50px -12px rgba(0, 0, 0, 0.9),
+      0 0 0 1px #26324a;
+    --edge: #1a2233;
+    --edge-hi: #26324a;
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-void text-ink font-sans antialiased;
+    /* The deck is a fixed instrument panel; the right column scrolls internally. */
+    overflow: hidden;
+  }
+
+  /* All numerals are tabular monospace. A proportional numeral in a data column
+     is the single fastest way to look unserious. */
+  .num,
+  code,
+  pre,
+  kbd {
+    @apply font-mono;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  :focus-visible {
+    outline: 2px solid theme('colors.agent.policy');
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: theme('colors.edge');
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: theme('colors.edgeHi');
+  }
+}
+
+@layer components {
+  /* Machined-metal panel: 1px edge + 1px inset top highlight. No gradients. */
+  .panel-surface {
+    @apply rounded-panel border border-edge bg-panel;
+    box-shadow: var(--elev-1);
+  }
+
+  .panel-title {
+    @apply text-panel uppercase text-inkDim;
+  }
+
+  .field-label {
+    @apply text-label uppercase text-inkFaint;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
