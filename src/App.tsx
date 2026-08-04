@@ -1,4 +1,4 @@
-import { AgentGraph } from '@/components/AgentGraph';
+import { AgentFlow } from '@/components/AgentFlow';
 import { BeforeAfterPlayers } from '@/components/BeforeAfterPlayers';
 import { DetailPanel } from '@/components/DetailPanel';
 import { FfmpegBlock } from '@/components/FfmpegBlock';
@@ -28,7 +28,7 @@ export default function App() {
           <TerminalColumn />
         </div>
         <div className="hidden lg:block">
-          <AgentGraph />
+          <AgentFlow />
         </div>
       </div>
 
