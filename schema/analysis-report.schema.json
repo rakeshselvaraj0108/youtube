@@ -1,0 +1,624 @@
+{
+  "$ref": "#/definitions/AnalysisReport",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "AdversarialRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "adjudicator": {
+          "additionalProperties": false,
+          "properties": {
+            "confidence": {
+              "type": "number"
+            },
+            "rationale": {
+              "type": "string"
+            },
+            "verdict": {
+              "enum": [
+                "UPHELD",
+                "DISMISSED"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "verdict",
+            "rationale",
+            "confidence"
+          ],
+          "type": "object"
+        },
+        "advocate": {
+          "additionalProperties": false,
+          "properties": {
+            "defense": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "strength": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "defense",
+            "strength"
+          ],
+          "type": "object"
+        },
+        "auditor": {
+          "additionalProperties": false,
+          "properties": {
+            "charge": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "charge"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "auditor",
+        "advocate",
+        "adjudicator"
+      ],
+      "type": "object"
+    },
+    "AgentId": {
+      "description": "Keys of the agent identity palette in tailwind.config.ts.",
+      "enum": [
+        "orchestrator",
+        "ingest",
+        "speech",
+        "vision",
+        "ocr",
+        "audio",
+        "access",
+        "meta",
+        "policy",
+        "score",
+        "remedy",
+        "report"
+      ],
+      "type": "string"
+    },
+    "AgentRun": {
+      "additionalProperties": false,
+      "properties": {
+        "calls": {
+          "description": "Remote model invocations made by this agent. Free-tier budget evidence.",
+          "type": "number"
+        },
+        "coverage": {
+          "description": "0..1 — the fraction of the input this agent actually managed to inspect.",
+          "type": "number"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "elapsedMs": {
+          "type": "number"
+        },
+        "id": {
+          "$ref": "#/definitions/AgentId"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parents": {
+          "items": {
+            "$ref": "#/definitions/AgentId"
+          },
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/definitions/AgentStatus"
+        },
+        "tier": {
+          "description": "Depth in the DAG. Tier 0 is the orchestrator.",
+          "type": "number"
+        },
+        "tsMs": {
+          "description": "Offset from run start, used to sequence the terminal log and graph pulses.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "tier",
+        "parents",
+        "status",
+        "detail",
+        "coverage",
+        "elapsedMs",
+        "tsMs",
+        "calls"
+      ],
+      "type": "object"
+    },
+    "AgentStatus": {
+      "enum": [
+        "OK",
+        "DEGRADED",
+        "FAILED",
+        "SKIPPED",
+        "RUNNING",
+        "PENDING"
+      ],
+      "type": "string"
+    },
+    "AnalysisReport": {
+      "additionalProperties": false,
+      "properties": {
+        "agents": {
+          "items": {
+            "$ref": "#/definitions/AgentRun"
+          },
+          "type": "array"
+        },
+        "breakdown": {
+          "items": {
+            "$ref": "#/definitions/BreakdownRow"
+          },
+          "type": "array"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/definitions/Finding"
+          },
+          "type": "array"
+        },
+        "meta": {
+          "$ref": "#/definitions/RunMeta"
+        },
+        "remediation": {
+          "$ref": "#/definitions/Remediation"
+        },
+        "riskBands": {
+          "items": {
+            "$ref": "#/definitions/RiskBand"
+          },
+          "type": "array"
+        },
+        "scores": {
+          "$ref": "#/definitions/Scores"
+        },
+        "video": {
+          "$ref": "#/definitions/VideoMeta"
+        }
+      },
+      "required": [
+        "video",
+        "meta",
+        "scores",
+        "riskBands",
+        "findings",
+        "breakdown",
+        "remediation",
+        "agents"
+      ],
+      "type": "object"
+    },
+    "BreakdownRow": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "type": "string"
+        },
+        "count": {
+          "type": "number"
+        },
+        "severity": {
+          "$ref": "#/definitions/Severity"
+        }
+      },
+      "required": [
+        "category",
+        "count",
+        "severity"
+      ],
+      "type": "object"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "properties": {
+        "adversarial": {
+          "$ref": "#/definitions/AdversarialRecord"
+        },
+        "category": {
+          "type": "string"
+        },
+        "clauseId": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number"
+        },
+        "description": {
+          "type": "string"
+        },
+        "endMs": {
+          "type": "number"
+        },
+        "evidence": {
+          "additionalProperties": false,
+          "properties": {
+            "frames": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "highlightSpan": {
+              "description": "[start, end] character offsets into `transcript`.",
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "transcript": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "transcript",
+            "highlightSpan",
+            "frames"
+          ],
+          "type": "object"
+        },
+        "fusedConfidence": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "modalities": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "Per-modality confidence before fusion, e.g. { speech: 0.94, vision: 0.92 }.",
+          "type": "object"
+        },
+        "policy": {
+          "additionalProperties": false,
+          "properties": {
+            "clauseId": {
+              "type": "string"
+            },
+            "section": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "clauseId",
+            "title",
+            "section",
+            "text"
+          ],
+          "type": "object"
+        },
+        "severity": {
+          "$ref": "#/definitions/Severity"
+        },
+        "startMs": {
+          "type": "number"
+        },
+        "suggestedFix": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/OpKind"
+            },
+            {
+              "const": "NONE",
+              "type": "string"
+            }
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "clauseId",
+        "category",
+        "title",
+        "description",
+        "startMs",
+        "endMs",
+        "severity",
+        "confidence",
+        "modalities",
+        "fusedConfidence",
+        "evidence",
+        "policy",
+        "adversarial",
+        "suggestedFix"
+      ],
+      "type": "object"
+    },
+    "OpKind": {
+      "enum": [
+        "MUTE",
+        "BLEEP",
+        "BLUR_REGION",
+        "REPLACE_AUDIO",
+        "CUT"
+      ],
+      "type": "string"
+    },
+    "Remediation": {
+      "additionalProperties": false,
+      "properties": {
+        "ffmpegCommand": {
+          "type": "string"
+        },
+        "ops": {
+          "items": {
+            "$ref": "#/definitions/RemediationOp"
+          },
+          "type": "array"
+        },
+        "renderMs": {
+          "type": "number"
+        },
+        "videoStreamCopied": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ops",
+        "ffmpegCommand",
+        "renderMs",
+        "videoStreamCopied"
+      ],
+      "type": "object"
+    },
+    "RemediationOp": {
+      "additionalProperties": false,
+      "properties": {
+        "asset": {
+          "description": "REPLACE_AUDIO only — path to the CC-licensed replacement bed.",
+          "type": "string"
+        },
+        "box": {
+          "description": "BLUR_REGION only — normalised [x, y, w, h] in the 0..1 frame space.",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": "array"
+        },
+        "details": {
+          "type": "string"
+        },
+        "endMs": {
+          "type": "number"
+        },
+        "findingId": {
+          "type": "string"
+        },
+        "freqHz": {
+          "description": "BLEEP only — tone frequency in Hz.",
+          "type": "number"
+        },
+        "index": {
+          "type": "number"
+        },
+        "op": {
+          "$ref": "#/definitions/OpKind"
+        },
+        "startMs": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "index",
+        "op",
+        "startMs",
+        "endMs",
+        "details",
+        "findingId"
+      ],
+      "type": "object"
+    },
+    "RiskBand": {
+      "additionalProperties": false,
+      "properties": {
+        "endMs": {
+          "type": "number"
+        },
+        "risk": {
+          "description": "0..1",
+          "type": "number"
+        },
+        "startMs": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "startMs",
+        "endMs",
+        "risk"
+      ],
+      "type": "object"
+    },
+    "RunMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "analyzedAt": {
+          "type": "string"
+        },
+        "attestationHash": {
+          "type": "string"
+        },
+        "coverage": {
+          "description": "0..1 — weighted mean of per-agent coverage. Reported, never hidden.",
+          "type": "number"
+        },
+        "engineVersion": {
+          "type": "string"
+        },
+        "policyVersion": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "analyzedAt",
+        "policyVersion",
+        "engineVersion",
+        "attestationHash",
+        "coverage"
+      ],
+      "type": "object"
+    },
+    "Scores": {
+      "additionalProperties": false,
+      "properties": {
+        "overall": {
+          "type": "number"
+        },
+        "sub": {
+          "$ref": "#/definitions/SubScores"
+        },
+        "verdict": {
+          "$ref": "#/definitions/Verdict"
+        },
+        "weakest": {
+          "$ref": "#/definitions/SubScoreKey"
+        }
+      },
+      "required": [
+        "overall",
+        "sub",
+        "verdict",
+        "weakest"
+      ],
+      "type": "object"
+    },
+    "Severity": {
+      "description": "The PREFLIGHT data contract.\n\nEvery value rendered on the Command Deck derives from this shape. When the Python engine replaces the fixture with a real response, nothing in `src/components` should need to change.",
+      "enum": [
+        "CRITICAL",
+        "HIGH",
+        "MEDIUM",
+        "LOW"
+      ],
+      "type": "string"
+    },
+    "SubScoreKey": {
+      "enum": [
+        "policy",
+        "copyright",
+        "metadata",
+        "accessibility",
+        "audio"
+      ],
+      "type": "string"
+    },
+    "SubScores": {
+      "additionalProperties": false,
+      "properties": {
+        "accessibility": {
+          "type": "number"
+        },
+        "audio": {
+          "type": "number"
+        },
+        "copyright": {
+          "type": "number"
+        },
+        "metadata": {
+          "type": "number"
+        },
+        "policy": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "policy",
+        "copyright",
+        "metadata",
+        "accessibility",
+        "audio"
+      ],
+      "type": "object"
+    },
+    "Verdict": {
+      "enum": [
+        "READY_TO_PUBLISH",
+        "PUBLISH_WITH_FIXES",
+        "NOT_READY",
+        "DO_NOT_PUBLISH"
+      ],
+      "type": "string"
+    },
+    "VideoMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "audioCodec": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "number"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "fps": {
+          "type": "number"
+        },
+        "height": {
+          "type": "number"
+        },
+        "posterDataUri": {
+          "description": "Base64 poster extracted at 10% of duration. Present when the report was emitted by the CLI, absent in dev. Preferred over `posterUrl` so report.html stays a single self-contained file.",
+          "type": "string"
+        },
+        "posterUrl": {
+          "type": "string"
+        },
+        "sampleRate": {
+          "type": "number"
+        },
+        "sizeBytes": {
+          "type": "number"
+        },
+        "srcUrl": {
+          "type": "string"
+        },
+        "width": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "filename",
+        "durationMs",
+        "width",
+        "height",
+        "fps",
+        "sizeBytes",
+        "audioCodec",
+        "sampleRate",
+        "posterUrl",
+        "srcUrl"
+      ],
+      "type": "object"
+    }
+  }
+}

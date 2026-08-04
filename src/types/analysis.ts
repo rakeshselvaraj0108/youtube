@@ -138,6 +138,12 @@ export interface VideoMeta {
   sampleRate: number;
   posterUrl: string;
   srcUrl: string;
+  /**
+   * Base64 poster extracted at 10% of duration. Present when the report was
+   * emitted by the CLI, absent in dev. Preferred over `posterUrl` so
+   * report.html stays a single self-contained file.
+   */
+  posterDataUri?: string;
 }
 
 export interface RunMeta {
