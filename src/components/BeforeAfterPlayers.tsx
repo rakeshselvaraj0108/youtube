@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Film, Pause, Play, SkipForward, Volume2 } from 'lucide-react';
 import { Panel } from '@/components/ui';
 import { useAnalysis } from '@/store/analysis';
@@ -21,15 +21,45 @@ function PlayerFrame({
   report,
   variant,
   positionT,
+  onSeek,
 }: {
   report: AnalysisReport;
   variant: 'BEFORE' | 'AFTER';
   positionT: number;
+  onSeek: (t: number) => void;
 }) {
   const [failed, setFailed] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const scrubRef = useRef<HTMLDivElement>(null);
   const duration = report.video.durationMs;
   const isAfter = variant === 'AFTER';
   const ops = beforeReport.remediation.ops;
+
+  /* Both scrub bars write to one shared position, and both <video> elements
+     read from it. Dragging either one moves both — that is what demonstrates
+     the safe render is the same footage rather than a second clip. */
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !Number.isFinite(video.duration)) return;
+    const target = positionT * video.duration;
+    if (Math.abs(video.currentTime - target) > 0.05) video.currentTime = target;
+  }, [positionT]);
+
+  const seekFromEvent = (clientX: number) => {
+    const rect = scrubRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    onSeek(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)));
+  };
+
+  const onScrubDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    seekFromEvent(event.clientX);
+  };
+
+  const onScrubMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.buttons !== 1) return;
+    seekFromEvent(event.clientX);
+  };
 
   return (
     <Panel className="min-w-0" flush>
@@ -48,6 +78,7 @@ function PlayerFrame({
       <div className="relative aspect-video w-full shrink-0 overflow-hidden bg-abyss">
         {!failed ? (
           <video
+            ref={videoRef}
             src={report.video.srcUrl}
             poster={report.video.posterUrl}
             className="h-full w-full object-cover"
@@ -66,9 +97,25 @@ function PlayerFrame({
         )}
       </div>
 
-      {/* scrub bar */}
+      {/* scrub bar — seek-linked to its counterpart */}
       <div className="shrink-0 px-3 pt-2.5">
-        <div className="relative h-1 w-full rounded-bar bg-edge">
+        <div
+          ref={scrubRef}
+          onPointerDown={onScrubDown}
+          onPointerMove={onScrubMove}
+          role="slider"
+          tabIndex={0}
+          aria-label={`${isAfter ? 'Safe' : 'Original'} render position`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(positionT * 100)}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowRight') onSeek(Math.min(1, positionT + 0.01));
+            if (event.key === 'ArrowLeft') onSeek(Math.max(0, positionT - 0.01));
+          }}
+          className="relative -my-2 cursor-pointer py-2"
+        >
+          <div className="relative h-1 w-full rounded-bar bg-edge">
           <div
             className="absolute inset-y-0 left-0 rounded-bar"
             style={{
@@ -97,6 +144,7 @@ function PlayerFrame({
               background: isAfter ? SIGNAL_HEX.clear : SIGNAL_HEX.critical,
             }}
           />
+          </div>
         </div>
       </div>
 
@@ -180,11 +228,24 @@ function FixBridge() {
 }
 
 export function BeforeAfterPlayers() {
+  // One position, two players. Dragging either scrub bar moves both.
+  const [positionT, setPositionT] = useState(DEMO_POSITION);
+
   return (
     <>
-      <PlayerFrame report={beforeReport} variant="BEFORE" positionT={DEMO_POSITION} />
+      <PlayerFrame
+        report={beforeReport}
+        variant="BEFORE"
+        positionT={positionT}
+        onSeek={setPositionT}
+      />
       <FixBridge />
-      <PlayerFrame report={afterReport} variant="AFTER" positionT={DEMO_POSITION} />
+      <PlayerFrame
+        report={afterReport}
+        variant="AFTER"
+        positionT={positionT}
+        onSeek={setPositionT}
+      />
     </>
   );
 }
