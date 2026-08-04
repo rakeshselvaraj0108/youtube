@@ -3,6 +3,9 @@ import { Chip } from '@/components/ui';
 import { useReport } from '@/store/analysis';
 import { degradedAgents } from '@/lib/coverage';
 import { SIGNAL_HEX } from '@/lib/scoring';
+import { buildSarif, exitCode } from '@/lib/sarif';
+import { buildCertificate } from '@/lib/certificate';
+import { downloadJson } from '@/lib/download';
 
 /** The falcon mark. Drawn, not an emoji, not an imported asset. */
 function Falcon({ className = '' }: { className?: string }) {
@@ -59,19 +62,48 @@ export function HeaderBar() {
           Policy {report.meta.policyVersion}
         </Chip>
 
+        <Chip
+          tone={exitCode(report) === 0 ? SIGNAL_HEX.clear : SIGNAL_HEX.critical}
+          title="Exit code a CI run would take from this report"
+        >
+          exit {exitCode(report)}
+        </Chip>
+
         <div className="mx-1 h-4 w-px bg-edge" />
 
-        <GhostButton icon={<Download className="h-3 w-3" />} label="report.sarif" />
-        <GhostButton icon={<ShieldCheck className="h-3 w-3" />} label="certificate.json" />
+        <GhostButton
+          icon={<Download className="h-3 w-3" />}
+          label="report.sarif"
+          title="Download SARIF 2.1.0 — renders natively in GitHub's Security tab"
+          onClick={() => downloadJson('preflight.sarif', buildSarif(report))}
+        />
+        <GhostButton
+          icon={<ShieldCheck className="h-3 w-3" />}
+          label="certificate.json"
+          title="Download the release certificate — what was checked, against which rules, with which models"
+          onClick={() => downloadJson('preflight-certificate.json', buildCertificate(report))}
+        />
       </div>
     </header>
   );
 }
 
-function GhostButton({ icon, label }: { icon: React.ReactNode; label: string }) {
+function GhostButton({
+  icon,
+  label,
+  title,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  title: string;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
+      onClick={onClick}
+      title={title}
       className="flex h-8 items-center gap-1.5 rounded-chip border border-edge px-2.5 text-data text-inkDim transition-colors duration-instant hover:border-edgeHi hover:bg-panelHi hover:text-ink"
     >
       {icon}
