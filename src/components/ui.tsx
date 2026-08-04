@@ -125,15 +125,19 @@ export function Field({
   label,
   value,
   className = '',
+  title,
 }: {
   label: string;
   value: ReactNode;
   className?: string;
+  title?: string;
 }) {
+  // Both label and value truncate independently. A label that overflows its
+  // cell runs into the next one and reads as a single word — "RESOLUTIONFPS".
   return (
-    <div className={`flex min-w-0 flex-col gap-1.5 ${className}`}>
-      <span className="text-label uppercase text-inkFaint">{label}</span>
-      <span className="num truncate text-data text-ink">{value}</span>
+    <div className={`flex min-w-0 flex-col gap-1.5 ${className}`} title={title}>
+      <span className="block truncate text-label uppercase text-inkFaint">{label}</span>
+      <span className="num block truncate text-data text-ink">{value}</span>
     </div>
   );
 }
