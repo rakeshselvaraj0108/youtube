@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { Panel, Dot, TONE_LABELS } from '@/components/ui';
 import { useAnalysis, useReport, useSelectedFinding } from '@/store/analysis';
 import { riskHex, severityHex, SIGNAL_HEX } from '@/lib/scoring';
@@ -14,8 +15,27 @@ import { formatTimecode, timelineTicks } from '@/lib/time';
  * Phase 5 extrudes this into 3D topography; the DOM structure here is already
  * the one that will carry the translateZ.
  */
+/**
+ * A generated tick landing within this many pixels of the end label collides
+ * with it — `18:00` and `18:42` overprint into `18:10:42`. The end label is the
+ * true runtime and always renders; the generated tick yields.
+ */
+const END_LABEL_GUARD_PX = 40;
+
 export function RiskTimeline() {
   const report = useReport();
+  const axisRef = useRef<HTMLDivElement>(null);
+  const [axisWidth, setAxisWidth] = useState(0);
+
+  useEffect(() => {
+    const node = axisRef.current;
+    if (!node) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setAxisWidth(entry.contentRect.width);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
   const selected = useSelectedFinding();
   const hoveredOpIndex = useAnalysis((s) => s.hoveredOpIndex);
   const select = useAnalysis((s) => s.select);
@@ -145,17 +165,19 @@ export function RiskTimeline() {
           )}
         </div>
 
-        {/* axis */}
-        <div className="relative h-3 shrink-0">
-          {ticks.map((tick) => (
-            <span
-              key={tick.ms}
-              className="num absolute top-0 -translate-x-1/2 text-[9px] text-inkFaint"
-              style={{ left: `${tick.t * 100}%` }}
-            >
-              {tick.label}
-            </span>
-          ))}
+        {/* axis — the true end label always wins; generated ticks yield to it */}
+        <div ref={axisRef} className="relative h-3 shrink-0">
+          {ticks
+            .filter((tick) => (1 - tick.t) * axisWidth >= END_LABEL_GUARD_PX)
+            .map((tick) => (
+              <span
+                key={tick.ms}
+                className="num absolute top-0 -translate-x-1/2 text-[9px] text-inkFaint"
+                style={{ left: `${tick.t * 100}%` }}
+              >
+                {tick.label}
+              </span>
+            ))}
           <span className="num absolute right-0 top-0 text-[9px] text-inkFaint">
             {formatTimecode(duration)}
           </span>
