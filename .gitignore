@@ -6,6 +6,28 @@ coverage/
 *.local
 *.tsbuildinfo
 
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+
+# PREFLIGHT artifacts
+.preflight/
+preflight-out/
+out/
+
+# Media — regenerate the synthetic clip with `python scripts/make_sample.py`
+samples/*.mp4
+samples/*.mov
+samples/*.mkv
+samples/*.wav
+public/media/*.mp4
+
 .env
 .env.*
 !.env.example
