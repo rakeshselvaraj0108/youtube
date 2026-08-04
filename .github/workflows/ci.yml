@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ui:
+    name: UI · contract · tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+
+      # The schema is generated from src/types/analysis.ts and is the contract
+      # the Python engine validates against. If regenerating it produces a diff,
+      # the committed schema is stale and the two sides have drifted.
+      - name: Contract is current
+        run: |
+          npm run schema
+          git diff --exit-code schema/analysis-report.schema.json
+
+      - name: Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
