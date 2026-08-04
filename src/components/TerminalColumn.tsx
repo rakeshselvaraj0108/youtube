@@ -34,7 +34,9 @@ export function TerminalColumn() {
 
   return (
     <aside className="flex h-full min-h-0 w-full flex-col border-r border-edge bg-abyss">
-      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-edge px-4">
+      {/* z-10 keeps the header above the scrolling log — without it the first
+          log line rides up over the title and reads as clipped. */}
+      <header className="relative z-10 flex h-11 shrink-0 items-center gap-2 border-b border-edge bg-abyss px-4">
         <span className="relative flex h-1.5 w-1.5">
           <span
             className="absolute inline-flex h-full w-full rounded-full opacity-60"
