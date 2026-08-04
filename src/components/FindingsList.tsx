@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import { Bar, Panel, SeverityChip } from '@/components/ui';
 import { useAnalysis, useSelectedFinding, useVisibleFindings } from '@/store/analysis';
@@ -20,6 +21,7 @@ function FindingCard({ finding, selected }: { finding: Finding; selected: boolea
     <li>
       <button
         type="button"
+        data-finding={finding.id}
         onClick={() => select(finding.id)}
         aria-current={selected}
         className={`flex w-full gap-2.5 border-b border-edge/60 px-3 py-2.5 text-left transition-colors duration-instant ${
@@ -64,6 +66,31 @@ export function FindingsList() {
   const setSortBy = useAnalysis((s) => s.setSortBy);
   const categoryFilter = useAnalysis((s) => s.categoryFilter);
   const setCategoryFilter = useAnalysis((s) => s.setCategoryFilter);
+  const select = useAnalysis((s) => s.select);
+  const listRef = useRef<HTMLUListElement>(null);
+
+  /** Arrow keys walk the list in whatever order it is currently sorted. */
+  const onKeyDown = (event: React.KeyboardEvent<HTMLUListElement>) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    const index = findings.findIndex((f) => f.id === selected?.id);
+    const next = event.key === 'ArrowDown' ? index + 1 : index - 1;
+    const target = findings[Math.max(0, Math.min(findings.length - 1, next))];
+    if (!target) return;
+    select(target.id);
+    listRef.current
+      ?.querySelector<HTMLButtonElement>(`[data-finding="${target.id}"]`)
+      ?.focus();
+  };
+
+  // Keep the selected card in view when selection arrives from the timeline or
+  // the breakdown panel rather than from this list.
+  useEffect(() => {
+    if (!selected) return;
+    listRef.current
+      ?.querySelector(`[data-finding="${selected.id}"]`)
+      ?.scrollIntoView({ block: 'nearest' });
+  }, [selected]);
 
   return (
     <Panel
@@ -100,7 +127,11 @@ export function FindingsList() {
         </button>
       )}
 
-      <ul className="min-h-0 flex-1 overflow-y-auto">
+      <ul
+        ref={listRef}
+        onKeyDown={onKeyDown}
+        className="min-h-0 flex-1 overflow-y-auto focus:outline-none"
+      >
         {findings.map((f) => (
           <FindingCard key={f.id} finding={f} selected={selected?.id === f.id} />
         ))}
