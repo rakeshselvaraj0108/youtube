@@ -1,0 +1,81 @@
+import { Download, ShieldCheck } from 'lucide-react';
+import { Chip } from '@/components/ui';
+import { useReport } from '@/store/analysis';
+import { degradedAgents } from '@/lib/coverage';
+import { SIGNAL_HEX } from '@/lib/scoring';
+
+/** The falcon mark. Drawn, not an emoji, not an imported asset. */
+function Falcon({ className = '' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 16" className={className} fill="none" aria-hidden="true">
+      <path d="M1 4.5 L11.2 7.4 L12 3 L12.8 7.4 L23 4.5 L14.4 9.6 L12 15 L9.6 9.6 Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function HeaderBar() {
+  const report = useReport();
+  const degraded = degradedAgents(report.agents);
+  const coveragePct = Math.round(report.meta.coverage * 100);
+
+  const coverageTitle = [
+    `Analysis surface covered: ${coveragePct}%`,
+    ...report.agents.map(
+      (a) => `${a.status === 'OK' ? '·' : '!'} ${a.name} — ${Math.round(a.coverage * 100)}% (${a.status})`,
+    ),
+  ].join('\n');
+
+  return (
+    <header className="flex h-11 shrink-0 items-center justify-between gap-4 border-b border-edge px-4">
+      <div className="flex items-center gap-3">
+        <Falcon className="h-4 w-6 text-ink" />
+        <span
+          className="text-[13px] font-semibold text-ink"
+          style={{ letterSpacing: '0.14em' }}
+        >
+          PREFLIGHT
+        </span>
+        <Chip>CLI</Chip>
+        <span className="ml-1 hidden text-micro uppercase tracking-[0.18em] text-inkFaint lg:inline">
+          Analysis Report
+        </span>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Chip
+          tone={coveragePct >= 90 ? undefined : SIGNAL_HEX.medium}
+          title={coverageTitle}
+          className="cursor-help"
+        >
+          Coverage {coveragePct}%
+          {degraded.length > 0 && (
+            <span className="normal-case tracking-normal opacity-80">
+              · {degraded[0]!.name.replace(' Agent', '').toLowerCase()} degraded
+            </span>
+          )}
+        </Chip>
+
+        <Chip title={`Policy corpus version ${report.meta.policyVersion}`}>
+          Policy {report.meta.policyVersion}
+        </Chip>
+
+        <div className="mx-1 h-4 w-px bg-edge" />
+
+        <GhostButton icon={<Download className="h-3 w-3" />} label="report.sarif" />
+        <GhostButton icon={<ShieldCheck className="h-3 w-3" />} label="certificate.json" />
+      </div>
+    </header>
+  );
+}
+
+function GhostButton({ icon, label }: { icon: React.ReactNode; label: string }) {
+  return (
+    <button
+      type="button"
+      className="flex h-8 items-center gap-1.5 rounded-chip border border-edge px-2.5 text-data text-inkDim transition-colors duration-instant hover:border-edgeHi hover:bg-panelHi hover:text-ink"
+    >
+      {icon}
+      <span className="num">{label}</span>
+    </button>
+  );
+}
