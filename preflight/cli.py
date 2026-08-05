@@ -22,7 +22,11 @@ from preflight.ingest.pipeline import ingest
 from preflight.ingest.probe import UnsupportedInput
 from preflight.models import SEVERITY_RANK
 from preflight.pipeline import SURFACE_WEIGHT, run_perception
+from preflight.agents.nim import NimClient
+from preflight.archive import Archive
 from preflight.config import Settings
+from preflight.drift import detect, write_snapshot
+from preflight.policy.corpus import load_corpus
 from preflight.report.build import build_report, validate
 from preflight.report.html import BundleMissing, emit_html
 from preflight.report.html import emit_fixture as emit_fixture_file
@@ -377,6 +381,21 @@ def _emit(result, formats: set[str], out: Path, fixture: Path | None) -> None:
     if fixture is not None:
         written.append(emit_fixture_file(bundle.report, fixture))
 
+    # Record into the archive so the Drift Watcher has something to monitor.
+    # Clauses that were retrieved but did not fire are recorded too: when a
+    # clause tightens, those are exactly the videos it will newly catch.
+    considered = {
+        chunk.clause_id
+        for window in result.windows
+        for chunk in getattr(window, "retrieved", []) or []
+    }
+    Archive(Path(".preflight/archive.db")).record(
+        bundle.report,
+        video_hash=result.ingested.video_hash,
+        policy_digest=result.corpus.digest if result.corpus else "none",
+        considered=considered,
+    )
+
     if written:
         console.print()
         for path in written:
@@ -506,6 +525,135 @@ def fix(
 
     console.print()
     raise typer.Exit(EXIT_OK)
+
+
+@app.command()
+def snapshot(
+    out: Path = typer.Option(
+        Path("data/policy-snapshots/latest.json"), "--out", help="Snapshot path"
+    ),
+    policy_dir: Path = typer.Option(Path("data/policy"), "--policy-dir"),
+) -> None:
+    """Capture the current policy corpus for later drift comparison."""
+    corpus = load_corpus(policy_dir)
+    path = write_snapshot(corpus, out)
+    console.print()
+    console.print(
+        f"  captured [bold]{len(corpus.clauses)}[/bold] clauses "
+        f"(version {corpus.version}, digest {corpus.digest[:16]}…)"
+    )
+    console.print(f"  wrote [bold]{path}[/bold]")
+    console.print()
+    raise typer.Exit(EXIT_OK)
+
+
+@app.command()
+def drift(
+    against: Path = typer.Option(
+        Path("data/policy-snapshots/latest.json"), "--against", help="Prior snapshot"
+    ),
+    policy_dir: Path = typer.Option(Path("data/policy"), "--policy-dir"),
+    archive_path: Path = typer.Option(Path(".preflight/archive.db"), "--archive"),
+    out: Path = typer.Option(None, "--out", help="Write the drift report as JSON"),
+) -> None:
+    """Detect policy changes and find which archived videos they put at risk.
+
+    Your back catalogue was compliant when you uploaded it. The rules changed.
+    """
+    if not against.is_file():
+        console.print(f"[red]no snapshot at {against}[/red]")
+        console.print("  capture one first:  preflight snapshot")
+        raise typer.Exit(EXIT_INPUT)
+
+    settings = Settings.load()
+    store = cas.Store(settings.cache_dir)
+    archive = Archive(archive_path)
+
+    # Semantic delta needs an embedder. Without one the diff still works from
+    # text similarity, and the report says which method produced the number.
+    embed = None
+    backend = "text-similarity"
+    if settings.online:
+        client = NimClient(settings, store)
+
+        def embed(texts):  # noqa: F811
+            return client.embed(texts, model=settings.models.embed, input_type="passage")
+
+        backend = f"embeddings:{settings.models.embed}"
+
+    report = detect(against, policy_dir, archive, embed=embed)
+
+    console.print()
+    if not report.changes:
+        console.print(f"  [green]no policy drift[/green] since {report.from_version}")
+        console.print()
+        raise typer.Exit(EXIT_OK)
+
+    console.print(
+        f"[bold]POLICY DRIFT DETECTED[/bold]   {report.detected_at[:10]}   "
+        f"[dim]{report.from_version} → {report.to_version}[/dim]"
+    )
+    console.print()
+
+    table = Table(show_header=True, box=None, pad_edge=False, header_style="dim")
+    table.add_column("CLAUSE", width=8)
+    table.add_column("TITLE", width=32)
+    table.add_column("CHANGE", width=10)
+    table.add_column("Δ", width=7, justify="right")
+    table.add_column("", width=10)
+    for change in report.changes:
+        tone = {"ADDED": "green", "REMOVED": "red", "MODIFIED": "yellow"}[change.kind]
+        table.add_row(
+            change.clause_id,
+            change.title[:32],
+            f"[{tone}]{change.kind}[/{tone}]",
+            f"{change.semantic_delta:.3f}",
+            "" if change.material else "[dim]cosmetic[/dim]",
+        )
+    console.print(table)
+    console.print()
+    console.print(f"  [dim]semantic delta via {backend}[/dim]")
+    console.print()
+
+    if report.archive_size == 0:
+        console.print(
+            "  [dim]archive is empty — run `preflight check <video> --format json` "
+            "to record reports for drift monitoring[/dim]"
+        )
+        console.print()
+        raise typer.Exit(EXIT_OK)
+
+    console.print(
+        f"  Re-lint [bold]{len(report.affected)}[/bold] of "
+        f"[bold]{report.archive_size}[/bold] archived videos "
+        f"[dim](selective invalidation)[/dim]"
+    )
+    console.print()
+
+    if report.affected:
+        console.print("  [bold]NEWLY AT RISK[/bold]")
+        console.print()
+        for video in report.affected:
+            touched = sorted(
+                report.changed_clause_ids
+                & (set(video.clauses) | set(video.near_miss_clauses))
+            )
+            reason = ", ".join(touched)
+            near = set(touched) & set(video.near_miss_clauses)
+            marker = " [dim](considered, did not fire)[/dim]" if near else ""
+            console.print(
+                f"    {video.filename:<28} readiness {video.overall:>3}   "
+                f"[dim]{reason}[/dim]{marker}"
+            )
+        console.print()
+
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(report.to_json(), indent=2), encoding="utf-8")
+        console.print(f"  wrote [bold]{out}[/bold]")
+        console.print()
+
+    raise typer.Exit(EXIT_FINDINGS if report.affected else EXIT_OK)
 
 
 @app.command()

@@ -53,3 +53,7 @@ npm-debug.log*
 .idea/
 
 preflight-out/
+
+.preflight/
+data/policy-snapshots/*.json
+!data/policy-snapshots/2026-08.json
