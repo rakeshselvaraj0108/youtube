@@ -387,6 +387,17 @@ def bullets(items: list[str]) -> str:
 
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
+
+    # This script owns the directory. Without removing clause files it did not
+    # write, a clause added by a drift simulation survives a rebuild and ends
+    # up in the next baseline snapshot — so the very change being demonstrated
+    # is already present before the demonstration starts.
+    expected = {clause["file"] for clause in CLAUSES}
+    for stale in OUT.glob("*.md"):
+        if stale.name not in expected:
+            stale.unlink()
+            print(f"removed stale clause {stale.name}")
+
     manifest: list[dict] = []
 
     for clause in CLAUSES:
