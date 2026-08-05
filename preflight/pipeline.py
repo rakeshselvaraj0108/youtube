@@ -28,7 +28,7 @@ from preflight.perception import accessibility, audio, metadata
 from preflight.perception import asr as asr_mod
 from preflight.perception.asr import Transcript
 from preflight.policy.corpus import Corpus, load_corpus
-from preflight.policy.index import build_index
+from preflight.policy.index import build_scoped_indexes
 from preflight.scoring.fusion import apply_fusion
 from preflight.scoring.readiness import Readiness, compute_readiness, sub_scores
 
@@ -255,13 +255,27 @@ def _policy(
         nonlocal corpus, backend
         corpus = load_corpus(settings.policy_dir)
         client = NimClient(settings, store)
-        index = build_index(corpus, settings, store, client)
-        backend = index.backend
 
-        result = run_triad(windows, corpus, index, client, settings, transcript)
+        # One index per scope. The triad searches only the advertiser-friendly
+        # clauses: retrieving the paid-promotion clause for a transcript window
+        # can never be correct, and it occupies a slot the adjudicator needs.
+        indexes = build_scoped_indexes(corpus, settings, store, client)
+        backend = indexes.backend
+
+        policy_index = indexes.get("policy")
+        if policy_index is None:
+            agent = AgentResult.skipped(
+                "policy", "Policy Agent", "no policy-scoped clauses in the corpus"
+            )
+            agent.log = indexes.log + agent.log
+            return agent
+
+        result = run_triad(
+            windows, corpus.scoped("policy"), policy_index, client, settings, transcript
+        )
         agent = to_agent_result(result)
-        agent.log = index.log + agent.log
-        agent.calls += index.calls
+        agent.log = indexes.log + agent.log
+        agent.calls += indexes.calls
         return agent
 
     return _guard("policy", "Policy Agent", run), corpus, backend

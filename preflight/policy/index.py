@@ -17,7 +17,7 @@ Embedding backends, in preference order:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 import numpy as np
@@ -39,6 +39,42 @@ class IndexBuild:
     calls: int
     log: list[str]
     embed_query: Callable[[str], np.ndarray | None]
+    scope: str = "policy"
+
+    @property
+    def size(self) -> int:
+        return len(self.retriever.corpus.chunks)
+
+
+@dataclass
+class ScopedIndexes:
+    """One index per retrieval scope.
+
+    Each agent searches only the clauses that could possibly apply to it. The
+    policy triad never retrieves the paid-promotion clause; the metadata agent
+    never retrieves a firearms clause. Beyond precision this is cheaper — a
+    query embeds once and searches thirty vectors instead of a hundred and
+    twenty.
+    """
+
+    indexes: dict[str, IndexBuild]
+    log: list[str] = field(default_factory=list)
+    calls: int = 0
+
+    def __getitem__(self, scope: str) -> IndexBuild:
+        return self.indexes[scope]
+
+    def get(self, scope: str) -> IndexBuild | None:
+        return self.indexes.get(scope)
+
+    @property
+    def backend(self) -> str:
+        backends = {index.backend for index in self.indexes.values()}
+        return next(iter(backends)) if len(backends) == 1 else "mixed"
+
+    @property
+    def dense(self) -> bool:
+        return any(index.dense for index in self.indexes.values())
 
 
 def _nim_embeddings(
@@ -162,4 +198,37 @@ def build_index(
         calls=calls,
         log=log,
         embed_query=embed_query,
+        scope=getattr(corpus, "scope_name", "policy"),
     )
+
+
+def build_scoped_indexes(
+    corpus: Corpus,
+    settings: Settings,
+    store: cas.Store,
+    client: NimClient | None = None,
+    scopes: list[str] | None = None,
+) -> ScopedIndexes:
+    """Build one index per scope.
+
+    Scopes are cached independently, keyed on the sub-corpus digest, so editing
+    a metadata clause re-embeds thirty chunks rather than a hundred and twenty
+    — which also means the Drift Watcher only pays for what actually moved.
+    """
+    wanted = scopes or corpus.scopes
+    built: dict[str, IndexBuild] = {}
+    log: list[str] = []
+    calls = 0
+
+    for scope in wanted:
+        sub = corpus.scoped(scope)
+        if not sub.chunks:
+            continue
+        index = build_index(sub, settings, store, client)
+        index.scope = scope
+        built[scope] = index
+        calls += index.calls
+        log.append(f"{scope}: {len(sub.chunks)} chunks from {len(sub.clauses)} clauses")
+        log.extend(f"  {line}" for line in index.log)
+
+    return ScopedIndexes(indexes=built, log=log, calls=calls)

@@ -20,6 +20,31 @@ HEADING = re.compile(r"^##\s+(.+)$", re.MULTILINE)
 
 # Sections that state the rule, and are therefore what a window is matched
 # against.
+# Retrieval scopes.
+#
+# One index over every clause means a transcript window about an avalanche can
+# retrieve the paid-promotion clause, because "disclosure" and "casualty" share
+# no tokens but their embeddings are not orthogonal either. Measured on this
+# corpus, a general index put META-01 or COPY-01 in the top three for roughly a
+# third of policy queries — retrievals that could never be correct, occupying
+# slots the adjudicator needed.
+#
+# Scoping is derived from the clause id prefix, so adding a clause puts it in
+# the right index without a second place to update.
+SCOPES: dict[str, str] = {
+    "AF": "policy",
+    "COPY": "copyright",
+    "META": "metadata",
+    "ACC": "accessibility",
+    "AUD": "audio",
+}
+DEFAULT_SCOPE = "policy"
+
+
+def scope_for(clause_id: str) -> str:
+    return SCOPES.get(clause_id.split("-")[0].upper(), DEFAULT_SCOPE)
+
+
 NORMATIVE_SECTIONS = {
     "Scope",
     "Fully monetized when",
@@ -54,6 +79,10 @@ class Chunk:
     @property
     def id(self) -> str:
         return f"{self.clause_id}::{self.section}"
+
+    @property
+    def scope(self) -> str:
+        return scope_for(self.clause_id)
 
     @property
     def citation(self) -> str:
@@ -116,6 +145,23 @@ class Corpus:
 
     def clause(self, clause_id: str) -> Clause | None:
         return next((c for c in self.clauses if c.clause_id == clause_id), None)
+
+    def scoped(self, scope: str) -> "Corpus":
+        """A sub-corpus containing only clauses in one retrieval scope.
+
+        The digest is scope-specific, so each index caches independently and
+        editing a metadata clause does not invalidate the policy index.
+        """
+        clauses = [c for c in self.clauses if scope_for(c.clause_id) == scope]
+        chunks = [c for c in self.chunks if c.scope == scope]
+        digest = hashlib.sha256(
+            (scope + "|" + "|".join(c.sha256 for c in clauses)).encode("utf-8")
+        ).hexdigest()
+        return Corpus(clauses=clauses, chunks=chunks, version=self.version, digest=digest)
+
+    @property
+    def scopes(self) -> list[str]:
+        return sorted({scope_for(c.clause_id) for c in self.clauses})
 
     def chunk(self, chunk_id: str) -> Chunk | None:
         return next((c for c in self.chunks if c.id == chunk_id), None)

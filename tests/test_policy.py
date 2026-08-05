@@ -78,6 +78,58 @@ class TestCorpus:
             "MUTE", "BLEEP", "BLUR_REGION", "REPLACE_AUDIO", "CUT", "NONE",
         }
 
+    def test_scopes_partition_the_corpus(self, corpus):
+        """Every clause lands in exactly one scope, and nothing is lost."""
+        total = sum(len(corpus.scoped(s).clauses) for s in corpus.scopes)
+        assert total == len(corpus.clauses)
+
+        chunks = sum(len(corpus.scoped(s).chunks) for s in corpus.scopes)
+        assert chunks == len(corpus.chunks)
+
+    def test_policy_scope_holds_only_advertiser_friendly_clauses(self, corpus):
+        policy = corpus.scoped("policy")
+        assert len(policy.clauses) == 14
+        assert all(c.clause_id.startswith("AF-") for c in policy.clauses)
+
+    def test_each_named_scope_is_populated(self, corpus):
+        for scope, clause_id in [
+            ("copyright", "COPY-01"),
+            ("metadata", "META-01"),
+            ("accessibility", "ACC-01"),
+        ]:
+            sub = corpus.scoped(scope)
+            assert [c.clause_id for c in sub.clauses] == [clause_id]
+
+    def test_scope_digests_are_independent(self, corpus):
+        """Editing a metadata clause must not invalidate the policy index."""
+        digests = {s: corpus.scoped(s).digest for s in corpus.scopes}
+        assert len(set(digests.values())) == len(digests)
+        assert all(d != corpus.digest for d in digests.values())
+
+    def test_scoped_retrieval_cannot_return_an_off_scope_clause(self, corpus):
+        """One index over every clause let a transcript window about an
+        avalanche retrieve the paid-promotion clause. Measured at 3 wasted
+        slots in 9 before scoping."""
+        policy = Retriever(corpus.scoped("policy"))
+        for query in [
+            "eleven people went out and four did not come back down",
+            "we took it to the back field with no range officer",
+            "bypass the safety cutout by shorting these terminals",
+        ]:
+            for hit in policy.clauses_for(query, top_k=3):
+                assert hit.chunk.clause_id.startswith("AF-"), query
+
+    def test_scope_is_derived_from_the_clause_id(self):
+        from preflight.policy.corpus import scope_for
+
+        assert scope_for("AF-01") == "policy"
+        assert scope_for("COPY-01") == "copyright"
+        assert scope_for("META-01") == "metadata"
+        assert scope_for("ACC-01") == "accessibility"
+        # An unknown family falls back to policy rather than vanishing from
+        # every index.
+        assert scope_for("XX-99") == "policy"
+
     def test_every_clause_gives_the_advocate_something_to_argue(self, corpus):
         """A thin exemptions section leaves the ADVOCATE nothing to work with
         and the false-positive rate stays high."""
