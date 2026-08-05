@@ -20,7 +20,15 @@ from preflight.perception.asr import Transcript, speech_rate_wpm
 AGENT_ID = "access"
 AGENT_NAME = "Accessibility Agent"
 
-SAMPLE_FPS = 10
+# Nyquist. Sampling a strobe at the strobe's own rate lands on the same phase
+# every time and reports a flat luminance series — a 10Hz strobe sampled at
+# 10fps measures as ZERO flashes, which is the most dangerous possible failure
+# for this particular check. Caught by clip g010 in the synthetic corpus, which
+# constructs exactly that case.
+#
+# 30fps resolves flashes up to ~15Hz, comfortably past the range that matters.
+# The cost is a greyscale 64x36 frame every 33ms, which is nothing.
+SAMPLE_FPS = 30
 FLASH_DELTA = 0.10 * 255  # 10% of full luminance range between adjacent samples
 FLASH_HIGH = 3            # flashes per second — the widely used seizure threshold
 FLASH_MODERATE = 2
@@ -104,14 +112,22 @@ def analyse(
 def flash_risk(luminance: np.ndarray, fps: int = SAMPLE_FPS) -> dict[str, object]:
     """Peak flashes per second across the file.
 
-    A "flash" is a luminance swing over 10% of full range between adjacent
-    samples. Counting them in a one-second sliding window gives the metric the
-    seizure guidance is actually written against.
+    A **flash** is a light-dark-light cycle, which is what the seizure guidance
+    counts. It is not a single luminance transition: counting every delta
+    double-counts, because each cycle produces one rise and one fall.
+
+    So only rising edges are counted. A 1Hz strobe then measures 1 flash/s
+    rather than 2, and a 10Hz strobe measures 10.
+
+    Getting this wrong is not academic. Counting transitions put a clean 1Hz
+    strobe at exactly 3/s — the harm threshold — purely because the window
+    happened to span two rises and one fall, so the detector condemned footage
+    that is demonstrably safe. Corpus clip g011 exists to pin this.
     """
     if luminance.size < 2:
         return {"max_flashes_per_second": 0, "risk": "LOW", "worst_ts_ms": None}
 
-    delta = np.abs(np.diff(luminance))
+    delta = np.diff(luminance)
     flashes = (delta > FLASH_DELTA).astype(np.int32)
 
     window = max(int(fps), 1)
