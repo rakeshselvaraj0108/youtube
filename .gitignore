@@ -57,3 +57,6 @@ preflight-out/
 .preflight/
 data/policy-snapshots/*.json
 !data/policy-snapshots/2026-08.json
+
+data/corpus/clips/
+data/assets/cc_music/*.wav

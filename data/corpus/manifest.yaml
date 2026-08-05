@@ -1,0 +1,358 @@
+# PREFLIGHT synthetic golden corpus
+#
+# Thirty clips in fifteen VIOLATION/CLEAN pairs. Every clip is generated from
+# this file by data/corpus/generate.py using ffmpeg and the platform's built-in
+# text-to-speech. No third-party media, no downloads, nothing sourced.
+#
+# Why synthetic:
+#
+#   Ground truth is exact BY CONSTRUCTION. The profanity was inserted at
+#   4,200ms, so it IS at 4,200ms — no human eyeballed a timestamp. That makes
+#   span IoU an honest metric rather than an approximate one.
+#
+#   The pairs are the point. Each VIOLATION has a CLEAN twin whose surface
+#   content is near-identical and whose only difference is context: the same
+#   word inside an attributed quotation, the same dangerous act with an explicit
+#   warning, the same sponsor read with a disclosure present. A keyword filter
+#   scores 50% on this corpus by construction. Only a system that reads context
+#   can beat that, which is exactly the claim the triad makes.
+#
+# Clips are gitignored and regenerate with `make corpus`. This file is 12KB.
+
+version: 1
+seed: 20260805
+
+defaults:
+  duration_s: 20
+  resolution: 1280x720
+  fps: 30
+
+clips:
+  # ─────────────────────────────────────────────────────────────────────
+  # AF-01 language — the canonical hard-negative pair
+  # ─────────────────────────────────────────────────────────────────────
+  - id: g001
+    label: VIOLATION
+    clause: AF-01
+    script: >
+      This next part is going to be rough. Honestly [PROFANITY_STRONG] that
+      thing is completely broken and I am done with it.
+    expect_span_s: [3.4, 4.6]
+    note: strong profanity as an intensifier, no exemption available
+
+  - id: g002
+    label: CLEAN
+    clause: null
+    twin_of: g001
+    script: >
+      In this lesson we look at how register shifts under stress. The speaker in
+      the recording said, quote, [PROFANITY_STRONG], end quote, which
+      illustrates exactly the intensifier use we just described.
+    note: >
+      SAME WORD. Educational framing plus attributed quotation, both documented
+      exemptions in AF-01. Must be DISMISSED.
+
+  - id: g003
+    label: VIOLATION
+    clause: AF-01
+    script: >
+      [PROFANITY_STRONG] I cannot believe that just happened on the first take.
+    expect_span_s: [0.2, 1.4]
+    note: strong profanity inside the opening seconds, which AF-01 weighs harder
+
+  - id: g004
+    label: CLEAN
+    clause: null
+    twin_of: g003
+    script: >
+      Wow. I cannot believe that just happened on the first take. Let us go
+      again from the top and see if we can hold it together this time.
+    note: identical situation, no profanity — the baseline that must not fire
+
+  # ─────────────────────────────────────────────────────────────────────
+  # ACC-01 photosensitive — measured, not inferred
+  # ─────────────────────────────────────────────────────────────────────
+  - id: g010
+    label: VIOLATION
+    clause: ACC-01
+    visual: strobe
+    strobe: {hz: 10, start_s: 6.0, end_s: 9.0}
+    script: The transition sequence begins here and runs for about three seconds.
+    expect_span_s: [6.0, 9.0]
+    note: 10Hz is far above the three-per-second harm threshold
+
+  - id: g011
+    label: CLEAN
+    clause: null
+    twin_of: g010
+    visual: strobe
+    strobe: {hz: 1, start_s: 6.0, end_s: 9.0}
+    script: The transition sequence begins here and runs for about three seconds.
+    note: 1Hz is below threshold. A detector that fires here is measuring nothing
+
+  - id: g012
+    label: VIOLATION
+    clause: ACC-01
+    visual: strobe
+    strobe: {hz: 5, start_s: 2.0, end_s: 5.0}
+    script: Here comes the intro animation for the channel.
+    expect_span_s: [2.0, 5.0]
+    note: 5Hz, still above threshold, shorter and earlier
+
+  - id: g013
+    label: CLEAN
+    clause: null
+    twin_of: g012
+    visual: fade
+    script: Here comes the intro animation for the channel.
+    note: gradual luminance ramp, large total change but no flashes
+
+  # ─────────────────────────────────────────────────────────────────────
+  # COPY-01 music bed — ducking distinguishes editorial from incidental
+  # ─────────────────────────────────────────────────────────────────────
+  - id: g020
+    label: VIOLATION
+    clause: COPY-01
+    music: {duck_db: 8}
+    script: >
+      Here is the section where the background track plays underneath the
+      narration for the whole segment.
+    expect_span_s: [0, 20]
+    note: ducked bed — deliberate editorial placement, licensing must be verified
+
+  - id: g021
+    label: CLEAN
+    clause: null
+    twin_of: g020
+    music: {duck_db: 0, level_db: -34}
+    script: >
+      Here is the section where the background track plays underneath the
+      narration for the whole segment.
+    note: >
+      Same asset, unducked and far below the speech. Reads as incidental room
+      tone rather than a placed bed.
+
+  # ─────────────────────────────────────────────────────────────────────
+  # META-01 disclosure — identical audio, different metadata
+  # ─────────────────────────────────────────────────────────────────────
+  - id: g030
+    label: VIOLATION
+    clause: META-01
+    script: >
+      This video is sponsored by a company I genuinely like. Use code SAVE20 at
+      checkout for twenty percent off your first order.
+    meta:
+      title: Weekly build log
+      description: Timestamps below.
+      tags: [build, log]
+    expect_span_s: [0, 20]
+    note: explicit sponsorship in speech, no disclosure anywhere in metadata
+
+  - id: g031
+    label: CLEAN
+    clause: null
+    twin_of: g030
+    script: >
+      This video is sponsored by a company I genuinely like. Use code SAVE20 at
+      checkout for twenty percent off your first order.
+    meta:
+      title: Weekly build log
+      description: >-
+        Includes paid promotion. Timestamps below.
+      tags: [build, log]
+    note: >
+      BYTE-IDENTICAL AUDIO. Only the description differs. This pair is the
+      cleanest possible demonstration that the metadata cross-check works.
+
+  - id: g032
+    label: VIOLATION
+    clause: META-01
+    script: All the gear I use is linked below if you want to check it out.
+    meta:
+      title: My studio setup
+      description: "Gear: amzn.to/3xKp2Qw and amzn.to/2bQr9Lm"
+      tags: [studio, gear]
+    expect_span_s: [0, 20]
+    note: affiliate hosts in the description with no disclosure line
+
+  - id: g033
+    label: CLEAN
+    clause: null
+    twin_of: g032
+    script: All the gear I use is linked below if you want to check it out.
+    meta:
+      title: My studio setup
+      description: >-
+        Affiliate disclosure: links below are affiliate links and I earn a
+        commission at no extra cost to you. Gear: amzn.to/3xKp2Qw
+      tags: [studio, gear]
+    note: same links, disclosure present
+
+  # ─────────────────────────────────────────────────────────────────────
+  # AF-05 dangerous acts — the harm-reduction exemption
+  # ─────────────────────────────────────────────────────────────────────
+  - id: g040
+    label: VIOLATION
+    clause: AF-05
+    script: >
+      You can bypass the safety cutout entirely by shorting these two terminals
+      together. It takes about ten seconds and then the interlock stops
+      complaining.
+    expect_span_s: [0.3, 9.0]
+    note: complete imitable method, presented approvingly, no warning
+
+  - id: g041
+    label: CLEAN
+    clause: null
+    twin_of: g040
+    script: >
+      Never do this. Do not attempt to bypass the safety cutout. People have
+      been seriously hurt doing exactly that. I am showing you the failure mode
+      only so you can recognise it if you see it.
+    note: >
+      Same subject, explicit harm-reduction framing adjacent to the mention.
+      AF-05 documents this exemption; the ADVOCATE should find it.
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Audio quality — deterministic, no LLM involved
+  # ─────────────────────────────────────────────────────────────────────
+  - id: g050
+    label: VIOLATION
+    clause: AUD-04
+    audio_defect: {kind: dead_channel, channel: right}
+    script: Testing the microphone setup for today's recording session.
+    note: right channel silent — a dead mic, invisible on one headphone
+
+  - id: g051
+    label: CLEAN
+    clause: null
+    twin_of: g050
+    script: Testing the microphone setup for today's recording session.
+    note: balanced stereo
+
+  - id: g052
+    label: VIOLATION
+    clause: AUD-01
+    audio_defect: {kind: hot, gain_db: 12}
+    script: >
+      This one was mastered far too loud and the meters were pinned the whole
+      way through the session.
+    note: integrated loudness well above target
+
+  - id: g053
+    label: CLEAN
+    clause: null
+    twin_of: g052
+    audio_defect: {kind: normalize}
+    script: >
+      This one was mastered far too loud and the meters were pinned the whole
+      way through the session.
+    note: same speech, normalised toward target
+
+  # ─────────────────────────────────────────────────────────────────────
+  # OCR temporal dedup — nine seconds of text is ONE finding
+  # ─────────────────────────────────────────────────────────────────────
+  - id: g060
+    label: VIOLATION
+    clause: AF-01
+    burn_in_text: {text: "NOT THIS DAMN THING AGAIN", start_s: 3, end_s: 12}
+    script: The caption on screen says what everyone watching is thinking.
+    expect_findings: 1
+    note: >
+      Text persists 9s across roughly 270 frames. Must dedupe to exactly ONE
+      finding. Counting frames instead of spans is the classic OCR mistake.
+
+  - id: g061
+    label: CLEAN
+    clause: null
+    twin_of: g060
+    burn_in_text: {text: "CHAPTER TWO - THE ASSEMBLY", start_s: 3, end_s: 12}
+    script: The caption on screen says what everyone watching is thinking.
+    note: same persistence, benign text
+
+  # ─────────────────────────────────────────────────────────────────────
+  # AF-10 sensitive events — framing is the whole distinction
+  # ─────────────────────────────────────────────────────────────────────
+  - id: g070
+    label: VIOLATION
+    clause: AF-10
+    script: >
+      Eleven people went out that morning and four of them did not come back
+      down. The death toll made it the worst season on record.
+    expect_span_s: [0.3, 9.5]
+    note: casualty figures stated flatly, no surrounding framing
+
+  - id: g071
+    label: CLEAN
+    clause: null
+    twin_of: g070
+    script: >
+      Every year the club holds a memorial for the members lost on that
+      expedition. The families asked that we remember them by climbing safely,
+      and that is what this season is about.
+    note: same event, memorial framing — a documented exemption
+
+  # ─────────────────────────────────────────────────────────────────────
+  # AF-08 firearms — controlled environment is the pivot
+  # ─────────────────────────────────────────────────────────────────────
+  - id: g080
+    label: VIOLATION
+    clause: AF-08
+    script: >
+      We took it out to the back field with no range officer and just started
+      putting rounds downrange at whatever was lying around.
+    expect_span_s: [0.3, 9.0]
+    note: firearm use outside a controlled environment
+
+  - id: g081
+    label: CLEAN
+    clause: null
+    twin_of: g080
+    script: >
+      At the supervised range the officer walks every new shooter through the
+      four safety rules before anyone handles a firearm. Here is how that
+      briefing goes.
+    note: controlled environment plus safety instruction, both green in AF-08
+
+  # ─────────────────────────────────────────────────────────────────────
+  # AF-11 dishonest behaviour — defensive framing is narrow
+  # ─────────────────────────────────────────────────────────────────────
+  - id: g090
+    label: VIOLATION
+    clause: AF-11
+    script: >
+      Once you have the token you can replay it against the endpoint and it will
+      hand you the account without asking for the second factor at all.
+    expect_span_s: [0.3, 9.0]
+    note: complete method for unauthorised access
+
+  - id: g091
+    label: CLEAN
+    clause: null
+    twin_of: g090
+    script: >
+      This was reported through the bug bounty and fixed last year. I am
+      describing the class of flaw so you can check whether your own service has
+      it, not how to exploit anyone.
+    note: security research with defensive framing — documented in AF-11
+
+  # ─────────────────────────────────────────────────────────────────────
+  # AF-14 incendiary — criticism versus degradation
+  # ─────────────────────────────────────────────────────────────────────
+  - id: g100
+    label: VIOLATION
+    clause: AF-14
+    script: >
+      He is a pathetic little fraud and everybody who follows him is just as
+      stupid as he is. Go and tell him so yourself.
+    expect_span_s: [0.3, 8.0]
+    note: personal degradation plus an invitation to pile on
+
+  - id: g101
+    label: CLEAN
+    clause: null
+    twin_of: g100
+    script: >
+      I think the argument in that video is badly wrong, and here are three
+      specific claims in it that the sources do not support.
+    note: robust criticism of the work rather than the person

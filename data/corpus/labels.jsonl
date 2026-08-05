@@ -1,0 +1,30 @@
+{"clip": "g001.mp4", "label": "VIOLATION", "clause": "AF-01", "span_ms": [3400, 4600], "expect_findings": null, "twin_of": null, "note": "strong profanity as an intensifier, no exemption available"}
+{"clip": "g002.mp4", "label": "CLEAN", "clause": null, "span_ms": null, "expect_findings": null, "twin_of": "g001", "note": "SAME WORD. Educational framing plus attributed quotation, both documented exemptions in AF-01. Must be DISMISSED."}
+{"clip": "g003.mp4", "label": "VIOLATION", "clause": "AF-01", "span_ms": [200, 1400], "expect_findings": null, "twin_of": null, "note": "strong profanity inside the opening seconds, which AF-01 weighs harder"}
+{"clip": "g004.mp4", "label": "CLEAN", "clause": null, "span_ms": null, "expect_findings": null, "twin_of": "g003", "note": "identical situation, no profanity \u2014 the baseline that must not fire"}
+{"clip": "g010.mp4", "label": "VIOLATION", "clause": "ACC-01", "span_ms": [6000, 9000], "expect_findings": null, "twin_of": null, "note": "10Hz is far above the three-per-second harm threshold"}
+{"clip": "g011.mp4", "label": "CLEAN", "clause": null, "span_ms": null, "expect_findings": null, "twin_of": "g010", "note": "1Hz is below threshold. A detector that fires here is measuring nothing"}
+{"clip": "g012.mp4", "label": "VIOLATION", "clause": "ACC-01", "span_ms": [2000, 5000], "expect_findings": null, "twin_of": null, "note": "5Hz, still above threshold, shorter and earlier"}
+{"clip": "g013.mp4", "label": "CLEAN", "clause": null, "span_ms": null, "expect_findings": null, "twin_of": "g012", "note": "gradual luminance ramp, large total change but no flashes"}
+{"clip": "g020.mp4", "label": "VIOLATION", "clause": "COPY-01", "span_ms": [0, 20000], "expect_findings": null, "twin_of": null, "note": "ducked bed \u2014 deliberate editorial placement, licensing must be verified"}
+{"clip": "g021.mp4", "label": "CLEAN", "clause": null, "span_ms": null, "expect_findings": null, "twin_of": "g020", "note": "Same asset, unducked and far below the speech. Reads as incidental room tone rather than a placed bed."}
+{"clip": "g030.mp4", "label": "VIOLATION", "clause": "META-01", "span_ms": [0, 20000], "expect_findings": null, "twin_of": null, "note": "explicit sponsorship in speech, no disclosure anywhere in metadata"}
+{"clip": "g031.mp4", "label": "CLEAN", "clause": null, "span_ms": null, "expect_findings": null, "twin_of": "g030", "note": "BYTE-IDENTICAL AUDIO. Only the description differs. This pair is the cleanest possible demonstration that the metadata cross-check works."}
+{"clip": "g032.mp4", "label": "VIOLATION", "clause": "META-01", "span_ms": [0, 20000], "expect_findings": null, "twin_of": null, "note": "affiliate hosts in the description with no disclosure line"}
+{"clip": "g033.mp4", "label": "CLEAN", "clause": null, "span_ms": null, "expect_findings": null, "twin_of": "g032", "note": "same links, disclosure present"}
+{"clip": "g040.mp4", "label": "VIOLATION", "clause": "AF-05", "span_ms": [300, 9000], "expect_findings": null, "twin_of": null, "note": "complete imitable method, presented approvingly, no warning"}
+{"clip": "g041.mp4", "label": "CLEAN", "clause": null, "span_ms": null, "expect_findings": null, "twin_of": "g040", "note": "Same subject, explicit harm-reduction framing adjacent to the mention. AF-05 documents this exemption; the ADVOCATE should find it."}
+{"clip": "g050.mp4", "label": "VIOLATION", "clause": "AUD-04", "span_ms": null, "expect_findings": null, "twin_of": null, "note": "right channel silent \u2014 a dead mic, invisible on one headphone"}
+{"clip": "g051.mp4", "label": "CLEAN", "clause": null, "span_ms": null, "expect_findings": null, "twin_of": "g050", "note": "balanced stereo"}
+{"clip": "g052.mp4", "label": "VIOLATION", "clause": "AUD-01", "span_ms": null, "expect_findings": null, "twin_of": null, "note": "integrated loudness well above target"}
+{"clip": "g053.mp4", "label": "CLEAN", "clause": null, "span_ms": null, "expect_findings": null, "twin_of": "g052", "note": "same speech, normalised toward target"}
+{"clip": "g060.mp4", "label": "VIOLATION", "clause": "AF-01", "span_ms": null, "expect_findings": 1, "twin_of": null, "note": "Text persists 9s across roughly 270 frames. Must dedupe to exactly ONE finding. Counting frames instead of spans is the classic OCR mistake."}
+{"clip": "g061.mp4", "label": "CLEAN", "clause": null, "span_ms": null, "expect_findings": null, "twin_of": "g060", "note": "same persistence, benign text"}
+{"clip": "g070.mp4", "label": "VIOLATION", "clause": "AF-10", "span_ms": [300, 9500], "expect_findings": null, "twin_of": null, "note": "casualty figures stated flatly, no surrounding framing"}
+{"clip": "g071.mp4", "label": "CLEAN", "clause": null, "span_ms": null, "expect_findings": null, "twin_of": "g070", "note": "same event, memorial framing \u2014 a documented exemption"}
+{"clip": "g080.mp4", "label": "VIOLATION", "clause": "AF-08", "span_ms": [300, 9000], "expect_findings": null, "twin_of": null, "note": "firearm use outside a controlled environment"}
+{"clip": "g081.mp4", "label": "CLEAN", "clause": null, "span_ms": null, "expect_findings": null, "twin_of": "g080", "note": "controlled environment plus safety instruction, both green in AF-08"}
+{"clip": "g090.mp4", "label": "VIOLATION", "clause": "AF-11", "span_ms": [300, 9000], "expect_findings": null, "twin_of": null, "note": "complete method for unauthorised access"}
+{"clip": "g091.mp4", "label": "CLEAN", "clause": null, "span_ms": null, "expect_findings": null, "twin_of": "g090", "note": "security research with defensive framing \u2014 documented in AF-11"}
+{"clip": "g100.mp4", "label": "VIOLATION", "clause": "AF-14", "span_ms": [300, 8000], "expect_findings": null, "twin_of": null, "note": "personal degradation plus an invitation to pile on"}
+{"clip": "g101.mp4", "label": "CLEAN", "clause": null, "span_ms": null, "expect_findings": null, "twin_of": "g100", "note": "robust criticism of the work rather than the person"}
