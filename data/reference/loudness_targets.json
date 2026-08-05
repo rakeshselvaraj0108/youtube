@@ -1,0 +1,11 @@
+{
+  "platform_target_lufs": -14,
+  "true_peak_ceiling_dbtp": -1.0,
+  "acceptable_range_lufs": [
+    -16,
+    -12
+  ],
+  "lra_warn_above": 12,
+  "basis": "Playback normalises loud uploads downward toward roughly -14 LUFS. Delivering above target does not increase perceived volume; it only reduces headroom and dynamic range after normalisation, so mastering louder is a loss with no corresponding gain.",
+  "measurement": "EBU R128 via ffmpeg loudnorm print_format=json, one pass"
+}

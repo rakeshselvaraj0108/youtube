@@ -1,0 +1,14 @@
+{
+  "wpm_comfortable": [
+    120,
+    160
+  ],
+  "wpm_warn_above": 180,
+  "max_unbroken_speech_ms": 45000,
+  "min_pause_ms": 300,
+  "text_contrast_min_ratio": 4.5,
+  "chapters_required_above_ms": 480000,
+  "caption_cue_max_ms": 6000,
+  "caption_max_line_chars": 42,
+  "basis": "WCAG contrast minimum for normal text is 4.5:1. Caption cue length and line width follow broadcast subtitling convention: a cue longer than about six seconds is read twice and then ignored."
+}

@@ -1,0 +1,41 @@
+{
+  "_note": "A hit in this file is NEVER a finding. It raises the retrieval priority of the named clause for that window and nothing else. The adversarial triad decides, using the clause text. Treating a cue hit as a violation is the naive keyword approach this project exists to replace.",
+  "_rule": "explicit OR code_offers present in transcript, AND no disclosure_cues.description_markers present in the description -> raise META-01. `soft` alone is advisory only.",
+  "explicit": [
+    "this video is sponsored by",
+    "this episode is sponsored by",
+    "sponsored by",
+    "brought to you by",
+    "paid partnership",
+    "in partnership with",
+    "thanks to * for sponsoring",
+    "for sponsoring this video",
+    "our sponsor"
+  ],
+  "code_offers": [
+    "use code",
+    "use my code",
+    "with my code",
+    "discount code",
+    "promo code",
+    "coupon code",
+    "link in the description",
+    "link in the bio",
+    "first * customers",
+    "percent off with"
+  ],
+  "affiliate": [
+    "affiliate link",
+    "affiliate links",
+    "i earn a commission",
+    "commission from",
+    "at no extra cost to you",
+    "as an amazon associate"
+  ],
+  "soft": [
+    "check them out at",
+    "sign up at",
+    "head over to",
+    "go to * dot com"
+  ]
+}

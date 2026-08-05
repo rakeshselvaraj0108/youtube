@@ -58,7 +58,8 @@ EARLY_MULTIPLIER = 1.35
 # Which dimension each clause family scores against.
 CLAUSE_DIMENSION: dict[str, str] = {
     "AF": "policy",
-    "CID": "copyright",
+    "COPY": "copyright",
+    "CID": "copyright",  # retained: earlier reports used this prefix
     "META": "metadata",
     "ACC": "accessibility",
     "AUD": "audio",

@@ -1,0 +1,41 @@
+{
+  "_basis": "Per-clause risk tuning. Clauses whose violations cause the largest revenue loss, or the most serious harm, weigh more than their raw severity implies.",
+  "default": 1.0,
+  "clauses": {
+    "AF-01": 1.0,
+    "AF-02": 1.15,
+    "AF-03": 1.15,
+    "AF-04": 1.1,
+    "AF-05": 1.1,
+    "AF-06": 1.3,
+    "AF-07": 1.05,
+    "AF-08": 1.05,
+    "AF-09": 1.1,
+    "AF-10": 1.2,
+    "AF-11": 1.05,
+    "AF-12": 0.95,
+    "AF-13": 1.25,
+    "AF-14": 1.1,
+    "META-01": 1.2,
+    "ACC-01": 1.0,
+    "COPY-01": 1.25
+  },
+  "profiles": {
+    "general": {},
+    "kids": {
+      "AF-01": 1.6,
+      "AF-02": 1.5,
+      "AF-03": 2.0,
+      "AF-07": 1.8,
+      "AF-12": 1.8,
+      "AF-13": 2.0,
+      "_note": "Everything that AF-13 modifies is raised, not just AF-13."
+    },
+    "mature-commentary": {
+      "AF-01": 0.7,
+      "AF-09": 0.8,
+      "AF-14": 0.9,
+      "_note": "Language and controversy are the register. Hate, kids content and copyright are NOT relaxed \u2014 a profile tunes tolerance, it does not disable a clause."
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "_note": "A hit in this file is NEVER a finding. It raises the retrieval priority of the named clause for that window and nothing else. The adversarial triad decides, using the clause text. Treating a cue hit as a violation is the naive keyword approach this project exists to replace.",
+  "_purpose": "This is the file that most directly lowers the false-positive rate. The ADVOCATE may only argue exemptions the clause documents; these cues tell it which exemption is plausibly in play so it can check the clause for it rather than inventing one.",
+  "educational": [
+    "in this lesson",
+    "let me explain",
+    "the reason this happens",
+    "historically",
+    "the research shows",
+    "step one",
+    "for context",
+    "what this means is",
+    "to understand why",
+    "in other words"
+  ],
+  "documentary": [
+    "this footage shows",
+    "survivors described",
+    "at the time",
+    "archival",
+    "the report found",
+    "years later",
+    "we spoke to"
+  ],
+  "news": [
+    "reported earlier today",
+    "according to officials",
+    "breaking",
+    "the statement said",
+    "sources confirm",
+    "a spokesperson"
+  ],
+  "scientific": [
+    "the study",
+    "peer reviewed",
+    "the data indicates",
+    "control group",
+    "sample size",
+    "the mechanism is"
+  ],
+  "artistic": [
+    "in the film",
+    "the character",
+    "scripted",
+    "performance",
+    "the lyrics",
+    "in the novel"
+  ],
+  "harm_reduction": [
+    "do not attempt",
+    "do not try this",
+    "this is dangerous",
+    "warning",
+    "never do this",
+    "please don't",
+    "if you or someone you know",
+    "seek professional",
+    "i am not recommending",
+    "for your safety"
+  ],
+  "harm_reduction_max_distance_ms": 15000
+}

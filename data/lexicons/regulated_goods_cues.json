@@ -1,0 +1,68 @@
+{
+  "_note": "A hit in this file is NEVER a finding. It raises the retrieval priority of the named clause for that window and nothing else. The adversarial triad decides, using the clause text. Treating a cue hit as a violation is the naive keyword approach this project exists to replace.",
+  "alcohol": [
+    "whisky",
+    "whiskey",
+    "vodka",
+    "beer",
+    "wine",
+    "tequila",
+    "gin",
+    "rum",
+    "shots",
+    "pint",
+    "cracked open a"
+  ],
+  "tobacco": [
+    "cigarette",
+    "cigar",
+    "vape",
+    "vaping",
+    "e-cigarette",
+    "nicotine",
+    "juul",
+    "smoking a"
+  ],
+  "gambling": [
+    "casino",
+    "betting",
+    "odds on",
+    "place a bet",
+    "slots",
+    "roulette",
+    "sportsbook",
+    "loot box",
+    "wager"
+  ],
+  "firearms": [
+    "rifle",
+    "handgun",
+    "pistol",
+    "shotgun",
+    "magazine",
+    "caliber",
+    "calibre",
+    "muzzle",
+    "trigger",
+    "ammo",
+    "ammunition"
+  ],
+  "drugs": [
+    "cocaine",
+    "heroin",
+    "meth",
+    "mdma",
+    "ketamine",
+    "edible",
+    "dab",
+    "bong"
+  ],
+  "clause_routing": {
+    "alcohol": "AF-12",
+    "tobacco": "AF-12",
+    "gambling": "AF-14",
+    "firearms": "AF-08",
+    "drugs": "AF-07"
+  },
+  "_caveat": "Surface terms only. 'Shot' in basketball, 'trigger' in software, 'magazine' in publishing. This is exactly why a hit is not a finding."
+}

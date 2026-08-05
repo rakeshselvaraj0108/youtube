@@ -1,0 +1,48 @@
+{
+  "_note": "A hit in this file is NEVER a finding. It raises the retrieval priority of the named clause for that window and nothing else. The adversarial triad decides, using the clause text. Treating a cue hit as a violation is the naive keyword approach this project exists to replace.",
+  "_purpose": "Quotation of a third party is a documented exemption in several clauses. Detecting attribution lets the ADVOCATE argue it rather than invent it.",
+  "reporting_verbs": [
+    "said",
+    "says",
+    "wrote",
+    "posted",
+    "tweeted",
+    "claimed",
+    "told",
+    "argued",
+    "insisted",
+    "replied",
+    "commented",
+    "stated",
+    "remarked",
+    "put it",
+    "described it as"
+  ],
+  "quote_markers": [
+    "quote",
+    "end quote",
+    "unquote",
+    "in his words",
+    "in her words",
+    "in their words",
+    "according to",
+    "as they put it",
+    "and I quote"
+  ],
+  "condemnation_markers": [
+    "which is disgusting",
+    "which is appalling",
+    "that is unacceptable",
+    "i strongly disagree",
+    "this is exactly the problem",
+    "obviously wrong",
+    "should never have said",
+    "i want to be clear that"
+  ],
+  "sentence_terminators": [
+    ".",
+    "?",
+    "!"
+  ],
+  "max_quote_span_ms": 20000
+}

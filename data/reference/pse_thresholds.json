@@ -1,0 +1,11 @@
+{
+  "flashes_per_second_high": 3,
+  "flashes_per_second_moderate": 2,
+  "luminance_delta_threshold": 0.1,
+  "red_saturation_delta_threshold": 0.2,
+  "sample_rate_fps_min": 30,
+  "window_s": 1.0,
+  "sample_rate_basis": "Nyquist. Sampling a strobe at its own rate lands on the same phase every time and measures a flat series \u2014 a 10Hz strobe sampled at 10fps reports ZERO flashes. 30fps resolves flashes to about 15Hz, past the range that matters. Verified against corpus clip g010, which constructs exactly that aliasing case.",
+  "basis": "WCAG general flash and red flash thresholds, and the widely used three-flashes-per-second harm threshold. Transitions to and from saturated red are treated more strictly than luminance alone.",
+  "sampling_note": "Scene-cut keyframes cannot detect this. A strobe lives entirely between two cuts, so the luminance series is sampled at a fixed rate instead \u2014 10fps minimum, independent of the keyframe extractor."
+}

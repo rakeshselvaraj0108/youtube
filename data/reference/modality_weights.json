@@ -1,0 +1,13 @@
+{
+  "speech": 1.0,
+  "music": 0.95,
+  "access": 0.95,
+  "meta": 0.9,
+  "vision": 0.85,
+  "ocr": 0.8,
+  "metadata": 0.7,
+  "audio": 0.6,
+  "default": 0.5,
+  "basis": "Reliability discount applied before noisy-OR fusion. Speech is exact \u2014 the word was said or it was not. Vision is inferential and VLMs hallucinate objects. Audio DSP is a proxy for a proxy.",
+  "coverage_scaling": "Each weight is further scaled by that agent's actual coverage. A vision confidence of 0.9 from an agent that reached 42% of keyframes is not worth 0.9, and reporting it as such claims certainty the run never earned."
+}

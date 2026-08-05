@@ -1,134 +1,185 @@
 {
   "version": "2026-08",
-  "source_url": "https://support.google.com/youtube/answer/6162278",
+  "corpus_hash": "2ca427efdb062236c25b8760911796d8",
+  "clause_count": 17,
   "fetched_at": "2026-08-05",
-  "note": "Structured restatement of publicly published platform guidance, used for retrieval-grounded classification. Not authoritative and not affiliated with YouTube.",
+  "sources": [
+    "https://support.google.com/youtube/answer/154235",
+    "https://support.google.com/youtube/answer/2797370",
+    "https://support.google.com/youtube/answer/6162278",
+    "https://www.w3.org/WAI/WCAG22/Understanding/three-flashes-or-below-threshold.html"
+  ],
+  "note": "Structured restatements in our own words of publicly published guidance, used for retrieval-grounded classification. Not authoritative, not verbatim, and not affiliated with YouTube.",
   "clauses": [
     {
       "clause_id": "AF-01",
-      "file": "01_inappropriate_language.md",
+      "file": "AF-01_language.md",
       "title": "Inappropriate language",
       "severity_default": "LIMITING",
-      "sha256": "7a54ecdaf58898a59e7af294665424b074b5f0025d56c855c8909ae67fda7fcf",
+      "sha256": "774ba92bc17fe376a9d58e129ba9fa0a7c5ae415048bd8656c67f661b391f533",
       "source_url": "https://support.google.com/youtube/answer/6162278",
-      "fetched_at": "2026-08-05"
+      "fetched_at": "2026-08-05",
+      "derivation": "structured restatement in own words; not a verbatim copy"
     },
     {
       "clause_id": "AF-02",
-      "file": "02_violence.md",
+      "file": "AF-02_violence.md",
       "title": "Violence",
       "severity_default": "DEMONETIZING",
-      "sha256": "8b14f21846d0bf3806332a0bb12d753c13c1ae02726a5119539a275f9df4dc7e",
+      "sha256": "8a81e4446ee1a59f9fe8c919033a6b8b89ed4095946c763453a63886d58e4e08",
       "source_url": "https://support.google.com/youtube/answer/6162278",
-      "fetched_at": "2026-08-05"
+      "fetched_at": "2026-08-05",
+      "derivation": "structured restatement in own words; not a verbatim copy"
     },
     {
       "clause_id": "AF-03",
-      "file": "03_adult_content.md",
+      "file": "AF-03_adult_content.md",
       "title": "Adult content",
       "severity_default": "DEMONETIZING",
-      "sha256": "8e31caa72e9670b3f93ca4b92b4eef71f0947782744207d9e614311badf55e20",
+      "sha256": "1aa77149044ae6ff1774ee8b95245f0b3446af5070a018bc7b93f09ea20f2f00",
       "source_url": "https://support.google.com/youtube/answer/6162278",
-      "fetched_at": "2026-08-05"
+      "fetched_at": "2026-08-05",
+      "derivation": "structured restatement in own words; not a verbatim copy"
     },
     {
       "clause_id": "AF-04",
-      "file": "04_shocking_content.md",
+      "file": "AF-04_shocking_content.md",
       "title": "Shocking content",
       "severity_default": "DEMONETIZING",
-      "sha256": "711aa073b5fd7c567878407d2f0f2ecac7ebcc7f331a628ee3c3bc4fd383a746",
+      "sha256": "1ff76e3180bd875c3f878dce40bb8b9138d3774983bd8ab16a8ffd673b75ed7e",
       "source_url": "https://support.google.com/youtube/answer/6162278",
-      "fetched_at": "2026-08-05"
+      "fetched_at": "2026-08-05",
+      "derivation": "structured restatement in own words; not a verbatim copy"
     },
     {
       "clause_id": "AF-05",
-      "file": "05_harmful_dangerous_acts.md",
-      "title": "Harmful or dangerous acts",
+      "file": "AF-05_harmful_acts.md",
+      "title": "Harmful acts and unreliable content",
       "severity_default": "DEMONETIZING",
-      "sha256": "0a74ad01b3f501e20b2916a62c31e059149ee2d684e75278d479f92a71661dcf",
+      "sha256": "665c005e41c77fbdf63e6bde8f1a5dd2ebbaf580e6bd8cce70f1ace35dc30368",
       "source_url": "https://support.google.com/youtube/answer/6162278",
-      "fetched_at": "2026-08-05"
+      "fetched_at": "2026-08-05",
+      "derivation": "structured restatement in own words; not a verbatim copy"
     },
     {
       "clause_id": "AF-06",
-      "file": "06_hateful_derogatory.md",
+      "file": "AF-06_hateful_derogatory.md",
       "title": "Hateful and derogatory content",
       "severity_default": "DEMONETIZING",
-      "sha256": "850676e0977d12ec7e548c61845a340391dabe432c9059aa1394a0b1cc615449",
+      "sha256": "2c421cc66115d012d0c8b2d9932e5f0c824c9881105735000aad1ae33345c044",
       "source_url": "https://support.google.com/youtube/answer/6162278",
-      "fetched_at": "2026-08-05"
+      "fetched_at": "2026-08-05",
+      "derivation": "structured restatement in own words; not a verbatim copy"
     },
     {
       "clause_id": "AF-07",
-      "file": "07_recreational_drugs.md",
+      "file": "AF-07_recreational_drugs.md",
       "title": "Recreational drugs and drug-related content",
       "severity_default": "LIMITING",
-      "sha256": "d3aa01d1a5107af6b9cd041c3b7474eb38ea896f75855092f27e5352edc224cb",
+      "sha256": "32f3df0f69dacfdbda5de1990d8d432684c1a722613e518a1a287c168e6cf406",
       "source_url": "https://support.google.com/youtube/answer/6162278",
-      "fetched_at": "2026-08-05"
+      "fetched_at": "2026-08-05",
+      "derivation": "structured restatement in own words; not a verbatim copy"
     },
     {
       "clause_id": "AF-08",
-      "file": "08_firearms.md",
-      "title": "Firearms",
+      "file": "AF-08_firearms.md",
+      "title": "Firearms-related content",
       "severity_default": "LIMITING",
-      "sha256": "ac7d066a7a51eb86edf429c5f4ee0eb6b40d21a38c323633676418b24ce123e2",
+      "sha256": "ad2297f240e2b9687a45ad329499a82a0f1b9aff5e2f26941425a453f469d5c5",
       "source_url": "https://support.google.com/youtube/answer/6162278",
-      "fetched_at": "2026-08-05"
+      "fetched_at": "2026-08-05",
+      "derivation": "structured restatement in own words; not a verbatim copy"
     },
     {
       "clause_id": "AF-09",
-      "file": "09_controversial_issues.md",
+      "file": "AF-09_controversial_issues.md",
       "title": "Controversial issues",
       "severity_default": "LIMITING",
-      "sha256": "5f0cf26d58c98aebcb446879155f547ebe60a14dbdd84b749890abd4ae28d29c",
+      "sha256": "28c525cb9c3094eb94e22963138a15f87c8df1233bf76d65a3dea0faec868b81",
       "source_url": "https://support.google.com/youtube/answer/6162278",
-      "fetched_at": "2026-08-05"
+      "fetched_at": "2026-08-05",
+      "derivation": "structured restatement in own words; not a verbatim copy"
     },
     {
       "clause_id": "AF-10",
-      "file": "10_sensitive_events.md",
+      "file": "AF-10_sensitive_events.md",
       "title": "Sensitive events",
       "severity_default": "DEMONETIZING",
-      "sha256": "e9578381f7a10186f8e1a3c448bfd763e8e60c1c48d30a77b3da0f6059a111dd",
+      "sha256": "893918db8cb090e5a0c19e7021b3ce63225d71143ee0eed21a24df4aa44bb9e6",
       "source_url": "https://support.google.com/youtube/answer/6162278",
-      "fetched_at": "2026-08-05"
+      "fetched_at": "2026-08-05",
+      "derivation": "structured restatement in own words; not a verbatim copy"
     },
     {
       "clause_id": "AF-11",
-      "file": "11_enabling_dishonest_behavior.md",
+      "file": "AF-11_dishonest_behavior.md",
       "title": "Enabling dishonest behaviour",
       "severity_default": "DEMONETIZING",
-      "sha256": "64f0884cf20f72db178a9c9bacf723d9a368b41baad33c847c3e05e350c28cfc",
+      "sha256": "40e08313cb4ddd02e5ec39a2d9835ba129a69a87af8fa9a1710e0e859ba910fb",
       "source_url": "https://support.google.com/youtube/answer/6162278",
-      "fetched_at": "2026-08-05"
+      "fetched_at": "2026-08-05",
+      "derivation": "structured restatement in own words; not a verbatim copy"
     },
     {
       "clause_id": "AF-12",
-      "file": "12_tobacco.md",
-      "title": "Tobacco, vaping and alcohol",
+      "file": "AF-12_tobacco.md",
+      "title": "Tobacco-related content",
       "severity_default": "LIMITING",
-      "sha256": "b6268768b3fcffa64a750406208f12d7f2b98fe2e7dfdfde274da9daaa933083",
+      "sha256": "ef933bbd4bdcd7743c491a67a7072a5680db0a8e0c76a1b3e2122e8414b50261",
       "source_url": "https://support.google.com/youtube/answer/6162278",
-      "fetched_at": "2026-08-05"
+      "fetched_at": "2026-08-05",
+      "derivation": "structured restatement in own words; not a verbatim copy"
     },
     {
       "clause_id": "AF-13",
-      "file": "13_adult_themes_in_family_content.md",
-      "title": "Adult themes in family content",
+      "file": "AF-13_kids_and_families.md",
+      "title": "Inappropriate content for kids and families",
       "severity_default": "DEMONETIZING",
-      "sha256": "50f12a6bdf0ca7d06644df600fd120b78500353c33a17a9984aa8b164574dfc2",
+      "sha256": "20d4a9adf149c889ba02e6c89c9016bff9f67226eb088dfe510180dfd30d4a18",
       "source_url": "https://support.google.com/youtube/answer/6162278",
-      "fetched_at": "2026-08-05"
+      "fetched_at": "2026-08-05",
+      "derivation": "structured restatement in own words; not a verbatim copy"
     },
     {
       "clause_id": "AF-14",
-      "file": "14_gambling.md",
-      "title": "Gambling",
+      "file": "AF-14_incendiary_demeaning.md",
+      "title": "Incendiary and demeaning content",
       "severity_default": "LIMITING",
-      "sha256": "502d24bc477d7988dcbd62c5a2836583a5d5a4f302ff9fdf898bd0b9aaf58939",
+      "sha256": "adc30ec513a32af8aa24b76b128ee2ca787f03e131b515bc82ca417135bf64eb",
       "source_url": "https://support.google.com/youtube/answer/6162278",
-      "fetched_at": "2026-08-05"
+      "fetched_at": "2026-08-05",
+      "derivation": "structured restatement in own words; not a verbatim copy"
+    },
+    {
+      "clause_id": "META-01",
+      "file": "META-01_disclosure.md",
+      "title": "Paid promotion disclosure",
+      "severity_default": "DEMONETIZING",
+      "sha256": "070ccc594e1a8a7afd91494e559e6d156fb72a4a156dda58b1c7f1b8f3f43be9",
+      "source_url": "https://support.google.com/youtube/answer/154235",
+      "fetched_at": "2026-08-05",
+      "derivation": "structured restatement in own words; not a verbatim copy"
+    },
+    {
+      "clause_id": "ACC-01",
+      "file": "ACC-01_photosensitive.md",
+      "title": "Photosensitive content",
+      "severity_default": "LIMITING",
+      "sha256": "a132d6b276f905a3bc11aeb0193fc29bf35792dcedef24ad73cab4688db85e48",
+      "source_url": "https://www.w3.org/WAI/WCAG22/Understanding/three-flashes-or-below-threshold.html",
+      "fetched_at": "2026-08-05",
+      "derivation": "structured restatement in own words; not a verbatim copy"
+    },
+    {
+      "clause_id": "COPY-01",
+      "file": "COPY-01_content_id.md",
+      "title": "Third-party content and Content ID",
+      "severity_default": "DEMONETIZING",
+      "sha256": "924e4fe03a7788207d2d282936d98981457760bf736c0300eb6f9ff0b2c62821",
+      "source_url": "https://support.google.com/youtube/answer/2797370",
+      "fetched_at": "2026-08-05",
+      "derivation": "structured restatement in own words; not a verbatim copy"
     }
   ]
 }

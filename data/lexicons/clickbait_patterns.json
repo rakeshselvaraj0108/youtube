@@ -1,0 +1,17 @@
+{
+  "_note": "A hit in this file is NEVER a finding. It raises the retrieval priority of the named clause for that window and nothing else. The adversarial triad decides, using the clause text. Treating a cue hit as a violation is the naive keyword approach this project exists to replace.",
+  "_purpose": "Title/content mismatch signals for the metadata agent.",
+  "title_patterns": [
+    "\\bYOU WON'?T BELIEVE\\b",
+    "\\bGONE WRONG\\b",
+    "\\bSHOCKING\\b",
+    "\\b(\\d+)\\s+THINGS\\b",
+    "\\bTHE TRUTH ABOUT\\b",
+    "\\bEXPOSED\\b",
+    "!{2,}",
+    "\\?{2,}"
+  ],
+  "uppercase_ratio_warn": 0.7,
+  "min_letters_for_case_check": 12,
+  "mismatch_rule": "Title asserts a claim the transcript never supports -> advisory. Requires semantic comparison, not pattern matching alone."
+}

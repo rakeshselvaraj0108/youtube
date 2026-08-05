@@ -1,0 +1,45 @@
+{
+  "_note": "A hit in this file is NEVER a finding. It raises the retrieval priority of the named clause for that window and nothing else. The adversarial triad decides, using the clause text. Treating a cue hit as a violation is the naive keyword approach this project exists to replace.",
+  "_purpose": "On-screen text means different things depending on where it sits and how long it persists. A burned-in caption tracking speech is not the same finding as meme text, and a persistent corner mark is a third-party footage cue rather than a language issue.",
+  "roles": {
+    "burned_in_caption": {
+      "y_range": [
+        0.72,
+        1.0
+      ],
+      "min_persist_ms": 800,
+      "tracks_speech": true,
+      "note": "duplicate of the audio; dedupe against the speech finding"
+    },
+    "lower_third": {
+      "y_range": [
+        0.62,
+        0.92
+      ],
+      "min_persist_ms": 2000,
+      "max_words": 8
+    },
+    "meme_text": {
+      "y_range": [
+        0.0,
+        0.35
+      ],
+      "font_height_ratio": 0.06,
+      "max_persist_ms": 4000
+    },
+    "watermark": {
+      "corner": true,
+      "persist_ratio": 0.6,
+      "note": "third-party footage cue -> COPY-01, not AF-01"
+    },
+    "chyron": {
+      "y_range": [
+        0.8,
+        1.0
+      ],
+      "full_width": true,
+      "note": "news framing signal; supports an EDSA defence"
+    }
+  },
+  "dedupe_rule": "Text persisting across N frames is ONE finding, not N. Merge by normalised string plus overlapping span."
+}

@@ -18,6 +18,27 @@ from pathlib import Path
 FRONTMATTER = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
 HEADING = re.compile(r"^##\s+(.+)$", re.MULTILINE)
 
+# Sections that state the rule, and are therefore what a window is matched
+# against.
+NORMATIVE_SECTIONS = {
+    "Scope",
+    "Fully monetized when",
+    "Limited ads when",
+    "No ads when",
+    "Documented exemptions",
+}
+
+# Sections that guide an agent once a clause has already been selected. They are
+# carried on the clause and handed to the adjudicator, but they are deliberately
+# not retrievable: "Remediation guidance" is instruction for the compiler, and
+# indexing it means a query about an avalanche can match the sentence explaining
+# which fix to apply. Measured on the 17-clause corpus, indexing them put a
+# guidance chunk in the top three for roughly a third of probe queries.
+ADVISORY_SECTIONS = {
+    "Signals that distinguish this clause from neighbours",
+    "Remediation guidance",
+}
+
 
 @dataclass(frozen=True)
 class Chunk:
@@ -56,6 +77,34 @@ class Clause:
     @property
     def scope(self) -> str:
         return self.sections.get("Scope", "")
+
+    @property
+    def exemptions(self) -> str:
+        """What the ADVOCATE is permitted to argue from."""
+        return self.sections.get("Documented exemptions", "")
+
+    @property
+    def distinguishing_signals(self) -> str:
+        """What the ADJUDICATOR uses to pick between neighbouring clauses.
+
+        Retrieval routinely surfaces three adjacent clauses for one window.
+        This is the text that separates them, handed to the adjudicator
+        directly rather than left to be matched against.
+        """
+        return self.sections.get(
+            "Signals that distinguish this clause from neighbours", ""
+        )
+
+    @property
+    def remediation_guidance(self) -> str:
+        return self.sections.get("Remediation guidance", "")
+
+    @property
+    def preferred_fix(self) -> str:
+        for line in self.remediation_guidance.splitlines():
+            if "Preferred fix:" in line:
+                return line.split("Preferred fix:", 1)[1].strip()
+        return "NONE"
 
 
 @dataclass
@@ -135,7 +184,7 @@ def load_corpus(directory: Path = Path("data/policy")) -> Corpus:
         clauses.append(clause)
 
         for section, text in sections.items():
-            if not text.strip():
+            if not text.strip() or section in ADVISORY_SECTIONS:
                 continue
             chunks.append(
                 Chunk(

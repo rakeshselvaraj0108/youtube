@@ -1,0 +1,38 @@
+{
+  "_note": "A hit in this file is NEVER a finding. It raises the retrieval priority of the named clause for that window and nothing else. The adversarial triad decides, using the clause text. Treating a cue hit as a violation is the naive keyword approach this project exists to replace.",
+  "imitable_verbs": [
+    "bypass",
+    "short out",
+    "disable the",
+    "override",
+    "remove the guard",
+    "jump the",
+    "hotwire",
+    "defeat the",
+    "you can just"
+  ],
+  "risk_nouns": [
+    "safety cutout",
+    "interlock",
+    "breaker",
+    "live wire",
+    "mains",
+    "harness",
+    "belay",
+    "anchor",
+    "rope",
+    "airway",
+    "dosage"
+  ],
+  "unprotected_markers": [
+    "no rope",
+    "no harness",
+    "without a spotter",
+    "free solo",
+    "no gloves",
+    "no mask",
+    "barehanded",
+    "unsupervised"
+  ],
+  "rule": "imitable_verb NEAR risk_noun, or unprotected_marker -> raise AF-05"
+}

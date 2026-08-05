@@ -307,7 +307,7 @@ def _music_bed_findings(mono: np.ndarray, sample_rate: int, log: list[str]) -> l
         findings.append(
             Finding(
                 id=f"a_music_{index}",
-                clauseId="CID-02",
+                clauseId="COPY-01",
                 category="Copyright",
                 title=f"Sustained music bed, {seconds:.0f}s",
                 description="Tonal energy consistent with a music bed. Verify licensing — "
@@ -321,9 +321,9 @@ def _music_bed_findings(mono: np.ndarray, sample_rate: int, log: list[str]) -> l
                     transcript=f"[spectral flatness below {MUSIC_FLATNESS} for {seconds:.0f}s]"
                 ),
                 policy=_clause(
-                    "CID-02",
-                    "Music bed present",
-                    "Copyright policy § 1.4 — Content ID",
+                    "COPY-01",
+                    "Third-party content and Content ID",
+                    "Copyright policy — Content ID",
                     "Uploading a commercially released recording without a licence permits "
                     "the rights holder to claim the video. This detector reports presence "
                     "only; absence of a public fingerprint match does not prove safety.",

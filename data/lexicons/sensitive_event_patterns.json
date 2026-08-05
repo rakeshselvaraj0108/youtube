@@ -1,0 +1,45 @@
+{
+  "_note": "A hit in this file is NEVER a finding. It raises the retrieval priority of the named clause for that window and nothing else. The adversarial triad decides, using the clause text. Treating a cue hit as a violation is the naive keyword approach this project exists to replace.",
+  "_purpose": "Patterns rather than a list of events. A hardcoded event list goes stale the week after it is written and is a maintenance trap.",
+  "casualty_patterns": [
+    "\\b\\d+\\s+(people\\s+)?(were\\s+)?(killed|dead|died|injured|wounded|lost)\\b",
+    "\\bdeath toll\\b",
+    "\\bcasualt(y|ies)\\b",
+    "\\b(none|no one|nobody)\\s+(survived|made it)\\b",
+    "\\bdidn'?t\\s+(come|make it)\\s+back\\b"
+  ],
+  "event_nouns": [
+    "shooting",
+    "bombing",
+    "attack",
+    "massacre",
+    "earthquake",
+    "tsunami",
+    "hurricane",
+    "wildfire",
+    "crash",
+    "collision",
+    "derailment",
+    "outbreak",
+    "pandemic",
+    "hostage",
+    "evacuation",
+    "avalanche",
+    "landslide",
+    "explosion",
+    "collapse",
+    "flood"
+  ],
+  "recency_markers": [
+    "yesterday",
+    "this morning",
+    "last night",
+    "this week",
+    "breaking",
+    "just in",
+    "developing",
+    "earlier today",
+    "overnight"
+  ],
+  "rule": "event_noun AND (casualty_pattern OR recency_marker) -> raise AF-10 retrieval priority"
+}

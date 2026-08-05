@@ -1,14 +1,24 @@
 """Author the policy corpus.
 
-The corpus is a **structured restatement** of publicly published platform
-guidance, stored with source URLs and fetch timestamps, used for
-retrieval-grounded classification. It is not a copy of the guidelines and does
-not claim to be authoritative — it is the rule set PREFLIGHT lints against, and
-every finding cites the clause it was judged under so a human can check it.
+Every clause here is a **structured restatement in our own words** of publicly
+published guidance, recorded with the page it was read from and the date it was
+read. It is not a copy of anyone's guidelines and does not claim to be
+authoritative — it is the rule set PREFLIGHT lints against, and every finding
+cites the clause it was judged under so a human can check the machine.
 
-This script is the authoring surface. It emits `data/policy/*.md` plus a
-manifest recording a SHA-256 per clause, which is what makes a report
-reproducible against a known snapshot and what the Drift Watcher diffs.
+Restating rather than copying is also the better engineering choice: these are
+chunked at heading level and embedded, and prose written for retrieval
+outperforms prose written for a help centre.
+
+Two sections carry disproportionate weight:
+
+**Documented exemptions** is what the ADVOCATE argues from. The advocate prompt
+forbids inventing exemptions, so a thin exemptions section leaves it nothing to
+work with and the false-positive rate stays high.
+
+**Distinguishing signals** is what the ADJUDICATOR rules with. Retrieval
+routinely surfaces three neighbouring clauses for one window; the discriminating
+language is what lets it pick correctly rather than plausibly.
 
     python scripts/build_corpus.py
 """
@@ -20,333 +30,760 @@ import json
 from pathlib import Path
 
 OUT = Path("data/policy")
-SOURCE = "https://support.google.com/youtube/answer/6162278"
 FETCHED = "2026-08-05"
 VERSION = "2026-08"
 
-EDSA = (
-    "- Educational, documentary, scientific or artistic (EDSA) framing where the "
-    "context is clear from the content itself\n"
-    "- News reporting on a matter of public interest\n"
-    "- Non-graphic reference rather than depiction\n"
-    "- Clearly fictional or scripted context\n"
-    "- Quotation or condemnation of a third party rather than endorsement"
-)
+# Sources actually read, not assumed. Verified reachable 2026-08-05.
+SRC_ADVERTISER = "https://support.google.com/youtube/answer/6162278"
+SRC_DISCLOSURE = "https://support.google.com/youtube/answer/154235"
+SRC_CONTENT_ID = "https://support.google.com/youtube/answer/2797370"
+SRC_WCAG = "https://www.w3.org/WAI/WCAG22/Understanding/three-flashes-or-below-threshold.html"
+
+DERIVATION = "structured restatement in own words; not a verbatim copy"
+
+BASE_EXEMPTIONS = [
+    "Educational, documentary, scientific or artistic (EDSA) framing where the "
+    "context is evident from the content itself rather than asserted in metadata",
+    "News reporting on a matter of public interest",
+    "Non-graphic verbal reference without depiction",
+    "Clearly fictional or scripted context, signposted as such",
+    "Quotation of a third party, particularly where it is also condemned",
+]
 
 CLAUSES: list[dict] = [
     {
-        "file": "01_inappropriate_language.md",
+        "file": "AF-01_language.md",
         "id": "AF-01",
         "title": "Inappropriate language",
         "severity": "LIMITING",
+        "source": SRC_ADVERTISER,
         "scope": (
-            "Profanity and vulgar language in speech, on-screen text, titles, "
-            "thumbnails and metadata. On-screen text is assessed the same way as "
-            "spoken language; masked or censored terms are weighted lower but are "
-            "still assessed."
+            "Profanity and vulgar language wherever it appears — spoken, in "
+            "on-screen text, in the title, in the thumbnail, or in metadata. "
+            "Assessment turns on strength, frequency, and position rather than "
+            "on mere presence. On-screen text is judged the same way as speech; "
+            "obscured or bleeped terms are weighted lower than uncensored ones."
         ),
         "green": [
-            "No profanity, or only mild language used infrequently",
-            "Strong profanity that is fully bleeped or muted",
-            "Isolated moderate profanity outside the opening",
+            "No profanity, or mild language used infrequently",
+            "Strong profanity that is fully bleeped, muted or obscured",
+            "Moderate profanity in a music or stand-up comedy performance",
         ],
         "yellow": [
-            "Strong profanity used more than occasionally through the video",
-            "Any strong profanity in the first seven seconds",
-            "Profanity in the title, thumbnail or on-screen text",
+            "Moderate profanity in the title or thumbnail",
+            "Strong profanity used repeatedly through the body of the video",
+            "Profanity in on-screen text held long enough to read",
         ],
         "red": [
-            "Strong profanity used continuously or as the focus of the content",
-            "Slurs directed at a person or group",
+            "Strong profanity in the title or thumbnail",
+            "Slurs targeting a protected group, anywhere in the content",
         ],
+        "exemptions": BASE_EXEMPTIONS
+        + [
+            "Musical performance and stand-up comedy, where the guidelines treat "
+            "moderate profanity as expected within the form",
+        ],
+        "signals": [
+            "vs AF-06 (hateful & derogatory): AF-01 covers vulgarity as such. The "
+            "moment a term targets a protected attribute it leaves this clause "
+            "entirely and becomes AF-06, where no strength threshold applies.",
+            "vs AF-14 (incendiary and demeaning): AF-01 is about the word; AF-14 "
+            "is about sustained hostility toward a person. Insults with no "
+            "profanity still fall under AF-14.",
+        ],
+        "fix": "BLEEP",
+        "span_note": (
+            "Usually a single word, 300-900ms. Snap to word boundaries and pad, "
+            "or the leading consonant survives the bleep and draws attention."
+        ),
     },
     {
-        "file": "02_violence.md",
+        "file": "AF-02_violence.md",
         "id": "AF-02",
         "title": "Violence",
         "severity": "DEMONETIZING",
+        "source": SRC_ADVERTISER,
         "scope": (
-            "Real or dramatised violence, physical injury, blood and its aftermath. "
-            "Assessment turns on whether the injury is the subject of the shot and "
-            "whether it is dwelt upon, not merely on whether it appears."
+            "Real or dramatised physical violence, injury, blood and its "
+            "aftermath. What matters is whether the injury is the subject of the "
+            "shot and whether the content dwells on it — not whether it appears "
+            "at all. Gameplay violence is treated differently from real footage."
         ),
         "green": [
-            "Violence that is implied rather than shown",
-            "Non-graphic depictions in a clearly fictional or gaming context",
-            "Brief, incidental injury that is not the focus of the frame",
+            "Violence implied rather than shown",
+            "Unedited gameplay violence outside the opening seconds",
+            "Mild violence with minimal blood, not held in focus",
+            "Law enforcement or emergency response footage in a news frame",
         ],
         "yellow": [
             "Real injury shown briefly with visible blood",
-            "Dramatised violence held on screen without graphic detail",
+            "Bodies with visible injury in an educational or news setting",
+            "Graphic game violence in the thumbnail or the first fifteen seconds",
         ],
         "red": [
             "Graphic real injury, mutilation or death held in focus",
-            "Violence presented for shock value with no contextual purpose",
+            "Violence glorified or presented approvingly",
+            "Graphic footage produced by or promoting a violent organisation",
         ],
+        "exemptions": BASE_EXEMPTIONS,
+        "signals": [
+            "vs AF-04 (shocking content): AF-02 requires an act of violence. "
+            "Gore with no violent act — a surgical procedure, an accident "
+            "aftermath, decomposition — is AF-04.",
+            "vs AF-08 (firearms): a firearm present is AF-08. A firearm used "
+            "against a person is AF-02, and AF-02 governs.",
+            "vs AF-09 (controversial issues): AF-02 is depiction. Discussion of "
+            "abuse or self-harm without depiction is AF-09.",
+        ],
+        "fix": "BLUR_REGION",
+        "span_note": (
+            "Typically 2-8s. Blur the region rather than cutting: cutting "
+            "re-encodes and usually removes narrative the creator needs."
+        ),
     },
     {
-        "file": "03_adult_content.md",
+        "file": "AF-03_adult_content.md",
         "id": "AF-03",
         "title": "Adult content",
         "severity": "DEMONETIZING",
+        "source": SRC_ADVERTISER,
         "scope": (
-            "Sexually gratifying content, nudity, and sexually suggestive framing "
-            "including camera emphasis on body parts."
+            "Sexually gratifying content, nudity, and framing that sexualises a "
+            "subject — including camera emphasis on body parts independent of "
+            "what is being worn."
         ),
         "green": [
-            "Non-sexual nudity in an artistic, medical or documentary context",
-            "Romantic content without sexual emphasis",
+            "Romance and kissing without sexual emphasis",
+            "Obscured or non-sexual nudity in an artistic or medical context",
+            "Non-graphic sex education",
+            "Professional dance performance",
         ],
         "yellow": [
-            "Sexually suggestive framing or dancing without explicit content",
-            "Discussion of sexual topics in an educational register",
+            "Sexualised framing in the thumbnail",
+            "Educational sexual content with explicit description",
+            "Classical artwork depicting discernible sexual activity",
         ],
         "red": [
-            "Sexual acts, whether real, simulated or animated",
-            "Nudity presented for sexual gratification",
+            "Exposed sexual body parts",
+            "Real or simulated sexual acts",
+            "Content whose purpose is sexual gratification",
         ],
+        "exemptions": BASE_EXEMPTIONS
+        + [
+            "Non-graphic sex education presented in an instructional register",
+            "Musical performance where the guidelines allow wider latitude",
+        ],
+        "signals": [
+            "vs AF-13 (kids and families): identical material is judged far more "
+            "strictly when the format, characters or framing signal a child "
+            "audience. AF-13 governs when both could apply.",
+            "vs AF-04 (shocking content): AF-03 is sexual in purpose. Nudity that "
+            "is disturbing rather than sexual — medical, forensic — is AF-04.",
+        ],
+        "fix": "BLUR_REGION",
+        "span_note": "Variable. Prefer blur or reframe over cut.",
     },
     {
-        "file": "04_shocking_content.md",
+        "file": "AF-04_shocking_content.md",
         "id": "AF-04",
         "title": "Shocking content",
         "severity": "DEMONETIZING",
+        "source": SRC_ADVERTISER,
         "scope": (
-            "Content intended to shock or disgust, including gore divorced from "
-            "narrative purpose, bodily fluids, and graphic medical procedures."
+            "Content intended to disgust or disturb: gore divorced from narrative "
+            "purpose, bodily fluids, graphic medical procedure, and graphic "
+            "treatment of animals. The distinguishing question is whether the "
+            "shock is the point."
         ),
         "green": [
-            "Medical or scientific footage with clear educational framing",
-            "Mild shock content with a stated warning",
+            "Mild shocking content inside an educational or documentary frame",
+            "Unsensational food preparation involving animals",
         ],
         "yellow": [
-            "Graphic medical procedure shown in detail",
-            "Content likely to disturb a general audience",
+            "Graphic human or animal body parts shown unobscured but with context",
+            "Detailed medical procedure",
         ],
         "red": [
             "Gore or bodily harm presented for its own sake",
+            "Graphic mistreatment of animals",
         ],
+        "exemptions": BASE_EXEMPTIONS
+        + [
+            "Scientific or medical instruction where the graphic element is the "
+            "subject being taught",
+        ],
+        "signals": [
+            "vs AF-02 (violence): AF-04 needs no violent act. If a person caused "
+            "the harm to another person, it is AF-02.",
+            "vs AF-09 (controversial issues): AF-04 is visual. AF-09 covers the "
+            "same subject matter discussed rather than shown.",
+        ],
+        "fix": "BLUR_REGION",
+        "span_note": "Usually short, 1-5s, and often a single shot.",
     },
     {
-        "file": "05_harmful_dangerous_acts.md",
+        "file": "AF-05_harmful_acts.md",
         "id": "AF-05",
-        "title": "Harmful or dangerous acts",
+        "title": "Harmful acts and unreliable content",
         "severity": "DEMONETIZING",
+        "source": SRC_ADVERTISER,
         "scope": (
-            "Acts a viewer could imitate and be seriously injured by, including "
-            "dangerous stunts, challenges, and unsafe technique presented approvingly. "
-            "The documentary exemption requires an explicit warning against imitation."
+            "Two related things: acts a viewer could imitate and be seriously "
+            "hurt by, and claims that could cause harm if believed. Both turn on "
+            "whether the content warns against the behaviour or encourages it."
         ),
         "green": [
-            "Professional stunt work with visible safety measures and a warning",
+            "Professional stunt work in a controlled environment",
+            "Fail compilations without graphic injury",
             "Discussion of a dangerous act without demonstrating it",
         ],
         "yellow": [
-            "Risky activity by trained subjects with no warning against imitation",
-            "Minor self-harm-adjacent challenge content",
+            "High-risk activity shown without an explicit warning against imitation",
+            "Graphic injury resulting from a failed attempt",
+            "Prank content causing severe distress to its subject",
         ],
         "red": [
-            "Instructional content for a dangerous act",
-            "Content encouraging viewers to attempt serious risk",
+            "Instructional content enabling a dangerous act",
+            "Glorification of self-endangering behaviour",
+            "Health claims contradicting established consensus in a way that "
+            "could lead a viewer to refuse care",
+            "Challenge content involving ingestion of harmful substances",
         ],
+        "exemptions": BASE_EXEMPTIONS
+        + [
+            "Explicit harm-reduction framing: a stated warning against imitation, "
+            "close to the depiction rather than buried in a description",
+            "Public service or awareness content addressing the behaviour",
+        ],
+        "signals": [
+            "vs AF-09 (controversial issues): AF-05 is imitable physical risk. "
+            "Self-harm and suicide are AF-09, which has its own handling.",
+            "vs AF-11 (dishonest behaviour): AF-05 risks injury; AF-11 risks "
+            "someone else's property, money or access.",
+        ],
+        "fix": "NONE",
+        "span_note": (
+            "Often unfixable by editing — the remedy is a disclaimer card, which "
+            "is why this clause frequently produces an advisory rather than an op."
+        ),
     },
     {
-        "file": "06_hateful_derogatory.md",
+        "file": "AF-06_hateful_derogatory.md",
         "id": "AF-06",
         "title": "Hateful and derogatory content",
         "severity": "DEMONETIZING",
+        "source": SRC_ADVERTISER,
         "scope": (
-            "Content promoting hatred, demeaning an individual or group on the basis "
-            "of a protected attribute, or degrading a person on the basis of an "
-            "immutable characteristic."
+            "Content promoting hatred against, or demeaning, a person or group on "
+            "the basis of a protected attribute. This clause has no strength "
+            "threshold: a single slur is sufficient, and no frequency argument "
+            "applies."
         ),
         "green": [
-            "Neutral discussion of discrimination as a subject",
-            "Reporting on a hate incident without repeating slurs gratuitously",
+            "Criticism of ideas, policies or actions rather than people",
+            "Satire whose target is the prejudice itself",
+            "Educational content about discrimination as a subject",
         ],
         "yellow": [
-            "Insulting content targeting an individual without a protected attribute",
+            "Offensive language reproduced inside an educational, news or "
+            "documentary treatment",
         ],
         "red": [
-            "Slurs or dehumanising language aimed at a protected group",
+            "Statements disparaging a group on the basis of a protected attribute",
             "Content promoting or justifying hatred",
+            "Malicious personal attack on an individual",
         ],
+        "exemptions": [
+            "Educational or documentary treatment where the material is the "
+            "subject of study rather than the message",
+            "News reporting that quotes in order to report",
+            "Satire whose evident target is the prejudice, not the group — note "
+            "that satire is evaluated carefully and the framing must be legible "
+            "from the content itself",
+            "Quotation accompanied by explicit condemnation",
+        ],
+        "signals": [
+            "vs AF-01 (language): a slur is never AF-01. Protected-attribute "
+            "targeting moves it here regardless of how mild the term sounds.",
+            "vs AF-14 (incendiary and demeaning): AF-06 requires a protected "
+            "attribute. Sustained hostility toward someone without one is AF-14.",
+        ],
+        "fix": "NONE",
+        "span_note": (
+            "Muting rarely resolves this: the surrounding argument usually "
+            "carries the same message. Escalate for human review."
+        ),
     },
     {
-        "file": "07_recreational_drugs.md",
+        "file": "AF-07_recreational_drugs.md",
         "id": "AF-07",
         "title": "Recreational drugs and drug-related content",
         "severity": "LIMITING",
+        "source": SRC_ADVERTISER,
         "scope": (
-            "Depiction, promotion or discussion of recreational drugs, including "
-            "sale, manufacture and use."
+            "Depiction, promotion, sale or facilitation of recreational drugs, "
+            "and content relating to organisations that traffic them."
         ),
         "green": [
             "Educational or recovery-focused discussion",
-            "Passing reference without depiction",
+            "Fleeting depiction in a musical performance",
+            "Documentary treatment of drug policy or its consequences",
         ],
         "yellow": [
-            "Drug use shown without promotion",
-            "Discussion of drug culture in a non-educational register",
+            "Dramatised drug use",
+            "Educational content about trafficking organisations that includes "
+            "violent elements",
         ],
         "red": [
-            "Promotion or sale of drugs",
-            "Instructions for manufacture or acquisition",
+            "Promotion of drug use, sale or manufacture",
+            "Instructions for producing or acquiring drugs",
+            "Content glorifying or recruiting for a trafficking organisation",
         ],
+        "exemptions": BASE_EXEMPTIONS
+        + [
+            "Recovery, harm-reduction and addiction-support content",
+        ],
+        "signals": [
+            "vs AF-12 (tobacco): tobacco, vaping and alcohol have their own "
+            "clause and a more permissive baseline for incidental adult use.",
+            "vs AF-05 (harmful acts): AF-07 is the substance; AF-05 is the "
+            "imitable act. Ingestion challenges sit in AF-05.",
+        ],
+        "fix": "MUTE",
+        "span_note": "Usually a sentence, 3-10s.",
     },
     {
-        "file": "08_firearms.md",
+        "file": "AF-08_firearms.md",
         "id": "AF-08",
-        "title": "Firearms",
+        "title": "Firearms-related content",
         "severity": "LIMITING",
+        "source": SRC_ADVERTISER,
         "scope": (
-            "Firearms and firearm-adjacent content, including handling, modification "
-            "and sale."
+            "Firearms and firearm-adjacent content: handling, demonstration, "
+            "modification, sale, and the environment in which any of it happens. "
+            "Whether the setting is controlled is the pivotal fact."
         ),
         "green": [
-            "Firearms appearing incidentally in a scene",
-            "Historical or documentary treatment",
+            "Non-automatic and semi-automatic firearms handled in a controlled "
+            "environment such as a supervised range",
+            "Repair, maintenance and cleaning",
+            "Responsible airsoft or replica use",
+            "Discussion of firearms legislation",
         ],
         "yellow": [
-            "Firearm demonstration or range content",
-            "Detailed discussion of firearm capability",
+            "Firearms used outside a controlled environment",
+            "Detailed discussion of capability or lethality",
         ],
         "red": [
-            "Instructions for manufacturing firearms or modifying them to fire "
+            "Instructions for manufacturing a firearm or converting one to fire "
             "automatically",
-            "Facilitating sale or transfer",
+            "Facilitating a sale or transfer",
+            "Fully automatic weapons",
+            "Minors handling firearms without evident supervision",
         ],
+        "exemptions": BASE_EXEMPTIONS
+        + [
+            "Legislative, historical and policy discussion",
+            "Safety instruction conducted in a controlled setting",
+        ],
+        "signals": [
+            "vs AF-02 (violence): presence and handling are AF-08. A firearm used "
+            "against a person is AF-02.",
+            "vs AF-11 (dishonest behaviour): manufacturing instructions are AF-08 "
+            "specifically; AF-11 covers circumvention of other systems.",
+        ],
+        "fix": "MUTE",
+        "span_note": "Variable, often the whole segment. Consider REFRAME.",
     },
     {
-        "file": "09_controversial_issues.md",
+        "file": "AF-09_controversial_issues.md",
         "id": "AF-09",
         "title": "Controversial issues",
         "severity": "LIMITING",
+        "source": SRC_ADVERTISER,
         "scope": (
-            "Contentious political and social topics, including armed conflict, "
-            "abortion, immigration and civil unrest. Assessment turns on whether the "
-            "treatment is inflammatory or sourced."
+            "Difficult subject matter discussed rather than depicted: abuse, "
+            "harassment, self-harm, suicide, eating disorders, domestic violence "
+            "and abortion. Treatment is what is judged — whether the content is "
+            "graphic, and whether it dwells."
         ),
         "green": [
-            "Balanced, sourced reporting",
-            "Passing mention without argument",
+            "Prevention and support-focused treatment",
+            "Fleeting, non-graphic mention",
+            "Dramatised treatment that is descriptive but not graphic",
         ],
         "yellow": [
-            "One-sided treatment of a contentious issue",
-            "Unsourced allegation against a named person or institution",
+            "Educational, artistic or documentary representation of the subject",
+            "Graphic thumbnail",
+            "Non-graphic child-abuse content as the primary topic",
         ],
         "red": [
-            "Inflammatory content likely to incite",
+            "Graphic depiction of any of these subjects",
+            "Descriptive child-abuse content",
+            "Eating-disorder content containing behaviour a viewer could copy",
         ],
+        "exemptions": BASE_EXEMPTIONS
+        + [
+            "Support, prevention and crisis-resource content",
+            "Survivor testimony presented without graphic detail",
+        ],
+        "signals": [
+            "vs AF-10 (sensitive events): AF-09 is a category of harm in general. "
+            "AF-10 attaches to a specific identifiable event.",
+            "vs AF-02 and AF-04: those are depiction. AF-09 is discussion.",
+        ],
+        "fix": "NONE",
+        "span_note": "Usually requires framing rather than editing.",
     },
     {
-        "file": "10_sensitive_events.md",
+        "file": "AF-10_sensitive_events.md",
         "id": "AF-10",
         "title": "Sensitive events",
         "severity": "DEMONETIZING",
+        "source": SRC_ADVERTISER,
         "scope": (
-            "Tragedies, disasters, deaths and violent incidents affecting real "
-            "people. Assessment turns on whether the treatment dwells on the loss or "
-            "sensationalises it."
+            "A specific, identifiable tragedy, disaster, death or violent "
+            "incident affecting real people. The question is whether the content "
+            "engages with the event or exploits it for attention."
         ),
         "green": [
-            "Factual reference in passing, with framing",
-            "Memorial or tribute content",
+            "Discussion of loss or tragedy that is not exploitative",
+            "Memorial and tribute content",
+            "Factual reference with surrounding context",
         ],
         "yellow": [
-            "Casualty figures stated without surrounding framing",
-            "Extended discussion of a recent tragedy",
+            "Casualty figures stated without framing",
+            "Extended discussion of a recent event",
         ],
         "red": [
-            "Graphic discussion or footage of a tragedy",
-            "Content exploiting a tragedy for engagement",
+            "Content exploiting an event for traffic, including keyword-stuffed "
+            "titles referencing a tragedy",
+            "Graphic footage of the event",
         ],
+        "exemptions": BASE_EXEMPTIONS
+        + [
+            "Journalism and factual reporting on the event",
+            "Commemoration, memorial and tribute",
+            "First-hand testimony from those affected",
+        ],
+        "signals": [
+            "vs AF-09 (controversial issues): AF-10 needs a named or otherwise "
+            "identifiable event. Discussing suicide as a subject is AF-09; "
+            "discussing a specific person's death is AF-10.",
+            "vs AF-02 (violence): AF-10 covers the discussion. Footage of the "
+            "event itself is AF-02 or AF-04.",
+        ],
+        "fix": "MUTE",
+        "span_note": "Usually one or two sentences, 4-12s.",
     },
     {
-        "file": "11_enabling_dishonest_behavior.md",
+        "file": "AF-11_dishonest_behavior.md",
         "id": "AF-11",
         "title": "Enabling dishonest behaviour",
         "severity": "DEMONETIZING",
+        "source": SRC_ADVERTISER,
         "scope": (
-            "Content facilitating dishonesty, including academic cheating, hacking "
-            "for harm, forged documents and circumvention of payment."
+            "Content that equips a viewer to deceive, defraud or gain "
+            "unauthorised access: account compromise, circumvention of payment, "
+            "forged documents, academic dishonesty and trespass."
         ),
         "green": [
-            "Security research with a defensive framing",
-            "Discussion of fraud as a subject",
+            "Educational or humorous reference without instruction",
+            "Journalistic reporting on fraud or its victims",
         ],
         "yellow": [
-            "Demonstration of a circumvention technique without instruction",
+            "Demonstration of a circumvention technique without a complete method",
         ],
         "red": [
-            "Step-by-step instructions enabling fraud or unauthorised access",
+            "Step-by-step instructions enabling unauthorised access or fraud",
+            "Promotion of essay mills or academic cheating services",
+            "Glorification of trespass",
         ],
+        "exemptions": BASE_EXEMPTIONS
+        + [
+            "Security research with a defensive framing, including authorised "
+            "penetration testing and bug-bounty work",
+            "Consumer-protection content teaching recognition of a scam",
+        ],
+        "signals": [
+            "vs AF-05 (harmful acts): AF-11 risks property, money or access. "
+            "AF-05 risks a body.",
+            "The defensive framing exemption is narrow: recognising a scam is "
+            "exempt, reproducing it end to end is not.",
+        ],
+        "fix": "MUTE",
+        "span_note": "Often the whole instructional passage. CUT may be warranted.",
     },
     {
-        "file": "12_tobacco.md",
+        "file": "AF-12_tobacco.md",
         "id": "AF-12",
-        "title": "Tobacco, vaping and alcohol",
+        "title": "Tobacco-related content",
         "severity": "LIMITING",
+        "source": SRC_ADVERTISER,
         "scope": (
-            "Regulated goods: tobacco, vaping products and alcohol. Incidental adult "
-            "references are generally eligible; promotion and excess are not."
+            "Tobacco, vaping and related products, and by extension other "
+            "regulated goods such as alcohol where the same promotion logic "
+            "applies. Incidental adult reference is treated far more leniently "
+            "than promotion."
         ),
         "green": [
-            "Incidental reference in adult-audience content",
-            "Cessation or harm-reduction content",
+            "Incidental reference in content addressed to adults",
+            "Cessation, harm-reduction and health-consequence content",
         ],
         "yellow": [
             "Consumption shown on camera without promotion",
-            "Product review of regulated goods",
+            "Product review of a regulated good",
         ],
         "red": [
             "Promotion of tobacco or vaping products",
-            "Content promoting excessive consumption",
-            "Any depiction in content made for kids",
+            "Content encouraging excessive consumption",
+            "Any depiction inside content made for kids",
         ],
+        "exemptions": BASE_EXEMPTIONS
+        + [
+            "Cessation support and public-health messaging",
+        ],
+        "signals": [
+            "vs AF-07 (recreational drugs): legality is the divider. Tobacco, "
+            "vaping and alcohol are AF-12 and start from a permissive baseline.",
+            "vs AF-13 (kids and families): the permissive baseline disappears "
+            "entirely if the content reads as made for children.",
+        ],
+        "fix": "NONE",
+        "span_note": "Usually advisory; a passing mention rarely warrants an edit.",
     },
     {
-        "file": "13_adult_themes_in_family_content.md",
+        "file": "AF-13_kids_and_families.md",
         "id": "AF-13",
-        "title": "Adult themes in family content",
+        "title": "Inappropriate content for kids and families",
         "severity": "DEMONETIZING",
+        "source": SRC_ADVERTISER,
         "scope": (
-            "Mature themes presented in content whose format, characters or framing "
-            "would lead a viewer to expect it is made for children."
+            "Mature themes inside content whose format, characters, animation "
+            "style or framing would lead a viewer to expect it is made for "
+            "children. This clause raises the severity of material that would be "
+            "unremarkable elsewhere."
         ),
         "green": [
-            "Family content with no mature themes",
-            "Mature content clearly framed for an adult audience",
+            "Educational content modelling positive behaviour",
+            "Safe do-it-yourself projects and gentle pranks",
+            "Age-appropriate fitness and activity content",
         ],
         "yellow": [
-            "Mild mature themes in family-coded formats",
+            "Mild mature themes inside a family-coded format",
         ],
         "red": [
-            "Violence, sexual themes or profanity in content resembling children's "
-            "programming",
+            "Violence, sexual themes, profanity or regulated goods in content "
+            "resembling children's programming",
+            "Content encouraging cheating, bullying or unsafe imitation",
+            "Horror content built to frighten children",
+            "Risky do-it-yourself activity presented to a child audience",
         ],
+        "exemptions": [
+            "Educational content addressing negative behaviour in order to "
+            "discourage it",
+            "Public service and safety messaging aimed at families",
+            "Content clearly and consistently framed for an adult audience "
+            "despite superficially family-adjacent subject matter",
+        ],
+        "signals": [
+            "This clause modifies others rather than replacing them. When AF-01, "
+            "AF-02, AF-03, AF-07 or AF-12 fires inside kid-coded content, AF-13 "
+            "governs and the severity rises.",
+            "Format signals — animation style, character design, toys, nursery "
+            "colour palettes, simplified narration — carry more weight here than "
+            "the declared audience setting.",
+        ],
+        "fix": "NONE",
+        "span_note": (
+            "Rarely fixable by editing. The remedy is usually the audience "
+            "setting or a different edit entirely."
+        ),
     },
     {
-        "file": "14_gambling.md",
+        "file": "AF-14_incendiary_demeaning.md",
         "id": "AF-14",
-        "title": "Gambling",
+        "title": "Incendiary and demeaning content",
         "severity": "LIMITING",
+        "source": SRC_ADVERTISER,
         "scope": (
-            "Gambling, betting, casino content and simulated gambling including loot "
-            "boxes."
+            "Content whose purpose is to shame, insult or harass a person or "
+            "group, including denial of a well-documented tragedy. Unlike AF-06 "
+            "this does not require a protected attribute — sustained hostility is "
+            "enough."
         ),
         "green": [
-            "Discussion of gambling harm or regulation",
-            "Passing reference",
+            "Criticism directed at work, ideas or public conduct",
+            "Robust disagreement without personal degradation",
         ],
         "yellow": [
-            "Gameplay of casino-style games",
-            "Discussion of betting strategy",
+            "Sustained mockery of an individual",
+            "Content shaming a group without reference to a protected attribute",
         ],
         "red": [
-            "Promotion of unlicensed gambling sites",
-            "Content directing viewers to place bets",
+            "Harassment campaigns or calls to pile on",
+            "Denial that a well-documented tragic event occurred",
+            "Malicious personal attack whose evident purpose is degradation",
         ],
+        "exemptions": BASE_EXEMPTIONS
+        + [
+            "Accountability journalism concerning a public figure's public conduct",
+            "Review and criticism of published work",
+        ],
+        "signals": [
+            "vs AF-06 (hateful & derogatory): the protected attribute is the "
+            "divider. Present, it is AF-06; absent, AF-14.",
+            "vs AF-09 (controversial issues): AF-14 is directed at someone. AF-09 "
+            "is a subject discussed.",
+        ],
+        "fix": "MUTE",
+        "span_note": "Usually a passage rather than a phrase.",
+    },
+    {
+        "file": "META-01_disclosure.md",
+        "id": "META-01",
+        "title": "Paid promotion disclosure",
+        "severity": "DEMONETIZING",
+        "source": SRC_DISCLOSURE,
+        "scope": (
+            "Paid product placement, sponsorship and endorsement must be "
+            "disclosed. YouTube provides a checkbox in Studio that surfaces a "
+            "disclosure to viewers for the first ten seconds, and creators remain "
+            "separately responsible for whatever their own jurisdiction requires "
+            "— the FTC in the United States, the ASA in the United Kingdom, and "
+            "equivalents elsewhere."
+        ),
+        "green": [
+            "Paid promotion disclosed both in the platform setting and visibly to "
+            "viewers",
+            "Content with no commercial relationship to disclose",
+        ],
+        "yellow": [
+            "Disclosure present but buried below the description fold",
+        ],
+        "red": [
+            "Sponsorship, affiliate or endorsement content with no disclosure",
+            "Promotion of a category that may not be promoted at all, including "
+            "unreviewed gambling services, prescription pharmaceuticals, essay "
+            "mills, counterfeit goods and hacking tools",
+        ],
+        "exemptions": [
+            "No commercial relationship exists, so there is nothing to disclose",
+            "Disclosure is made on screen rather than in the description, and is "
+            "legible and early — a metadata-only check cannot see this, so a "
+            "finding here is rebuttable",
+        ],
+        "signals": [
+            "This is a deterministic cross-check rather than a judgement: "
+            "sponsorship language in the transcript, no disclosure marker in the "
+            "description. Both inputs are already in hand.",
+            "Non-disclosure carries removal and strike consequences rather than "
+            "only demonetisation, which is why it is rated higher than its "
+            "apparent severity.",
+        ],
+        "fix": "NONE",
+        "span_note": (
+            "File-scoped. The fix is a description edit and the Studio checkbox, "
+            "not an edit to the video."
+        ),
+    },
+    {
+        "file": "ACC-01_photosensitive.md",
+        "id": "ACC-01",
+        "title": "Photosensitive content",
+        "severity": "LIMITING",
+        "source": SRC_WCAG,
+        "scope": (
+            "Rapid luminance change that can provoke a seizure in photosensitive "
+            "viewers. The widely used threshold is three flashes within any one "
+            "second, with transitions to and from saturated red treated more "
+            "strictly. This is a safety property, measurable directly, and it is "
+            "not a monetisation rule — it is included because a creator has no "
+            "other way to discover it."
+        ),
+        "green": [
+            "No sequence exceeding two flashes per second",
+            "Gradual transitions and cross-fades",
+        ],
+        "yellow": [
+            "Two flashes per second sustained across a sequence",
+            "Rapid cuts producing large luminance swings without a warning card",
+        ],
+        "red": [
+            "Three or more flashes within any one second",
+            "Rapid transitions to and from saturated red",
+        ],
+        "exemptions": [
+            "An explicit photosensitivity warning shown before the sequence — "
+            "this mitigates the harm but does not remove it, so it lowers "
+            "severity rather than dismissing the finding",
+            "The flashing area occupies a small enough proportion of the frame "
+            "that it falls under the small-area exception in the underlying "
+            "guidance",
+            "Luminance change stays below the general flash threshold even where "
+            "transitions are frequent — rapid but low-contrast cutting is not a "
+            "flash",
+            "The sequence is a single transition rather than a repeating pattern",
+        ],
+        "signals": [
+            "Measured, not inferred: a luminance series sampled at 10fps or "
+            "better, differenced, and counted in a one-second sliding window.",
+            "Scene-cut keyframes cannot detect this. A strobe lives entirely "
+            "between two cuts, so this check requires its own sampling rate.",
+        ],
+        "fix": "NONE",
+        "span_note": (
+            "The remedy is a warning card or a re-edit of the sequence; a filter "
+            "cannot make a strobe safe."
+        ),
+    },
+    {
+        "file": "COPY-01_content_id.md",
+        "id": "COPY-01",
+        "title": "Third-party content and Content ID",
+        "severity": "DEMONETIZING",
+        "source": SRC_CONTENT_ID,
+        "scope": (
+            "Third-party copyrighted material, principally music. Content ID "
+            "scans uploads against a database of reference files submitted by "
+            "rights holders. A match lets the claimant block the video, take its "
+            "revenue, or track it, and the outcome can differ by territory."
+        ),
+        "green": [
+            "Original material, or material licensed for this use",
+            "Public-domain or CC0 material with the licence recorded",
+        ],
+        "yellow": [
+            "Music present under speech with licensing unverified",
+            "Third-party footage cues such as station bugs or letterboxing",
+        ],
+        "red": [
+            "Commercially released recording used without a licence",
+            "Substantial third-party footage without a licence",
+        ],
+        "exemptions": [
+            "A licence exists for this use — the tool cannot see licences and "
+            "this finding is therefore always rebuttable by the creator",
+            "The material is public domain or CC0",
+            "Use qualifies as fair use or fair dealing, which is a legal "
+            "determination this tool does not and cannot make",
+        ],
+        "signals": [
+            "The reference database is private and is not published, so no "
+            "pre-upload check can be authoritative. PREFLIGHT reports "
+            "CLAIM_LIKELY on a public fingerprint match and MUSIC_BED_PRESENT on "
+            "unidentified tonal content. It never reports SAFE.",
+            "Claims are applied automatically at upload, and there is no "
+            "published mechanism for previewing them beforehand — which is "
+            "precisely the gap this clause exists to narrow.",
+            "vs AF-* clauses: COPY-01 is about ownership, not about content "
+            "suitability. A perfectly advertiser-friendly video can be claimed.",
+        ],
+        "fix": "REPLACE_AUDIO",
+        "span_note": (
+            "Usually the full extent of the bed, 15-60s. Replace rather than "
+            "mute so the segment keeps its pacing."
+        ),
     },
 ]
 
@@ -357,27 +794,37 @@ severity_default: {severity}
 version: {version}
 source_url: {source}
 fetched_at: {fetched}
+derivation: {derivation}
 ---
 
 ## Scope
 
 {scope}
 
-## Green (fully monetized)
+## Fully monetized when
 
 {green}
 
-## Yellow (limited ads)
+## Limited ads when
 
 {yellow}
 
-## Red (no ads)
+## No ads when
 
 {red}
 
 ## Documented exemptions
 
 {exemptions}
+
+## Signals that distinguish this clause from neighbours
+
+{signals}
+
+## Remediation guidance
+
+- Preferred fix: {fix}
+- Typical span: {span_note}
 """
 
 
@@ -388,10 +835,10 @@ def bullets(items: list[str]) -> str:
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
 
-    # This script owns the directory. Without removing clause files it did not
-    # write, a clause added by a drift simulation survives a rebuild and ends
-    # up in the next baseline snapshot — so the very change being demonstrated
-    # is already present before the demonstration starts.
+    # This script owns the directory. A clause left behind by a drift
+    # simulation would otherwise survive a rebuild and end up in the next
+    # baseline snapshot, so the change being demonstrated is already present
+    # before the demonstration starts.
     expected = {clause["file"] for clause in CLAUSES}
     for stale in OUT.glob("*.md"):
         if stale.name not in expected:
@@ -399,20 +846,23 @@ def main() -> int:
             print(f"removed stale clause {stale.name}")
 
     manifest: list[dict] = []
-
     for clause in CLAUSES:
         body = TEMPLATE.format(
             id=clause["id"],
             title=clause["title"],
             severity=clause["severity"],
             version=VERSION,
-            source=SOURCE,
+            source=clause["source"],
             fetched=FETCHED,
+            derivation=DERIVATION,
             scope=clause["scope"],
             green=bullets(clause["green"]),
             yellow=bullets(clause["yellow"]),
             red=bullets(clause["red"]),
-            exemptions=EDSA,
+            exemptions=bullets(clause["exemptions"]),
+            signals=bullets(clause["signals"]),
+            fix=clause["fix"],
+            span_note=clause["span_note"],
         )
         path = OUT / clause["file"]
         path.write_text(body, encoding="utf-8")
@@ -423,21 +873,30 @@ def main() -> int:
                 "title": clause["title"],
                 "severity_default": clause["severity"],
                 "sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
-                "source_url": SOURCE,
+                "source_url": clause["source"],
                 "fetched_at": FETCHED,
+                "derivation": DERIVATION,
             }
         )
+
+    # The corpus hash goes into every certificate. It is what makes a report
+    # reproducible against a known snapshot of the rules.
+    corpus_hash = hashlib.sha256(
+        "".join(entry["sha256"] for entry in manifest).encode("utf-8")
+    ).hexdigest()[:32]
 
     (OUT / "manifest.json").write_text(
         json.dumps(
             {
                 "version": VERSION,
-                "source_url": SOURCE,
+                "corpus_hash": corpus_hash,
+                "clause_count": len(manifest),
                 "fetched_at": FETCHED,
+                "sources": sorted({c["source"] for c in CLAUSES}),
                 "note": (
-                    "Structured restatement of publicly published platform guidance, "
-                    "used for retrieval-grounded classification. Not authoritative and "
-                    "not affiliated with YouTube."
+                    "Structured restatements in our own words of publicly published "
+                    "guidance, used for retrieval-grounded classification. Not "
+                    "authoritative, not verbatim, and not affiliated with YouTube."
                 ),
                 "clauses": manifest,
             },
@@ -448,6 +907,7 @@ def main() -> int:
     )
 
     print(f"wrote {len(manifest)} clauses + manifest to {OUT}")
+    print(f"corpus_hash {corpus_hash}")
     return 0
 
 

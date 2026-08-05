@@ -1,0 +1,26 @@
+{
+  "_note": "A hit in this file is NEVER a finding. It raises the retrieval priority of the named clause for that window and nothing else. The adversarial triad decides, using the clause text. Treating a cue hit as a violation is the naive keyword approach this project exists to replace.",
+  "_purpose": "The absence of these in a description, when sponsorship cues are present in the transcript, is what makes META-01 fire.",
+  "description_markers": [
+    "paid promotion",
+    "includes paid promotion",
+    "contains paid promotion",
+    "#ad",
+    "ad:",
+    "advertisement",
+    "sponsored",
+    "sponsorship",
+    "affiliate disclosure",
+    "affiliate link",
+    "commission",
+    "paid partnership",
+    "gifted"
+  ],
+  "spoken_markers": [
+    "this is a paid promotion",
+    "this video contains paid promotion",
+    "this is sponsored content",
+    "disclosure"
+  ],
+  "platform_setting": "YouTube Studio provides a 'contains paid promotion' checkbox that surfaces a disclosure for the first ten seconds. A metadata pass cannot observe that setting, so a META-01 finding is always rebuttable."
+}

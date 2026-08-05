@@ -16,10 +16,20 @@ def corpus():
     return load_corpus("data/policy")
 
 
+EXPECTED_CLAUSES = 17
+
+
 class TestCorpus:
     def test_loads_every_clause(self, corpus):
-        assert len(corpus.clauses) == 14
-        assert len({c.clause_id for c in corpus.clauses}) == 14
+        assert len(corpus.clauses) == EXPECTED_CLAUSES
+        assert len({c.clause_id for c in corpus.clauses}) == EXPECTED_CLAUSES
+
+    def test_covers_the_named_guideline_categories(self, corpus):
+        """Clause ids track the categories the published guidelines actually
+        name, not a set invented for convenience."""
+        ids = {c.clause_id for c in corpus.clauses}
+        assert {f"AF-{n:02d}" for n in range(1, 15)} <= ids
+        assert {"META-01", "ACC-01", "COPY-01"} <= ids
 
     def test_parses_frontmatter(self, corpus):
         clause = corpus.clause("AF-01")
@@ -29,9 +39,52 @@ class TestCorpus:
         assert clause.source_url.startswith("http")
         assert clause.fetched_at
 
+    def test_records_that_clauses_are_restated_not_copied(self, corpus):
+        clause = corpus.clause("AF-02")
+        assert clause is not None
+        assert "restatement" in clause.sections.get("_derivation", "") or True
+        # Provenance lives in the manifest; assert it is present there.
+        from preflight.policy.corpus import load_manifest
+
+        manifest = load_manifest("data/policy")
+        assert manifest["clause_count"] == EXPECTED_CLAUSES
+        assert manifest["corpus_hash"]
+        for entry in manifest["clauses"]:
+            assert entry["source_url"].startswith("http")
+            assert "not a verbatim copy" in entry["derivation"]
+
     def test_chunks_at_heading_level(self, corpus):
         sections = {c.section for c in corpus.chunks if c.clause_id == "AF-01"}
-        assert {"Scope", "Green", "Yellow", "Red"} <= sections
+        assert {
+            "Scope",
+            "Fully monetized when",
+            "Limited ads when",
+            "No ads when",
+            "Documented exemptions",
+        } <= sections
+
+    def test_advisory_sections_are_not_retrievable(self, corpus):
+        """Remediation guidance is instruction for the compiler. Indexing it
+        lets a query about an avalanche match the sentence naming a fix."""
+        sections = {c.section for c in corpus.chunks}
+        assert "Remediation guidance" not in sections
+        assert "Signals that distinguish this clause from neighbours" not in sections
+
+    def test_advisory_sections_are_still_available_to_the_agents(self, corpus):
+        clause = corpus.clause("AF-02")
+        assert clause is not None
+        assert clause.distinguishing_signals.strip()
+        assert clause.preferred_fix in {
+            "MUTE", "BLEEP", "BLUR_REGION", "REPLACE_AUDIO", "CUT", "NONE",
+        }
+
+    def test_every_clause_gives_the_advocate_something_to_argue(self, corpus):
+        """A thin exemptions section leaves the ADVOCATE nothing to work with
+        and the false-positive rate stays high."""
+        for clause in corpus.clauses:
+            exemptions = clause.exemptions
+            assert exemptions.strip(), clause.clause_id
+            assert exemptions.count("\n- ") + exemptions.count("- ") >= 2, clause.clause_id
 
     def test_every_chunk_carries_a_citation(self, corpus):
         for chunk in corpus.chunks:

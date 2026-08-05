@@ -1,0 +1,13 @@
+{"_note": "A hit in this file is NEVER a finding. It raises the retrieval priority of the named clause for that window and nothing else. The adversarial triad decides, using the clause text. Treating a cue hit as a violation is the naive keyword approach this project exists to replace.", "_tiers": {"1": "mild", "2": "moderate", "3": "strong", "4": "slur \u2014 deliberately not enumerated; AF-06 clause text handles it"}}
+{"term": "fuck", "tier": 3, "clause": "AF-01", "variants": ["f*ck", "f**k", "fck", "fuk", "f u c k", "phuck", "fuq"], "note": "strong"}
+{"term": "shit", "tier": 2, "clause": "AF-01", "variants": ["sh*t", "sh1t", "shyt", "s h i t"], "note": "moderate"}
+{"term": "bitch", "tier": 2, "clause": "AF-01", "variants": ["b*tch", "b1tch", "biatch"], "note": "moderate"}
+{"term": "asshole", "tier": 2, "clause": "AF-01", "variants": ["a**hole", "arsehole"], "note": "moderate"}
+{"term": "bastard", "tier": 2, "clause": "AF-01", "variants": [], "note": "moderate"}
+{"term": "dick", "tier": 2, "clause": "AF-01", "variants": ["d*ck"], "note": "moderate"}
+{"term": "piss", "tier": 1, "clause": "AF-01", "variants": ["p*ss"], "note": "mild"}
+{"term": "damn", "tier": 1, "clause": "AF-01", "variants": ["d*mn", "dam"], "note": "mild"}
+{"term": "hell", "tier": 1, "clause": "AF-01", "variants": [], "note": "mild"}
+{"term": "crap", "tier": 1, "clause": "AF-01", "variants": [], "note": "mild"}
+{"term": "bloody", "tier": 1, "clause": "AF-01", "variants": [], "note": "mild"}
+{"term": "bollocks", "tier": 2, "clause": "AF-01", "variants": [], "note": "moderate"}
