@@ -33,18 +33,41 @@ def _clause(clause_id: str, title: str, section: str, text: str) -> PolicyRef:
     return PolicyRef(clauseId=clause_id, title=title, section=section, text=text)
 
 
+CAPTION_SUFFIXES = (".vtt", ".srt")
+
+
+def find_caption_track(source: Path) -> Path | None:
+    """A sidecar caption file next to the video.
+
+    `preflight fix` writes one of these from the transcript, so a re-check
+    genuinely sees the repair rather than being told about it.
+    """
+    source = Path(source)
+    for suffix in CAPTION_SUFFIXES:
+        candidate = source.with_suffix(suffix)
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def analyse(
     source: Path,
     duration_ms: int,
     transcript: Transcript | None,
     *,
-    has_captions: bool = False,
+    has_captions: bool | None = None,
     has_chapters: bool = False,
 ) -> AgentResult:
     started = time.perf_counter()
     log: list[str] = []
     findings: list[Finding] = []
     coverage = 1.0
+
+    if has_captions is None:
+        track = find_caption_track(source)
+        has_captions = track is not None
+        if track is not None:
+            log.append(f"caption track found: {track.name}")
 
     flash, flash_log = _flash_analysis(source)
     log.extend(flash_log)
