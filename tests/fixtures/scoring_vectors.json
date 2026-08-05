@@ -1,0 +1,681 @@
+{
+  "note": "Shared vectors for the Python/TypeScript scoring contract. Regenerate with scripts/emit_scoring_vectors.py.",
+  "cases": [
+    {
+      "sub": {
+        "policy": 0,
+        "copyright": 0,
+        "metadata": 0,
+        "accessibility": 0,
+        "audio": 0
+      },
+      "overall": 0,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "policy",
+      "capped": false
+    },
+    {
+      "sub": {
+        "policy": 100,
+        "copyright": 100,
+        "metadata": 100,
+        "accessibility": 100,
+        "audio": 100
+      },
+      "overall": 100,
+      "verdict": "READY_TO_PUBLISH",
+      "weakest": "policy",
+      "capped": false
+    },
+    {
+      "sub": {
+        "policy": 50,
+        "copyright": 50,
+        "metadata": 50,
+        "accessibility": 50,
+        "audio": 50
+      },
+      "overall": 50,
+      "verdict": "NOT_READY",
+      "weakest": "policy",
+      "capped": false
+    },
+    {
+      "sub": {
+        "policy": 31,
+        "copyright": 19,
+        "metadata": 78,
+        "accessibility": 62,
+        "audio": 88
+      },
+      "overall": 34,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "copyright",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 96,
+        "copyright": 100,
+        "metadata": 94,
+        "accessibility": 88,
+        "audio": 95
+      },
+      "overall": 96,
+      "verdict": "READY_TO_PUBLISH",
+      "weakest": "accessibility",
+      "capped": false
+    },
+    {
+      "sub": {
+        "policy": 95,
+        "copyright": 95,
+        "metadata": 95,
+        "accessibility": 70,
+        "audio": 95
+      },
+      "overall": 85,
+      "verdict": "READY_TO_PUBLISH",
+      "weakest": "accessibility",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 95,
+        "copyright": 95,
+        "metadata": 95,
+        "accessibility": 69,
+        "audio": 95
+      },
+      "overall": 84,
+      "verdict": "PUBLISH_WITH_FIXES",
+      "weakest": "accessibility",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 95,
+        "copyright": 95,
+        "metadata": 95,
+        "accessibility": 55,
+        "audio": 95
+      },
+      "overall": 70,
+      "verdict": "PUBLISH_WITH_FIXES",
+      "weakest": "accessibility",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 95,
+        "copyright": 95,
+        "metadata": 95,
+        "accessibility": 45,
+        "audio": 95
+      },
+      "overall": 60,
+      "verdict": "NOT_READY",
+      "weakest": "accessibility",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 40,
+        "copyright": 95,
+        "metadata": 95,
+        "accessibility": 95,
+        "audio": 40
+      },
+      "overall": 55,
+      "verdict": "NOT_READY",
+      "weakest": "policy",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 85,
+        "copyright": 84,
+        "metadata": 84,
+        "accessibility": 84,
+        "audio": 84
+      },
+      "overall": 84,
+      "verdict": "PUBLISH_WITH_FIXES",
+      "weakest": "copyright",
+      "capped": false
+    },
+    {
+      "sub": {
+        "policy": 70,
+        "copyright": 70,
+        "metadata": 71,
+        "accessibility": 70,
+        "audio": 70
+      },
+      "overall": 70,
+      "verdict": "PUBLISH_WITH_FIXES",
+      "weakest": "policy",
+      "capped": false
+    },
+    {
+      "sub": {
+        "policy": 65,
+        "copyright": 93,
+        "metadata": 16,
+        "accessibility": 95,
+        "audio": 21
+      },
+      "overall": 31,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "metadata",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 69,
+        "copyright": 57,
+        "metadata": 97,
+        "accessibility": 37,
+        "audio": 91
+      },
+      "overall": 52,
+      "verdict": "NOT_READY",
+      "weakest": "accessibility",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 22,
+        "copyright": 89,
+        "metadata": 8,
+        "accessibility": 73,
+        "audio": 98
+      },
+      "overall": 23,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "metadata",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 57,
+        "copyright": 47,
+        "metadata": 78,
+        "accessibility": 91,
+        "audio": 51
+      },
+      "overall": 59,
+      "verdict": "NOT_READY",
+      "weakest": "copyright",
+      "capped": false
+    },
+    {
+      "sub": {
+        "policy": 6,
+        "copyright": 3,
+        "metadata": 73,
+        "accessibility": 85,
+        "audio": 42
+      },
+      "overall": 18,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "copyright",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 87,
+        "copyright": 40,
+        "metadata": 18,
+        "accessibility": 87,
+        "audio": 63
+      },
+      "overall": 33,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "metadata",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 3,
+        "copyright": 11,
+        "metadata": 85,
+        "accessibility": 33,
+        "audio": 72
+      },
+      "overall": 18,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "policy",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 69,
+        "copyright": 58,
+        "metadata": 75,
+        "accessibility": 96,
+        "audio": 4
+      },
+      "overall": 19,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "audio",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 48,
+        "copyright": 1,
+        "metadata": 64,
+        "accessibility": 56,
+        "audio": 78
+      },
+      "overall": 16,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "copyright",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 73,
+        "copyright": 76,
+        "metadata": 58,
+        "accessibility": 2,
+        "audio": 72
+      },
+      "overall": 17,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "accessibility",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 22,
+        "copyright": 27,
+        "metadata": 97,
+        "accessibility": 96,
+        "audio": 13
+      },
+      "overall": 28,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "audio",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 0,
+        "copyright": 52,
+        "metadata": 84,
+        "accessibility": 30,
+        "audio": 27
+      },
+      "overall": 15,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "policy",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 65,
+        "copyright": 79,
+        "metadata": 4,
+        "accessibility": 22,
+        "audio": 28
+      },
+      "overall": 19,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "metadata",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 72,
+        "copyright": 84,
+        "metadata": 61,
+        "accessibility": 33,
+        "audio": 93
+      },
+      "overall": 48,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "accessibility",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 55,
+        "copyright": 99,
+        "metadata": 0,
+        "accessibility": 73,
+        "audio": 5
+      },
+      "overall": 15,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "metadata",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 34,
+        "copyright": 1,
+        "metadata": 88,
+        "accessibility": 1,
+        "audio": 22
+      },
+      "overall": 16,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "copyright",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 72,
+        "copyright": 21,
+        "metadata": 99,
+        "accessibility": 31,
+        "audio": 86
+      },
+      "overall": 36,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "copyright",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 35,
+        "copyright": 1,
+        "metadata": 30,
+        "accessibility": 46,
+        "audio": 94
+      },
+      "overall": 16,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "copyright",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 53,
+        "copyright": 10,
+        "metadata": 72,
+        "accessibility": 60,
+        "audio": 87
+      },
+      "overall": 25,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "copyright",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 92,
+        "copyright": 57,
+        "metadata": 51,
+        "accessibility": 47,
+        "audio": 7
+      },
+      "overall": 22,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "audio",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 3,
+        "copyright": 50,
+        "metadata": 84,
+        "accessibility": 62,
+        "audio": 96
+      },
+      "overall": 18,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "policy",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 38,
+        "copyright": 68,
+        "metadata": 82,
+        "accessibility": 15,
+        "audio": 15
+      },
+      "overall": 30,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "accessibility",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 85,
+        "copyright": 31,
+        "metadata": 32,
+        "accessibility": 66,
+        "audio": 27
+      },
+      "overall": 42,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "audio",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 42,
+        "copyright": 18,
+        "metadata": 29,
+        "accessibility": 89,
+        "audio": 21
+      },
+      "overall": 33,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "copyright",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 33,
+        "copyright": 58,
+        "metadata": 62,
+        "accessibility": 45,
+        "audio": 4
+      },
+      "overall": 19,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "audio",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 59,
+        "copyright": 73,
+        "metadata": 0,
+        "accessibility": 60,
+        "audio": 57
+      },
+      "overall": 15,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "metadata",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 6,
+        "copyright": 90,
+        "metadata": 84,
+        "accessibility": 48,
+        "audio": 56
+      },
+      "overall": 21,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "policy",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 5,
+        "copyright": 31,
+        "metadata": 85,
+        "accessibility": 38,
+        "audio": 37
+      },
+      "overall": 20,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "policy",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 45,
+        "copyright": 41,
+        "metadata": 55,
+        "accessibility": 22,
+        "audio": 99
+      },
+      "overall": 37,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "accessibility",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 79,
+        "copyright": 82,
+        "metadata": 38,
+        "accessibility": 6,
+        "audio": 82
+      },
+      "overall": 21,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "accessibility",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 85,
+        "copyright": 36,
+        "metadata": 30,
+        "accessibility": 29,
+        "audio": 73
+      },
+      "overall": 44,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "accessibility",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 94,
+        "copyright": 16,
+        "metadata": 14,
+        "accessibility": 80,
+        "audio": 52
+      },
+      "overall": 29,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "metadata",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 82,
+        "copyright": 37,
+        "metadata": 79,
+        "accessibility": 47,
+        "audio": 100
+      },
+      "overall": 52,
+      "verdict": "NOT_READY",
+      "weakest": "copyright",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 41,
+        "copyright": 88,
+        "metadata": 50,
+        "accessibility": 55,
+        "audio": 16
+      },
+      "overall": 31,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "audio",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 74,
+        "copyright": 82,
+        "metadata": 80,
+        "accessibility": 83,
+        "audio": 95
+      },
+      "overall": 80,
+      "verdict": "PUBLISH_WITH_FIXES",
+      "weakest": "policy",
+      "capped": false
+    },
+    {
+      "sub": {
+        "policy": 88,
+        "copyright": 37,
+        "metadata": 1,
+        "accessibility": 68,
+        "audio": 81
+      },
+      "overall": 16,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "metadata",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 37,
+        "copyright": 21,
+        "metadata": 80,
+        "accessibility": 75,
+        "audio": 61
+      },
+      "overall": 36,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "copyright",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 29,
+        "copyright": 52,
+        "metadata": 35,
+        "accessibility": 33,
+        "audio": 67
+      },
+      "overall": 40,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "policy",
+      "capped": false
+    },
+    {
+      "sub": {
+        "policy": 68,
+        "copyright": 29,
+        "metadata": 93,
+        "accessibility": 5,
+        "audio": 99
+      },
+      "overall": 20,
+      "verdict": "DO_NOT_PUBLISH",
+      "weakest": "accessibility",
+      "capped": true
+    },
+    {
+      "sub": {
+        "policy": 91,
+        "copyright": 42,
+        "metadata": 88,
+        "accessibility": 73,
+        "audio": 76
+      },
+      "overall": 57,
+      "verdict": "NOT_READY",
+      "weakest": "copyright",
+      "capped": true
+    }
+  ]
+}
