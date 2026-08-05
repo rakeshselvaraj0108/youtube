@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+#
+# Block credentials from entering a commit.
+#
+# This is the last line rather than the only one: .env is gitignored and
+# redaction is enforced at runtime. It exists because a rewritten history does
+# not un-leak a key that was already pushed, so the cheap check runs first.
+#
+# Install:  make hooks    (or: cp scripts/pre-commit .git/hooks/ && chmod +x it)
+#
+# A line carrying `pragma: allowlist secret` is exempt. Test fixtures need a
+# key-shaped string, and the marker makes each exception visible in the diff
+# rather than requiring a pattern loose enough to miss the real thing.
+
+set -euo pipefail
+
+# Match a prefix followed by a genuine run of key characters. The bare prefix
+# is not enough — this file, and secrets.py, legitimately contain "nvapi-"
+# inside a regex.
+PATTERN='(nvapi-[A-Za-z0-9_-]{20,}|hf_[A-Za-z0-9]{20,}|sk-proj-[A-Za-z0-9_-]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|AIza[A-Za-z0-9_-]{30,}|"private_key"[[:space:]]*:)'
+
+offenders=$(
+  git diff --cached -U0 --diff-filter=ACM \
+    | grep -E '^\+' \
+    | grep -Ev 'pragma: allowlist secret' \
+    | grep -E "$PATTERN" || true
+)
+
+if [ -n "$offenders" ]; then
+  echo "BLOCKED: possible credential in staged changes"
+  echo
+  echo "$offenders" | sed 's/^/    /' | cut -c1-100
+  echo
+  echo "  If this is a test fixture, append:  # pragma: allowlist secret"
+  echo "  If it is a real key, remove it and ROTATE IT — it may already be"
+  echo "  recoverable from your local history."
+  exit 1
+fi
+
+exit 0

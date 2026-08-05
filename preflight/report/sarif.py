@@ -171,6 +171,7 @@ def build_certificate(
     policy_digest: str,
     video_hash: str,
     retrieval_backend: str,
+    provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Proof of what was checked, against which rules, with which models.
 
@@ -185,7 +186,7 @@ def build_certificate(
     readiness = compute_readiness(sub)
     severities = [f["severity"] for f in report["findings"]]
 
-    return {
+    certificate: dict[str, Any] = {
         "certificateVersion": "1.0",
         "generatedAt": report["meta"]["analyzedAt"],
         "subject": {
@@ -253,3 +254,13 @@ def build_certificate(
             "surface; see coverage.agents for what each agent actually inspected.",
         ],
     }
+
+    # PREFLIGHT exists to make video analysis auditable. A tool that demands
+    # auditability of others while hiding how its own numbers were produced is
+    # inconsistent, so the capability plan travels with the result: which
+    # provider served each capability, whether that was the preferred tier, and
+    # what the vendors actually cost.
+    if provenance is not None:
+        certificate["provenance"] = provenance
+
+    return certificate

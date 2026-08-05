@@ -27,6 +27,8 @@ from preflight.archive import Archive
 from preflight.config import Settings
 from preflight.drift import detect, write_snapshot
 from preflight.policy.corpus import load_corpus
+from preflight.providers.doctor import run_doctor
+from preflight.providers.registry import Registry
 from preflight.report.build import build_report, validate
 from preflight.report.html import BundleMissing, emit_html
 from preflight.report.html import emit_fixture as emit_fixture_file
@@ -317,15 +319,21 @@ def check(
         formats.add("json")
 
     if formats or emit_fixture is not None:
-        _emit(result, formats, out, emit_fixture)
+        _emit(result, formats, out, emit_fixture, settings)
 
     console.print()
     raise typer.Exit(EXIT_OK if readiness.verdict in PASSING else EXIT_FINDINGS)
 
 
-def _emit(result, formats: set[str], out: Path, fixture: Path | None) -> None:
-    """Write the requested artifacts. Validates before writing anything."""
-    settings = Settings.load()
+def _emit(
+    result, formats: set[str], out: Path, fixture: Path | None, settings: Settings
+) -> None:
+    """Write the requested artifacts. Validates before writing anything.
+
+    Settings are threaded in rather than re-loaded: reloading drops the
+    --offline flag, and a provenance block that misreports how the run was
+    produced is worse than no provenance block.
+    """
     bundle = build_report(
         result,
         policy_version=result.corpus.version if result.corpus else "unknown",
@@ -366,6 +374,7 @@ def _emit(result, formats: set[str], out: Path, fixture: Path | None) -> None:
             policy_digest=result.corpus.digest if result.corpus else "none",
             video_hash=cas.prefixed(result.ingested.video_hash),
             retrieval_backend=result.retrieval_backend,
+            provenance=Registry(offline=settings.offline).provenance(),
         )
         path = out / "certificate.json"
         path.write_text(json.dumps(certificate, indent=2), encoding="utf-8")
@@ -523,6 +532,92 @@ def fix(
         if captions is not None:
             console.print(f"  [green]wrote[/green] {captions}  (from word-level timings)")
 
+    console.print()
+    raise typer.Exit(EXIT_OK)
+
+
+@app.command()
+def doctor(
+    offline: bool = typer.Option(False, "--offline", help="Show the no-key plan"),
+    deep: bool = typer.Option(False, "--deep", help="Make one real call per hosted provider"),
+    strict: bool = typer.Option(False, "--strict", help="Exit 1 on any warning (for CI)"),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output"),
+) -> None:
+    """Diagnose the environment, credentials and capability plan.
+
+    Every failure line carries the command that fixes it.
+    """
+    report = run_doctor(offline=offline, deep=deep)
+
+    if as_json:
+        console.print_json(json.dumps(report.to_json()))
+        raise typer.Exit(EXIT_OK if not report.failures else EXIT_INPUT)
+
+    tone = {"ok": "green", "warn": "yellow", "fail": "red", "note": "dim"}
+    console.print()
+    for section, checks in report.sections.items():
+        console.print(f"  [bold]{section}[/bold]")
+        for check in checks:
+            colour = tone[check.status]
+            console.print(
+                f"    [{colour}]{check.glyph}[/{colour}] {check.name:<22} {check.detail}"
+            )
+            if check.fix and check.status in {"fail", "warn", "note"}:
+                console.print(f"        [dim]-> {check.fix}[/dim]")
+        console.print()
+
+    if report.failures:
+        console.print(f"  [red]{len(report.failures)} problem(s) to fix.[/red]")
+        console.print()
+        raise typer.Exit(EXIT_INPUT)
+
+    if report.warnings and strict:
+        console.print(f"  [yellow]{len(report.warnings)} warning(s), --strict.[/yellow]")
+        console.print()
+        raise typer.Exit(EXIT_INPUT)
+
+    console.print("  [green]Ready.[/green]")
+    console.print()
+    raise typer.Exit(EXIT_OK)
+
+
+@app.command()
+def capabilities(
+    offline: bool = typer.Option(False, "--offline"),
+) -> None:
+    """Print the capability plan: which provider serves what, and why."""
+    registry = Registry(offline=offline)
+
+    table = Table(show_header=True, box=None, pad_edge=False, header_style="dim")
+    table.add_column("CAPABILITY", width=18)
+    table.add_column("PROVIDER", width=9)
+    table.add_column("SERVED BY", width=42)
+    table.add_column("TIER", width=12)
+
+    for capability, resolution in registry.plan.items():
+        if resolution.tier_label == "null":
+            tier, colour = "unavailable", "yellow"
+        elif resolution.degraded:
+            tier, colour = "fallback", "cyan"
+        else:
+            tier, colour = "preferred", "green"
+        table.add_row(
+            capability,
+            resolution.provider.id,
+            resolution.label if resolution.tier_label != "null" else resolution.reason[:42],
+            f"[{colour}]{tier}[/{colour}]",
+        )
+
+    preferred, fallback, unavailable = registry.summary()
+    console.print()
+    console.print("  [bold]CAPABILITY PLAN[/bold]")
+    console.print()
+    console.print(table)
+    console.print()
+    console.print(
+        f"  {len(registry.plan)} capabilities · {preferred} preferred · "
+        f"{fallback} fallback · {unavailable} unavailable"
+    )
     console.print()
     raise typer.Exit(EXIT_OK)
 
