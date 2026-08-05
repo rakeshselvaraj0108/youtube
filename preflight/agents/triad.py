@@ -1,4 +1,4 @@
-"""The Adversarial Adjudication Triad.
+﻿"""The Adversarial Adjudication Triad.
 
 A single classification pass over-fires, and an over-firing linter is an
 uninstalled linter. Every candidate is therefore contested:
@@ -15,6 +15,7 @@ less than three times one stage.
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -89,6 +90,80 @@ def _clamp(value, low: float, high: float, default: float) -> float:
     return max(low, min(high, number))
 
 
+def _items(payload, key: str) -> list[dict]:
+    """Pull a list of records out of a model response.
+
+    The prompt asks for `{"candidates": [...]}`. Models routinely return the
+    bare array instead, or wrap it under a differently-named key. All three are
+    the same answer, and refusing two of them loses real findings for no reason.
+    """
+    if payload is None:
+        return []
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+        # Sole list-valued key: the model renamed the wrapper.
+        lists = [v for v in payload.values() if isinstance(v, list)]
+        if len(lists) == 1:
+            return [item for item in lists[0] if isinstance(item, dict)]
+        # A single record returned unwrapped.
+        if key.rstrip("s") in {"candidate", "defense", "verdict"} and "clause_id" in payload:
+            return [payload]
+    return []
+
+
+MAX_CLAUSES_PER_WINDOW = 5
+SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+MIN_SENTENCE_CHARS = 12
+
+
+def _retrieve_for_window(window: Window, index: IndexBuild) -> list[Chunk]:
+    """Retrieve clauses for a window, per sentence as well as per window.
+
+    A 30-second window holds one profanity and twenty-five seconds of neutral
+    narration. Embedded whole, it averages toward neutral and the language
+    clause never reaches the AUDITOR — measured on the demo clip, the profanity
+    was transcribed correctly and still went unflagged for exactly this reason.
+
+    Retrieving per sentence and unioning fixes it. Embeddings are batched and
+    cached, so the extra recall costs effectively nothing after the first run.
+    """
+    query = window.query()
+    if not query.strip():
+        return []
+
+    ordered: list[Chunk] = []
+    seen: set[str] = set()
+
+    def take(hits, limit: int) -> None:
+        for hit in hits[:limit]:
+            if hit.chunk.clause_id not in seen:
+                seen.add(hit.chunk.clause_id)
+                ordered.append(hit.chunk)
+
+    # Window-level first: it carries the overall topic.
+    take(index.retriever.clauses_for(query, top_k=3, query_vector=index.embed_query(query)), 3)
+
+    # Then each sentence, which is where a single sharp phrase lives.
+    for sentence in SENTENCE_SPLIT.split(query):
+        sentence = sentence.strip()
+        if len(sentence) < MIN_SENTENCE_CHARS:
+            continue
+        if len(ordered) >= MAX_CLAUSES_PER_WINDOW:
+            break
+        take(
+            index.retriever.clauses_for(
+                sentence, top_k=2, query_vector=index.embed_query(sentence)
+            ),
+            2,
+        )
+
+    return ordered[:MAX_CLAUSES_PER_WINDOW]
+
+
 def run_triad(
     windows: list[Window],
     corpus: Corpus,
@@ -118,13 +193,9 @@ def run_triad(
         result.log.append(result.error)
         return result
 
-    # Retrieve per window first, so each batch carries only the clauses its own
-    # windows actually implicate rather than the whole corpus.
-    retrieved: dict[int, list[Chunk]] = {}
-    for window in active:
-        vector = index.embed_query(window.query())
-        hits = index.retriever.clauses_for(window.query(), top_k=3, query_vector=vector)
-        retrieved[window.index] = [hit.chunk for hit in hits]
+    retrieved: dict[int, list[Chunk]] = {
+        window.index: _retrieve_for_window(window, index) for window in active
+    }
 
     calls_before = client.usage.calls
 
@@ -197,7 +268,7 @@ def _audit(
         allowed = {chunk.clause_id: chunk for chunk in chunks.values()}
         by_index = {w.index: w for w in batch}
 
-        for raw in (payload or {}).get("candidates", []) or []:
+        for raw in _items(payload, "candidates"):
             clause_id = str(raw.get("clause_id", "")).strip()
             chunk = allowed.get(clause_id)
             # Silently drop hallucinated clause ids. A finding citing a rule
@@ -266,7 +337,7 @@ def _defend(candidates: list[Candidate], client: NimClient, settings: Settings) 
         )
 
         by_id = {c.id: c for c in batch}
-        for raw in (payload or {}).get("defenses", []) or []:
+        for raw in _items(payload, "defenses"):
             candidate = by_id.get(str(raw.get("candidate_id", "")))
             if candidate is None:
                 continue
@@ -306,7 +377,7 @@ def _adjudicate(candidates: list[Candidate], client: NimClient, settings: Settin
         )
 
         by_id = {c.id: c for c in batch}
-        for raw in (payload or {}).get("verdicts", []) or []:
+        for raw in _items(payload, "verdicts"):
             candidate = by_id.get(str(raw.get("candidate_id", "")))
             if candidate is None:
                 continue
@@ -322,7 +393,30 @@ def _adjudicate(candidates: list[Candidate], client: NimClient, settings: Settin
                 "Ruled against the cited clause."
             )
             fix = str(raw.get("suggested_fix", "NONE")).upper()
-            candidate.suggested_fix = fix if fix in VALID_FIX else "NONE"
+            candidate.suggested_fix = _sane_fix(
+                fix if fix in VALID_FIX else "NONE", candidate
+            )
+
+
+def _sane_fix(fix: str, candidate: Candidate) -> str:
+    """Reconcile the suggested fix with what the evidence actually is.
+
+    Adjudicators pick video fixes for spoken evidence — the demo run suggested
+    BLUR_REGION for a casualty figure that exists only in the audio. Blurring
+    the picture leaves the words audible, so the fix would be applied, reported
+    as done, and change nothing a classifier hears.
+
+    Evidence quoted from the transcript is audio evidence, and audio evidence
+    gets an audio fix.
+    """
+    spoken = bool(candidate.evidence.strip()) and not candidate.evidence.startswith("[")
+    if not spoken:
+        return fix
+
+    if fix == "BLUR_REGION":
+        # A short quote is one phrase to bleep; a long one is a passage to mute.
+        return "BLEEP" if len(candidate.evidence.split()) <= 3 else "MUTE"
+    return fix
 
 
 def _default_severity(candidate: Candidate) -> str:
@@ -403,3 +497,5 @@ def to_agent_result(result: TriadResult) -> AgentResult:
             "windows_with_candidates": result.windows_with_candidates,
         },
     )
+
+
