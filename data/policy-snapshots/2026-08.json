@@ -1,0 +1,189 @@
+{
+  "version": "2026-08",
+  "digest": "05f9659d8f8f0f1ef195bb07038ab83e2784d591ed34155cec888e526de1047f",
+  "capturedAt": "2026-08-05T10:30:56+00:00",
+  "clauses": {
+    "AF-01": {
+      "sha256": "7a54ecdaf58898a59e7af294665424b074b5f0025d56c855c8909ae67fda7fcf",
+      "title": "Inappropriate language",
+      "text": "## Scope\nProfanity and vulgar language in speech, on-screen text, titles, thumbnails and metadata. On-screen text is assessed the same way as spoken language; masked or censored terms are weighted lower but are still assessed.\n## Green\n- No profanity, or only mild language used infrequently\n- Strong profanity that is fully bleeped or muted\n- Isolated moderate profanity outside the opening\n## Yellow\n- Strong profanity used more than occasionally through the video\n- Any strong profanity in the first seven seconds\n- Profanity in the title, thumbnail or on-screen text\n## Red\n- Strong profanity used continuously or as the focus of the content\n- Slurs directed at a person or group\n## Documented exemptions\n- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement",
+      "sections": {
+        "Scope": "Profanity and vulgar language in speech, on-screen text, titles, thumbnails and metadata. On-screen text is assessed the same way as spoken language; masked or censored terms are weighted lower but are still assessed.",
+        "Green": "- No profanity, or only mild language used infrequently\n- Strong profanity that is fully bleeped or muted\n- Isolated moderate profanity outside the opening",
+        "Yellow": "- Strong profanity used more than occasionally through the video\n- Any strong profanity in the first seven seconds\n- Profanity in the title, thumbnail or on-screen text",
+        "Red": "- Strong profanity used continuously or as the focus of the content\n- Slurs directed at a person or group",
+        "Documented exemptions": "- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement"
+      },
+      "version": "2026-08"
+    },
+    "AF-02": {
+      "sha256": "8b14f21846d0bf3806332a0bb12d753c13c1ae02726a5119539a275f9df4dc7e",
+      "title": "Violence",
+      "text": "## Scope\nReal or dramatised violence, physical injury, blood and its aftermath. Assessment turns on whether the injury is the subject of the shot and whether it is dwelt upon, not merely on whether it appears.\n## Green\n- Violence that is implied rather than shown\n- Non-graphic depictions in a clearly fictional or gaming context\n- Brief, incidental injury that is not the focus of the frame\n## Yellow\n- Real injury shown briefly with visible blood\n- Dramatised violence held on screen without graphic detail\n## Red\n- Graphic real injury, mutilation or death held in focus\n- Violence presented for shock value with no contextual purpose\n## Documented exemptions\n- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement",
+      "sections": {
+        "Scope": "Real or dramatised violence, physical injury, blood and its aftermath. Assessment turns on whether the injury is the subject of the shot and whether it is dwelt upon, not merely on whether it appears.",
+        "Green": "- Violence that is implied rather than shown\n- Non-graphic depictions in a clearly fictional or gaming context\n- Brief, incidental injury that is not the focus of the frame",
+        "Yellow": "- Real injury shown briefly with visible blood\n- Dramatised violence held on screen without graphic detail",
+        "Red": "- Graphic real injury, mutilation or death held in focus\n- Violence presented for shock value with no contextual purpose",
+        "Documented exemptions": "- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement"
+      },
+      "version": "2026-08"
+    },
+    "AF-03": {
+      "sha256": "8e31caa72e9670b3f93ca4b92b4eef71f0947782744207d9e614311badf55e20",
+      "title": "Adult content",
+      "text": "## Scope\nSexually gratifying content, nudity, and sexually suggestive framing including camera emphasis on body parts.\n## Green\n- Non-sexual nudity in an artistic, medical or documentary context\n- Romantic content without sexual emphasis\n## Yellow\n- Sexually suggestive framing or dancing without explicit content\n- Discussion of sexual topics in an educational register\n## Red\n- Sexual acts, whether real, simulated or animated\n- Nudity presented for sexual gratification\n## Documented exemptions\n- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement",
+      "sections": {
+        "Scope": "Sexually gratifying content, nudity, and sexually suggestive framing including camera emphasis on body parts.",
+        "Green": "- Non-sexual nudity in an artistic, medical or documentary context\n- Romantic content without sexual emphasis",
+        "Yellow": "- Sexually suggestive framing or dancing without explicit content\n- Discussion of sexual topics in an educational register",
+        "Red": "- Sexual acts, whether real, simulated or animated\n- Nudity presented for sexual gratification",
+        "Documented exemptions": "- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement"
+      },
+      "version": "2026-08"
+    },
+    "AF-04": {
+      "sha256": "711aa073b5fd7c567878407d2f0f2ecac7ebcc7f331a628ee3c3bc4fd383a746",
+      "title": "Shocking content",
+      "text": "## Scope\nContent intended to shock or disgust, including gore divorced from narrative purpose, bodily fluids, and graphic medical procedures.\n## Green\n- Medical or scientific footage with clear educational framing\n- Mild shock content with a stated warning\n## Yellow\n- Graphic medical procedure shown in detail\n- Content likely to disturb a general audience\n## Red\n- Gore or bodily harm presented for its own sake\n## Documented exemptions\n- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement",
+      "sections": {
+        "Scope": "Content intended to shock or disgust, including gore divorced from narrative purpose, bodily fluids, and graphic medical procedures.",
+        "Green": "- Medical or scientific footage with clear educational framing\n- Mild shock content with a stated warning",
+        "Yellow": "- Graphic medical procedure shown in detail\n- Content likely to disturb a general audience",
+        "Red": "- Gore or bodily harm presented for its own sake",
+        "Documented exemptions": "- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement"
+      },
+      "version": "2026-08"
+    },
+    "AF-05": {
+      "sha256": "0a74ad01b3f501e20b2916a62c31e059149ee2d684e75278d479f92a71661dcf",
+      "title": "Harmful or dangerous acts",
+      "text": "## Scope\nActs a viewer could imitate and be seriously injured by, including dangerous stunts, challenges, and unsafe technique presented approvingly. The documentary exemption requires an explicit warning against imitation.\n## Green\n- Professional stunt work with visible safety measures and a warning\n- Discussion of a dangerous act without demonstrating it\n## Yellow\n- Risky activity by trained subjects with no warning against imitation\n- Minor self-harm-adjacent challenge content\n## Red\n- Instructional content for a dangerous act\n- Content encouraging viewers to attempt serious risk\n## Documented exemptions\n- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement",
+      "sections": {
+        "Scope": "Acts a viewer could imitate and be seriously injured by, including dangerous stunts, challenges, and unsafe technique presented approvingly. The documentary exemption requires an explicit warning against imitation.",
+        "Green": "- Professional stunt work with visible safety measures and a warning\n- Discussion of a dangerous act without demonstrating it",
+        "Yellow": "- Risky activity by trained subjects with no warning against imitation\n- Minor self-harm-adjacent challenge content",
+        "Red": "- Instructional content for a dangerous act\n- Content encouraging viewers to attempt serious risk",
+        "Documented exemptions": "- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement"
+      },
+      "version": "2026-08"
+    },
+    "AF-06": {
+      "sha256": "850676e0977d12ec7e548c61845a340391dabe432c9059aa1394a0b1cc615449",
+      "title": "Hateful and derogatory content",
+      "text": "## Scope\nContent promoting hatred, demeaning an individual or group on the basis of a protected attribute, or degrading a person on the basis of an immutable characteristic.\n## Green\n- Neutral discussion of discrimination as a subject\n- Reporting on a hate incident without repeating slurs gratuitously\n## Yellow\n- Insulting content targeting an individual without a protected attribute\n## Red\n- Slurs or dehumanising language aimed at a protected group\n- Content promoting or justifying hatred\n## Documented exemptions\n- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement",
+      "sections": {
+        "Scope": "Content promoting hatred, demeaning an individual or group on the basis of a protected attribute, or degrading a person on the basis of an immutable characteristic.",
+        "Green": "- Neutral discussion of discrimination as a subject\n- Reporting on a hate incident without repeating slurs gratuitously",
+        "Yellow": "- Insulting content targeting an individual without a protected attribute",
+        "Red": "- Slurs or dehumanising language aimed at a protected group\n- Content promoting or justifying hatred",
+        "Documented exemptions": "- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement"
+      },
+      "version": "2026-08"
+    },
+    "AF-07": {
+      "sha256": "d3aa01d1a5107af6b9cd041c3b7474eb38ea896f75855092f27e5352edc224cb",
+      "title": "Recreational drugs and drug-related content",
+      "text": "## Scope\nDepiction, promotion or discussion of recreational drugs, including sale, manufacture and use.\n## Green\n- Educational or recovery-focused discussion\n- Passing reference without depiction\n## Yellow\n- Drug use shown without promotion\n- Discussion of drug culture in a non-educational register\n## Red\n- Promotion or sale of drugs\n- Instructions for manufacture or acquisition\n## Documented exemptions\n- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement",
+      "sections": {
+        "Scope": "Depiction, promotion or discussion of recreational drugs, including sale, manufacture and use.",
+        "Green": "- Educational or recovery-focused discussion\n- Passing reference without depiction",
+        "Yellow": "- Drug use shown without promotion\n- Discussion of drug culture in a non-educational register",
+        "Red": "- Promotion or sale of drugs\n- Instructions for manufacture or acquisition",
+        "Documented exemptions": "- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement"
+      },
+      "version": "2026-08"
+    },
+    "AF-08": {
+      "sha256": "ac7d066a7a51eb86edf429c5f4ee0eb6b40d21a38c323633676418b24ce123e2",
+      "title": "Firearms",
+      "text": "## Scope\nFirearms and firearm-adjacent content, including handling, modification and sale.\n## Green\n- Firearms appearing incidentally in a scene\n- Historical or documentary treatment\n## Yellow\n- Firearm demonstration or range content\n- Detailed discussion of firearm capability\n## Red\n- Instructions for manufacturing firearms or modifying them to fire automatically\n- Facilitating sale or transfer\n## Documented exemptions\n- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement",
+      "sections": {
+        "Scope": "Firearms and firearm-adjacent content, including handling, modification and sale.",
+        "Green": "- Firearms appearing incidentally in a scene\n- Historical or documentary treatment",
+        "Yellow": "- Firearm demonstration or range content\n- Detailed discussion of firearm capability",
+        "Red": "- Instructions for manufacturing firearms or modifying them to fire automatically\n- Facilitating sale or transfer",
+        "Documented exemptions": "- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement"
+      },
+      "version": "2026-08"
+    },
+    "AF-09": {
+      "sha256": "5f0cf26d58c98aebcb446879155f547ebe60a14dbdd84b749890abd4ae28d29c",
+      "title": "Controversial issues",
+      "text": "## Scope\nContentious political and social topics, including armed conflict, abortion, immigration and civil unrest. Assessment turns on whether the treatment is inflammatory or sourced.\n## Green\n- Balanced, sourced reporting\n- Passing mention without argument\n## Yellow\n- One-sided treatment of a contentious issue\n- Unsourced allegation against a named person or institution\n## Red\n- Inflammatory content likely to incite\n## Documented exemptions\n- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement",
+      "sections": {
+        "Scope": "Contentious political and social topics, including armed conflict, abortion, immigration and civil unrest. Assessment turns on whether the treatment is inflammatory or sourced.",
+        "Green": "- Balanced, sourced reporting\n- Passing mention without argument",
+        "Yellow": "- One-sided treatment of a contentious issue\n- Unsourced allegation against a named person or institution",
+        "Red": "- Inflammatory content likely to incite",
+        "Documented exemptions": "- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement"
+      },
+      "version": "2026-08"
+    },
+    "AF-10": {
+      "sha256": "e9578381f7a10186f8e1a3c448bfd763e8e60c1c48d30a77b3da0f6059a111dd",
+      "title": "Sensitive events",
+      "text": "## Scope\nTragedies, disasters, deaths and violent incidents affecting real people. Assessment turns on whether the treatment dwells on the loss or sensationalises it.\n## Green\n- Factual reference in passing, with framing\n- Memorial or tribute content\n## Yellow\n- Casualty figures stated without surrounding framing\n- Extended discussion of a recent tragedy\n## Red\n- Graphic discussion or footage of a tragedy\n- Content exploiting a tragedy for engagement\n## Documented exemptions\n- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement",
+      "sections": {
+        "Scope": "Tragedies, disasters, deaths and violent incidents affecting real people. Assessment turns on whether the treatment dwells on the loss or sensationalises it.",
+        "Green": "- Factual reference in passing, with framing\n- Memorial or tribute content",
+        "Yellow": "- Casualty figures stated without surrounding framing\n- Extended discussion of a recent tragedy",
+        "Red": "- Graphic discussion or footage of a tragedy\n- Content exploiting a tragedy for engagement",
+        "Documented exemptions": "- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement"
+      },
+      "version": "2026-08"
+    },
+    "AF-11": {
+      "sha256": "64f0884cf20f72db178a9c9bacf723d9a368b41baad33c847c3e05e350c28cfc",
+      "title": "Enabling dishonest behaviour",
+      "text": "## Scope\nContent facilitating dishonesty, including academic cheating, hacking for harm, forged documents and circumvention of payment.\n## Green\n- Security research with a defensive framing\n- Discussion of fraud as a subject\n## Yellow\n- Demonstration of a circumvention technique without instruction\n## Red\n- Step-by-step instructions enabling fraud or unauthorised access\n## Documented exemptions\n- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement",
+      "sections": {
+        "Scope": "Content facilitating dishonesty, including academic cheating, hacking for harm, forged documents and circumvention of payment.",
+        "Green": "- Security research with a defensive framing\n- Discussion of fraud as a subject",
+        "Yellow": "- Demonstration of a circumvention technique without instruction",
+        "Red": "- Step-by-step instructions enabling fraud or unauthorised access",
+        "Documented exemptions": "- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement"
+      },
+      "version": "2026-08"
+    },
+    "AF-12": {
+      "sha256": "b6268768b3fcffa64a750406208f12d7f2b98fe2e7dfdfde274da9daaa933083",
+      "title": "Tobacco, vaping and alcohol",
+      "text": "## Scope\nRegulated goods: tobacco, vaping products and alcohol. Incidental adult references are generally eligible; promotion and excess are not.\n## Green\n- Incidental reference in adult-audience content\n- Cessation or harm-reduction content\n## Yellow\n- Consumption shown on camera without promotion\n- Product review of regulated goods\n## Red\n- Promotion of tobacco or vaping products\n- Content promoting excessive consumption\n- Any depiction in content made for kids\n## Documented exemptions\n- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement",
+      "sections": {
+        "Scope": "Regulated goods: tobacco, vaping products and alcohol. Incidental adult references are generally eligible; promotion and excess are not.",
+        "Green": "- Incidental reference in adult-audience content\n- Cessation or harm-reduction content",
+        "Yellow": "- Consumption shown on camera without promotion\n- Product review of regulated goods",
+        "Red": "- Promotion of tobacco or vaping products\n- Content promoting excessive consumption\n- Any depiction in content made for kids",
+        "Documented exemptions": "- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement"
+      },
+      "version": "2026-08"
+    },
+    "AF-13": {
+      "sha256": "50f12a6bdf0ca7d06644df600fd120b78500353c33a17a9984aa8b164574dfc2",
+      "title": "Adult themes in family content",
+      "text": "## Scope\nMature themes presented in content whose format, characters or framing would lead a viewer to expect it is made for children.\n## Green\n- Family content with no mature themes\n- Mature content clearly framed for an adult audience\n## Yellow\n- Mild mature themes in family-coded formats\n## Red\n- Violence, sexual themes or profanity in content resembling children's programming\n## Documented exemptions\n- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement",
+      "sections": {
+        "Scope": "Mature themes presented in content whose format, characters or framing would lead a viewer to expect it is made for children.",
+        "Green": "- Family content with no mature themes\n- Mature content clearly framed for an adult audience",
+        "Yellow": "- Mild mature themes in family-coded formats",
+        "Red": "- Violence, sexual themes or profanity in content resembling children's programming",
+        "Documented exemptions": "- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement"
+      },
+      "version": "2026-08"
+    },
+    "AF-14": {
+      "sha256": "502d24bc477d7988dcbd62c5a2836583a5d5a4f302ff9fdf898bd0b9aaf58939",
+      "title": "Gambling",
+      "text": "## Scope\nGambling, betting, casino content and simulated gambling including loot boxes.\n## Green\n- Discussion of gambling harm or regulation\n- Passing reference\n## Yellow\n- Gameplay of casino-style games\n- Discussion of betting strategy\n## Red\n- Promotion of unlicensed gambling sites\n- Content directing viewers to place bets\n## Documented exemptions\n- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement",
+      "sections": {
+        "Scope": "Gambling, betting, casino content and simulated gambling including loot boxes.",
+        "Green": "- Discussion of gambling harm or regulation\n- Passing reference",
+        "Yellow": "- Gameplay of casino-style games\n- Discussion of betting strategy",
+        "Red": "- Promotion of unlicensed gambling sites\n- Content directing viewers to place bets",
+        "Documented exemptions": "- Educational, documentary, scientific or artistic (EDSA) framing where the context is clear from the content itself\n- News reporting on a matter of public interest\n- Non-graphic reference rather than depiction\n- Clearly fictional or scripted context\n- Quotation or condemnation of a third party rather than endorsement"
+      },
+      "version": "2026-08"
+    }
+  }
+}
