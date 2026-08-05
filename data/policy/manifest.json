@@ -1,0 +1,134 @@
+{
+  "version": "2026-08",
+  "source_url": "https://support.google.com/youtube/answer/6162278",
+  "fetched_at": "2026-08-05",
+  "note": "Structured restatement of publicly published platform guidance, used for retrieval-grounded classification. Not authoritative and not affiliated with YouTube.",
+  "clauses": [
+    {
+      "clause_id": "AF-01",
+      "file": "01_inappropriate_language.md",
+      "title": "Inappropriate language",
+      "severity_default": "LIMITING",
+      "sha256": "7a54ecdaf58898a59e7af294665424b074b5f0025d56c855c8909ae67fda7fcf",
+      "source_url": "https://support.google.com/youtube/answer/6162278",
+      "fetched_at": "2026-08-05"
+    },
+    {
+      "clause_id": "AF-02",
+      "file": "02_violence.md",
+      "title": "Violence",
+      "severity_default": "DEMONETIZING",
+      "sha256": "8b14f21846d0bf3806332a0bb12d753c13c1ae02726a5119539a275f9df4dc7e",
+      "source_url": "https://support.google.com/youtube/answer/6162278",
+      "fetched_at": "2026-08-05"
+    },
+    {
+      "clause_id": "AF-03",
+      "file": "03_adult_content.md",
+      "title": "Adult content",
+      "severity_default": "DEMONETIZING",
+      "sha256": "8e31caa72e9670b3f93ca4b92b4eef71f0947782744207d9e614311badf55e20",
+      "source_url": "https://support.google.com/youtube/answer/6162278",
+      "fetched_at": "2026-08-05"
+    },
+    {
+      "clause_id": "AF-04",
+      "file": "04_shocking_content.md",
+      "title": "Shocking content",
+      "severity_default": "DEMONETIZING",
+      "sha256": "711aa073b5fd7c567878407d2f0f2ecac7ebcc7f331a628ee3c3bc4fd383a746",
+      "source_url": "https://support.google.com/youtube/answer/6162278",
+      "fetched_at": "2026-08-05"
+    },
+    {
+      "clause_id": "AF-05",
+      "file": "05_harmful_dangerous_acts.md",
+      "title": "Harmful or dangerous acts",
+      "severity_default": "DEMONETIZING",
+      "sha256": "0a74ad01b3f501e20b2916a62c31e059149ee2d684e75278d479f92a71661dcf",
+      "source_url": "https://support.google.com/youtube/answer/6162278",
+      "fetched_at": "2026-08-05"
+    },
+    {
+      "clause_id": "AF-06",
+      "file": "06_hateful_derogatory.md",
+      "title": "Hateful and derogatory content",
+      "severity_default": "DEMONETIZING",
+      "sha256": "850676e0977d12ec7e548c61845a340391dabe432c9059aa1394a0b1cc615449",
+      "source_url": "https://support.google.com/youtube/answer/6162278",
+      "fetched_at": "2026-08-05"
+    },
+    {
+      "clause_id": "AF-07",
+      "file": "07_recreational_drugs.md",
+      "title": "Recreational drugs and drug-related content",
+      "severity_default": "LIMITING",
+      "sha256": "d3aa01d1a5107af6b9cd041c3b7474eb38ea896f75855092f27e5352edc224cb",
+      "source_url": "https://support.google.com/youtube/answer/6162278",
+      "fetched_at": "2026-08-05"
+    },
+    {
+      "clause_id": "AF-08",
+      "file": "08_firearms.md",
+      "title": "Firearms",
+      "severity_default": "LIMITING",
+      "sha256": "ac7d066a7a51eb86edf429c5f4ee0eb6b40d21a38c323633676418b24ce123e2",
+      "source_url": "https://support.google.com/youtube/answer/6162278",
+      "fetched_at": "2026-08-05"
+    },
+    {
+      "clause_id": "AF-09",
+      "file": "09_controversial_issues.md",
+      "title": "Controversial issues",
+      "severity_default": "LIMITING",
+      "sha256": "5f0cf26d58c98aebcb446879155f547ebe60a14dbdd84b749890abd4ae28d29c",
+      "source_url": "https://support.google.com/youtube/answer/6162278",
+      "fetched_at": "2026-08-05"
+    },
+    {
+      "clause_id": "AF-10",
+      "file": "10_sensitive_events.md",
+      "title": "Sensitive events",
+      "severity_default": "DEMONETIZING",
+      "sha256": "e9578381f7a10186f8e1a3c448bfd763e8e60c1c48d30a77b3da0f6059a111dd",
+      "source_url": "https://support.google.com/youtube/answer/6162278",
+      "fetched_at": "2026-08-05"
+    },
+    {
+      "clause_id": "AF-11",
+      "file": "11_enabling_dishonest_behavior.md",
+      "title": "Enabling dishonest behaviour",
+      "severity_default": "DEMONETIZING",
+      "sha256": "64f0884cf20f72db178a9c9bacf723d9a368b41baad33c847c3e05e350c28cfc",
+      "source_url": "https://support.google.com/youtube/answer/6162278",
+      "fetched_at": "2026-08-05"
+    },
+    {
+      "clause_id": "AF-12",
+      "file": "12_tobacco.md",
+      "title": "Tobacco, vaping and alcohol",
+      "severity_default": "LIMITING",
+      "sha256": "b6268768b3fcffa64a750406208f12d7f2b98fe2e7dfdfde274da9daaa933083",
+      "source_url": "https://support.google.com/youtube/answer/6162278",
+      "fetched_at": "2026-08-05"
+    },
+    {
+      "clause_id": "AF-13",
+      "file": "13_adult_themes_in_family_content.md",
+      "title": "Adult themes in family content",
+      "severity_default": "DEMONETIZING",
+      "sha256": "50f12a6bdf0ca7d06644df600fd120b78500353c33a17a9984aa8b164574dfc2",
+      "source_url": "https://support.google.com/youtube/answer/6162278",
+      "fetched_at": "2026-08-05"
+    },
+    {
+      "clause_id": "AF-14",
+      "file": "14_gambling.md",
+      "title": "Gambling",
+      "severity_default": "LIMITING",
+      "sha256": "502d24bc477d7988dcbd62c5a2836583a5d5a4f302ff9fdf898bd0b9aaf58939",
+      "source_url": "https://support.google.com/youtube/answer/6162278",
+      "fetched_at": "2026-08-05"
+    }
+  ]
+}
