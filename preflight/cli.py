@@ -22,6 +22,11 @@ from preflight.ingest.pipeline import ingest
 from preflight.ingest.probe import UnsupportedInput
 from preflight.models import SEVERITY_RANK
 from preflight.pipeline import SURFACE_WEIGHT, run_perception
+from preflight.config import Settings
+from preflight.report.build import build_report, validate
+from preflight.report.html import BundleMissing, emit_html
+from preflight.report.html import emit_fixture as emit_fixture_file
+from preflight.report.sarif import build_certificate, build_sarif
 from preflight.remediate.captions import write_captions
 from preflight.remediate.codegen import build_program, write_fix_script
 from preflight.remediate.edl import InvalidEDL, compile_edl
@@ -138,6 +143,15 @@ def check(
     cache_dir: Path = typer.Option(Path(".preflight/cache"), "--cache-dir"),
     asr_model: str = typer.Option("base.en", "--asr-model", help="faster-whisper model"),
     no_speech: bool = typer.Option(False, "--no-speech", help="Skip transcription"),
+    html: bool = typer.Option(False, "--html", help="Emit a self-contained report.html"),
+    fmt: str = typer.Option(
+        "", "--format", help="Comma-separated: json,sarif,certificate,html,all"
+    ),
+    out: Path = typer.Option(Path("preflight-out"), "--out", help="Output directory"),
+    emit_fixture: Path = typer.Option(
+        None, "--emit-fixture", help="Write this run as the UI's demo fixture"
+    ),
+    offline: bool = typer.Option(False, "--offline", help="Never touch the network"),
 ) -> None:
     """Analyse a video and print findings.
 
@@ -150,9 +164,15 @@ def check(
         raise typer.Exit(EXIT_UPSTREAM)
 
     store = cas.Store(cache_dir)
+    settings = Settings.load(offline=True) if offline else Settings.load()
+    console.print(f"[dim]{settings.describe_mode()}[/dim]")
     try:
         result = run_perception(
-            video, store, asr_model=asr_model, skip_speech=no_speech
+            video,
+            store,
+            asr_model=asr_model,
+            skip_speech=no_speech,
+            settings=settings,
         )
     except (FileNotFoundError, UnsupportedInput, ffmpeg.FfmpegFailed) as exc:
         console.print(f"[red]{exc}[/red]")
@@ -283,8 +303,85 @@ def check(
             console.print(f"    impaired: {', '.join(impaired)}")
         if unbuilt:
             console.print(f"    not yet implemented: {', '.join(sorted(unbuilt))}")
+    # Emission.
+    formats = {f.strip().lower() for f in fmt.split(",") if f.strip()}
+    if html:
+        formats.add("html")
+    if "all" in formats:
+        formats = {"json", "sarif", "certificate", "html"}
+    if emit_fixture is not None:
+        formats.add("json")
+
+    if formats or emit_fixture is not None:
+        _emit(result, formats, out, emit_fixture)
+
     console.print()
     raise typer.Exit(EXIT_OK if readiness.verdict in PASSING else EXIT_FINDINGS)
+
+
+def _emit(result, formats: set[str], out: Path, fixture: Path | None) -> None:
+    """Write the requested artifacts. Validates before writing anything."""
+    settings = Settings.load()
+    bundle = build_report(
+        result,
+        policy_version=result.corpus.version if result.corpus else "unknown",
+        embed_media="html" in formats or fixture is not None,
+    )
+
+    schema_path = Path("schema/analysis-report.schema.json")
+    if schema_path.is_file():
+        try:
+            validate(bundle.report, schema_path)
+        except Exception as exc:  # noqa: BLE001
+            # A contract violation means the page would render something wrong.
+            # Fail here rather than ship a report the UI silently misreads.
+            console.print(f"[red]report failed schema validation: {exc}[/red]")
+            raise typer.Exit(EXIT_INPUT) from exc
+
+    out.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+
+    if "json" in formats:
+        path = out / "report.json"
+        path.write_text(
+            json.dumps(bundle.report, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        written.append(path)
+
+    if "sarif" in formats:
+        path = out / "report.sarif"
+        path.write_text(
+            json.dumps(build_sarif(bundle.report), indent=2), encoding="utf-8"
+        )
+        written.append(path)
+
+    if "certificate" in formats:
+        certificate = build_certificate(
+            bundle.report,
+            models=settings.models.to_json(),
+            policy_digest=result.corpus.digest if result.corpus else "none",
+            video_hash=cas.prefixed(result.ingested.video_hash),
+            retrieval_backend=result.retrieval_backend,
+        )
+        path = out / "certificate.json"
+        path.write_text(json.dumps(certificate, indent=2), encoding="utf-8")
+        written.append(path)
+
+    if "html" in formats:
+        try:
+            path = emit_html(bundle.report, Path("dist"), out / "report.html")
+            written.append(path)
+        except BundleMissing as exc:
+            console.print(f"[yellow]{exc}[/yellow]")
+
+    if fixture is not None:
+        written.append(emit_fixture_file(bundle.report, fixture))
+
+    if written:
+        console.print()
+        for path in written:
+            size = path.stat().st_size
+            console.print(f"  wrote [bold]{path}[/bold]  ({size:,} bytes)")
 
 
 @app.command()
