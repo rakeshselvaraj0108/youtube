@@ -1,4 +1,4 @@
-"""PREFLIGHT command line.
+﻿"""PREFLIGHT command line.
 
 Exit codes:
     0  pass
@@ -23,6 +23,7 @@ from preflight.ingest.probe import UnsupportedInput
 from preflight.models import SEVERITY_RANK
 from preflight.pipeline import SURFACE_WEIGHT, run_perception
 from preflight.agents.nim import NimClient
+from preflight.agents.roster import load_roster
 from preflight.archive import Archive
 from preflight.config import Settings
 from preflight.drift import detect, write_snapshot
@@ -242,7 +243,7 @@ def check(
                 else f"{_timecode(finding.startMs)} → {_timecode(finding.endMs)}"
             )
             console.print(
-                f"  [{severity_tone[finding.severity]}]●[/] "
+                f"  [{severity_tone[finding.severity]}]â—[/] "
                 f"[{severity_tone[finding.severity]}]{finding.severity:<8}[/] "
                 f"[dim]{finding.clauseId:<8}[/] {finding.title}"
             )
@@ -272,7 +273,7 @@ def check(
         value = sub[key]
         filled = int(round(value / 5))
         bar = "█" * filled + "·" * (20 - filled)
-        marker = " [dim]← weakest[/dim]" if key == readiness.weakest else ""
+        marker = " [dim]â† weakest[/dim]" if key == readiness.weakest else ""
         console.print(f"    {key:<14} {bar} {value:5.1f}{marker}")
     console.print()
     console.print(
@@ -582,6 +583,59 @@ def doctor(
 
 
 @app.command()
+def agents() -> None:
+    """Print the agent roster declared in prompts/, and its conformance."""
+    roster = load_roster()
+
+    table = Table(show_header=True, box=None, pad_edge=False, header_style="dim")
+    table.add_column("ID", width=5, no_wrap=True)
+    table.add_column("CODENAME", width=13, no_wrap=True)
+    table.add_column("KIND", width=14, no_wrap=True)
+    table.add_column("CAPABILITY", width=16, no_wrap=True)
+    table.add_column("DEPENDS ON", width=20, no_wrap=True)
+    table.add_column("STATE", width=10, no_wrap=True)
+
+    for spec in roster.ordered:
+        if not spec.implemented:
+            state = "[yellow]not built[/yellow]"
+        elif spec.is_model_driven:
+            state = "[green]built[/green]"
+        else:
+            state = "[green]built[/green]"
+        table.add_row(
+            spec.agent_id,
+            spec.codename,
+            spec.kind,
+            spec.model_capability if spec.model_capability != "none" else "[dim]—[/dim]",
+            ", ".join(spec.parents) or "[dim]—[/dim]",
+            state,
+        )
+
+    problems = roster.validate()
+    built = sum(1 for s in roster.ordered if s.implemented)
+
+    console.print()
+    console.print("  [bold]AGENT ROSTER[/bold]   [dim]declared in prompts/[/dim]")
+    console.print()
+    console.print(table)
+    console.print()
+    console.print(
+        f"  {len(roster.agents)} agents · {built} built · "
+        f"{len(roster.model_driven)} model-driven · "
+        f"roster digest {roster.digest[:16]}"
+    )
+    if problems:
+        console.print()
+        for problem in problems:
+            console.print(f"  [red]![/red] {problem}")
+        console.print()
+        raise typer.Exit(EXIT_INPUT)
+    console.print("  [dim]roster is a valid DAG[/dim]")
+    console.print()
+    raise typer.Exit(EXIT_OK)
+
+
+@app.command()
 def capabilities(
     offline: bool = typer.Option(False, "--offline"),
 ) -> None:
@@ -777,3 +831,4 @@ def cache(
 
 if __name__ == "__main__":  # pragma: no cover
     app()
+
