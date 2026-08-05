@@ -21,12 +21,23 @@ build/
 preflight-out/
 out/
 
-# Media — regenerate the synthetic clip with `python scripts/make_sample.py`
+# Media is generated, not committed. A judge cloning this should not wait on a
+# 40MB download to run the tests, and every artifact here is reproducible:
+#   python scripts/make_sample.py    -> samples/synthetic.mp4
+#   python scripts/make_demo.py      -> samples/demo.mp4 (narrated)
+#   python scripts/make_assets.py    -> assets/cc_music/glacier_calm.mp3
 samples/*.mp4
 samples/*.mov
 samples/*.mkv
 samples/*.wav
 public/media/*.mp4
+assets/cc_music/*.mp3
+
+# Remediation outputs
+samples/*.safe.*
+samples/edl.json
+samples/fix.sh
+samples/*.vtt
 
 .env
 .env.*
