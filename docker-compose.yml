@@ -1,0 +1,43 @@
+services:
+  preflight:
+    build: .
+    image: preflight:0.1.0
+    # The API key is optional everywhere. Without it the run is local-only at
+    # reduced coverage, and the report says which path produced the numbers.
+    environment:
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      PREFLIGHT_OFFLINE: ${PREFLIGHT_OFFLINE:-0}
+      PREFLIGHT_RPM: ${PREFLIGHT_RPM:-30}
+    volumes:
+      - ./samples:/app/samples
+      - ./preflight-out:/app/preflight-out
+      # Persisting the content-addressed store across containers is what makes
+      # a second run cost zero API calls.
+      - preflight-cache:/app/.preflight
+    command: ["--help"]
+
+  # One command reproduces the whole demo:  docker compose run --rm demo
+  demo:
+    build: .
+    image: preflight:0.1.0
+    environment:
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+    volumes:
+      - ./preflight-out:/app/preflight-out
+      - preflight-cache:/app/.preflight
+    entrypoint: ["bash", "-lc"]
+    command: >
+      "python scripts/make_demo.py &&
+       preflight check samples/demo.mp4 --format all --out preflight-out/before ;
+       preflight fix   samples/demo.mp4 --apply &&
+       preflight check samples/demo.safe.mp4 --format all --out preflight-out/after ;
+       python - <<'PY'
+      import json
+      b = json.load(open('preflight-out/before/report.json'))['scores']
+      a = json.load(open('preflight-out/after/report.json'))['scores']
+      print(f\"BEFORE {b['overall']:>3} {b['verdict']}\")
+      print(f\"AFTER  {a['overall']:>3} {a['verdict']}\")
+      PY"
+
+volumes:
+  preflight-cache:
