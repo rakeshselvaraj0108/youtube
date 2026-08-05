@@ -1,0 +1,31 @@
+{
+  "_category": "emotion",
+  "_note": "Labels here are OBSERVATIONS. A03 reports what is visibly present and never what it means. 'knife' is an observation; 'graphic violence' is a conclusion belonging to A11, which has the clause text and an advocate.",
+  "_purpose": "Supporting evidence only, and the weakest signal A03 produces. Facial-expression inference is unreliable across cultures, ages and camera angles, so these carry a confidence ceiling and never corroborate on their own.",
+  "labels": [
+    "anger",
+    "fear",
+    "happy",
+    "neutral",
+    "sadness",
+    "surprise"
+  ],
+  "synonyms": {
+    "smiling": "happy",
+    "joy": "happy",
+    "laughing": "happy",
+    "calm": "neutral",
+    "expressionless": "neutral",
+    "afraid": "fear",
+    "scared": "fear",
+    "frightened": "fear",
+    "angry": "anger",
+    "furious": "anger",
+    "enraged": "anger",
+    "sad": "sadness",
+    "crying": "sadness",
+    "upset": "sadness",
+    "shocked": "surprise",
+    "astonished": "surprise"
+  }
+}

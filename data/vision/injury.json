@@ -1,0 +1,26 @@
+{
+  "_category": "injury",
+  "_note": "Labels here are OBSERVATIONS. A03 reports what is visibly present and never what it means. 'knife' is an observation; 'graphic violence' is a conclusion belonging to A11, which has the clause text and an advocate.",
+  "_purpose": "Blood and wounds. Deliberately separate from weapons: an injury with no weapon is AF-04 rather than AF-02, and conflating them sends the wrong clause to the adjudicator.",
+  "labels": [
+    "bandage",
+    "blood",
+    "injury",
+    "wound"
+  ],
+  "synonyms": {
+    "bleeding": "blood",
+    "bloodstain": "blood",
+    "blood spatter": "blood",
+    "open wound": "wound",
+    "laceration": "wound",
+    "cut": "wound",
+    "gash": "wound",
+    "injured person": "injury",
+    "bodily injury": "injury",
+    "hurt person": "injury",
+    "dressing": "bandage",
+    "first aid": "bandage",
+    "gauze": "bandage"
+  }
+}

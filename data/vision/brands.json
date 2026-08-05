@@ -1,0 +1,31 @@
+{
+  "_category": "brand",
+  "_note": "Labels here are OBSERVATIONS. A03 reports what is visibly present and never what it means. 'knife' is an observation; 'graphic violence' is a conclusion belonging to A11, which has the clause text and an advocate.",
+  "_purpose": "Visible marks. A logo is a weak corroborating signal for COPY-01, nothing more \u2014 a laptop in shot is not infringement.",
+  "labels": [
+    "apple",
+    "broadcast_bug",
+    "disney",
+    "marvel",
+    "netflix",
+    "nike",
+    "tesla",
+    "youtube"
+  ],
+  "synonyms": {
+    "apple logo": "apple",
+    "macbook logo": "apple",
+    "netflix logo": "netflix",
+    "disney logo": "disney",
+    "mickey mouse": "disney",
+    "marvel logo": "marvel",
+    "nike swoosh": "nike",
+    "nike logo": "nike",
+    "tesla logo": "tesla",
+    "youtube logo": "youtube",
+    "play button logo": "youtube",
+    "station logo": "broadcast_bug",
+    "channel bug": "broadcast_bug",
+    "network watermark": "broadcast_bug"
+  }
+}

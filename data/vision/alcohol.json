@@ -1,0 +1,27 @@
+{
+  "_category": "alcohol",
+  "_note": "Labels here are OBSERVATIONS. A03 reports what is visibly present and never what it means. 'knife' is an observation; 'graphic violence' is a conclusion belonging to A11, which has the clause text and an advocate.",
+  "_purpose": "Containers and glassware. Presence is not consumption.",
+  "labels": [
+    "bar",
+    "beer",
+    "cocktail",
+    "spirits",
+    "wine"
+  ],
+  "synonyms": {
+    "beer bottle": "beer",
+    "beer can": "beer",
+    "pint glass": "beer",
+    "wine glass": "wine",
+    "wine bottle": "wine",
+    "whiskey bottle": "spirits",
+    "whisky bottle": "spirits",
+    "vodka bottle": "spirits",
+    "liquor bottle": "spirits",
+    "mixed drink": "cocktail",
+    "cocktail glass": "cocktail",
+    "bar counter": "bar",
+    "pub interior": "bar"
+  }
+}

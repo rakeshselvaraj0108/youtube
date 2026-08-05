@@ -315,7 +315,6 @@ DETERMINISTIC = [
 MODEL_DRIVEN = [
     {
         "agent_id": "A03",
-        "status": "unimplemented",
         "codename": "VISION",
         "implementation": "preflight/perception/vision.py",
         "capability": "vision.describe",

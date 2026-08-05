@@ -1,0 +1,40 @@
+{
+  "_category": "activity",
+  "_note": "Labels here are OBSERVATIONS. A03 reports what is visibly present and never what it means. 'knife' is an observation; 'graphic violence' is a conclusion belonging to A11, which has the clause text and an advocate.",
+  "_purpose": "Activity labels, phrased as observations. 'cliff diving' describes what is happening; 'dangerous stunt' is already an assessment, and AF-05 turns on whether a warning against imitation is present, which a frame cannot show.",
+  "labels": [
+    "cliff_diving",
+    "climbing_unroped",
+    "fire_stunt",
+    "handling_firearm",
+    "handling_knife",
+    "height_exposure",
+    "roof_jump",
+    "street_racing"
+  ],
+  "synonyms": {
+    "free solo": "climbing_unroped",
+    "climbing without rope": "climbing_unroped",
+    "unroped climb": "climbing_unroped",
+    "rooftop jump": "roof_jump",
+    "parkour jump": "roof_jump",
+    "building jump": "roof_jump",
+    "cliff jump": "cliff_diving",
+    "cliff dive": "cliff_diving",
+    "high dive": "cliff_diving",
+    "holding gun": "handling_firearm",
+    "aiming firearm": "handling_firearm",
+    "person with gun": "handling_firearm",
+    "holding knife": "handling_knife",
+    "person with knife": "handling_knife",
+    "racing on road": "street_racing",
+    "illegal race": "street_racing",
+    "drag race": "street_racing",
+    "fire breathing": "fire_stunt",
+    "playing with fire": "fire_stunt",
+    "fire stunt": "fire_stunt",
+    "standing on ledge": "height_exposure",
+    "on rooftop edge": "height_exposure",
+    "near cliff edge": "height_exposure"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "_category": "attire",
+  "_note": "Labels here are OBSERVATIONS. A03 reports what is visibly present and never what it means. 'knife' is an observation; 'graphic violence' is a conclusion belonging to A11, which has the clause text and an advocate.",
+  "_purpose": "Clothing state as an OBSERVATION. This file is the one most likely to be misused, so: 'swimwear' is a garment, and a garment on a beach is not a finding. AF-03 turns on sexualised framing, which is a judgement A11 makes with the clause in front of it.",
+  "labels": [
+    "costume",
+    "formal_wear",
+    "shirtless",
+    "swimwear",
+    "underwear"
+  ],
+  "synonyms": {
+    "bikini": "swimwear",
+    "swimsuit": "swimwear",
+    "trunks": "swimwear",
+    "bathing suit": "swimwear",
+    "lingerie": "underwear",
+    "undergarment": "underwear",
+    "bare chest": "shirtless",
+    "topless male": "shirtless",
+    "no shirt": "shirtless",
+    "suit": "formal_wear",
+    "dress": "formal_wear",
+    "gown": "formal_wear",
+    "cosplay": "costume",
+    "fancy dress": "costume",
+    "uniform": "costume"
+  }
+}

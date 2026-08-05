@@ -1,0 +1,25 @@
+{
+  "_category": "fire",
+  "_note": "Labels here are OBSERVATIONS. A03 reports what is visibly present and never what it means. 'knife' is an observation; 'graphic violence' is a conclusion belonging to A11, which has the clause text and an advocate.",
+  "_purpose": "Fire, smoke and explosion. Common in cooking and pyrotechnics alike.",
+  "labels": [
+    "explosion",
+    "fire",
+    "firework",
+    "smoke"
+  ],
+  "synonyms": {
+    "flames": "fire",
+    "flame": "fire",
+    "burning": "fire",
+    "bonfire": "fire",
+    "smoke cloud": "smoke",
+    "smoking": "smoke",
+    "blast": "explosion",
+    "fireball": "explosion",
+    "detonation": "explosion",
+    "fireworks": "firework",
+    "pyrotechnics": "firework",
+    "sparkler": "firework"
+  }
+}

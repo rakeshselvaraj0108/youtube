@@ -1,0 +1,27 @@
+{
+  "_category": "money",
+  "_note": "Labels here are OBSERVATIONS. A03 reports what is visibly present and never what it means. 'knife' is an observation; 'graphic violence' is a conclusion belonging to A11, which has the clause text and an advocate.",
+  "_purpose": "Financial props. Strong corroboration for a financial-claim event.",
+  "labels": [
+    "cash",
+    "casino_chips",
+    "cheque",
+    "credit_card",
+    "lottery_ticket"
+  ],
+  "synonyms": {
+    "banknotes": "cash",
+    "money": "cash",
+    "currency": "cash",
+    "bills": "cash",
+    "stack of cash": "cash",
+    "bank card": "credit_card",
+    "payment card": "credit_card",
+    "check": "cheque",
+    "bank cheque": "cheque",
+    "scratch card": "lottery_ticket",
+    "lottery": "lottery_ticket",
+    "poker chips": "casino_chips",
+    "gambling chips": "casino_chips"
+  }
+}

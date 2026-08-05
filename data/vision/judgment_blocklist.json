@@ -1,0 +1,28 @@
+{
+  "_purpose": "A label containing any of these is REJECTED, not normalised. There is no observation underneath to recover: the model has skipped past what it can see to what it thinks the answer is.",
+  "terms": [
+    "advertiser friendly",
+    "age restricted",
+    "age-restricted",
+    "banned",
+    "demonetiz",
+    "disturbing",
+    "explicit",
+    "graphic",
+    "harmful",
+    "illegal",
+    "inappropriate",
+    "limited ads",
+    "not advertiser",
+    "nsfw",
+    "obscene",
+    "offensive",
+    "policy",
+    "prohibited",
+    "shocking",
+    "should be removed",
+    "unsafe",
+    "violates",
+    "violation"
+  ]
+}

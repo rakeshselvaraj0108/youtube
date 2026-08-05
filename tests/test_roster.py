@@ -217,10 +217,10 @@ class TestImplementationConformance:
             )
 
     def test_unimplemented_agents_are_declared_honestly(self, roster):
-        """Vision and OCR are specified and not built. The roster says so
-        rather than shipping a stub that looks finished."""
+        """The roster is a status board, not a directory of files that all
+        look finished. A05 (OCR) is specified and not yet built."""
         unbuilt = {s.agent_id for s in roster.ordered if not s.implemented}
-        assert unbuilt == {"A03", "A05"}
+        assert unbuilt == {"A05"}
 
     def test_no_unimplemented_agent_is_required_by_an_implemented_one(self, roster):
         """A built agent depending on an unbuilt one is a pipeline that cannot

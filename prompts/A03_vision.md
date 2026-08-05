@@ -2,7 +2,7 @@
 agent_id: A03
 codename: VISION
 kind: model
-status: unimplemented
+status: implemented
 implementation: preflight/perception/vision.py
 model: vision.describe
 tier: 2

@@ -1,0 +1,35 @@
+{
+  "_category": "substance",
+  "_note": "Labels here are OBSERVATIONS. A03 reports what is visibly present and never what it means. 'knife' is an observation; 'graphic violence' is a conclusion belonging to A11, which has the clause text and an advocate.",
+  "_purpose": "Objects, not use. A syringe appears in medical, diabetic and veterinary content far more often than in drug content, which is exactly why this is evidence rather than a finding.",
+  "labels": [
+    "cigarette",
+    "pills",
+    "powder",
+    "rolled_cigarette",
+    "smoking_pipe",
+    "syringe"
+  ],
+  "synonyms": {
+    "smoking": "cigarette",
+    "cigar": "cigarette",
+    "vape": "cigarette",
+    "e-cigarette": "cigarette",
+    "vaping device": "cigarette",
+    "tablets": "pills",
+    "medication": "pills",
+    "capsules": "pills",
+    "pill bottle": "pills",
+    "needle": "syringe",
+    "injection": "syringe",
+    "hypodermic": "syringe",
+    "white powder": "powder",
+    "powder line": "powder",
+    "bong": "smoking_pipe",
+    "pipe": "smoking_pipe",
+    "water pipe": "smoking_pipe",
+    "joint": "rolled_cigarette",
+    "blunt": "rolled_cigarette",
+    "rolled paper": "rolled_cigarette"
+  }
+}

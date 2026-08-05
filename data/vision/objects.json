@@ -1,0 +1,33 @@
+{
+  "_category": "person",
+  "_note": "Labels here are OBSERVATIONS. A03 reports what is visibly present and never what it means. 'knife' is an observation; 'graphic violence' is a conclusion belonging to A11, which has the clause text and an advocate.",
+  "_purpose": "Presence and count. Never identity, never protected characteristics.",
+  "labels": [
+    "child",
+    "crowd",
+    "face",
+    "hand",
+    "person"
+  ],
+  "synonyms": {
+    "human": "person",
+    "man": "person",
+    "woman": "person",
+    "individual": "person",
+    "figure": "person",
+    "adult": "person",
+    "kid": "child",
+    "minor": "child",
+    "toddler": "child",
+    "infant": "child",
+    "baby": "child",
+    "group of people": "crowd",
+    "audience": "crowd",
+    "crowd of people": "crowd",
+    "many people": "crowd",
+    "human face": "face",
+    "close-up face": "face",
+    "hands": "hand",
+    "human hand": "hand"
+  }
+}

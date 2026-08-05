@@ -1,0 +1,41 @@
+{
+  "_category": "animal",
+  "_note": "Labels here are OBSERVATIONS. A03 reports what is visibly present and never what it means. 'knife' is an observation; 'graphic violence' is a conclusion belonging to A11, which has the clause text and an advocate.",
+  "_purpose": "Animal presence. Distress or harm is A04/AF-04, not this file.",
+  "labels": [
+    "bear",
+    "big_cat",
+    "bird",
+    "cat",
+    "dog",
+    "horse",
+    "livestock",
+    "snake"
+  ],
+  "synonyms": {
+    "puppy": "dog",
+    "canine": "dog",
+    "kitten": "cat",
+    "feline": "cat",
+    "serpent": "snake",
+    "python": "snake",
+    "cobra": "snake",
+    "grizzly": "bear",
+    "black bear": "bear",
+    "pony": "horse",
+    "stallion": "horse",
+    "lion": "big_cat",
+    "tiger": "big_cat",
+    "leopard": "big_cat",
+    "jaguar": "big_cat",
+    "cheetah": "big_cat",
+    "eagle": "bird",
+    "parrot": "bird",
+    "hawk": "bird",
+    "cow": "livestock",
+    "sheep": "livestock",
+    "pig": "livestock",
+    "goat": "livestock",
+    "cattle": "livestock"
+  }
+}
