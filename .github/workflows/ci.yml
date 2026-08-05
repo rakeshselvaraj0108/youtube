@@ -35,3 +35,32 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  engine:
+    name: Engine · tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
+      - run: pip install -e '.[dev]'
+
+      - name: Build the policy corpus
+        run: python scripts/build_corpus.py
+
+      - name: Tests
+        run: pytest -q
+
+      # The page renders the TypeScript scorer and report.json carries the
+      # Python one. Regenerating the shared vectors must not move them.
+      - name: Scoring contract is stable
+        run: |
+          python scripts/emit_scoring_vectors.py
+          git diff --exit-code tests/fixtures/scoring_vectors.json

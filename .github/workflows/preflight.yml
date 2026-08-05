@@ -1,0 +1,105 @@
+# A video file failing CI. This is the workflow that makes the concept click:
+# the same gate that blocks a merge on a failing test blocks a publish on a
+# video that would be demonetized.
+name: PREFLIGHT
+
+on:
+  pull_request:
+    paths:
+      - 'samples/**.mp4'
+      - 'video/**'
+  workflow_dispatch:
+    inputs:
+      video:
+        description: 'Video to analyse'
+        required: false
+        default: 'samples/demo.mp4'
+
+permissions:
+  contents: read
+  security-events: write   # required to upload SARIF
+  pull-requests: write
+
+jobs:
+  preflight:
+    name: Release readiness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the policy corpus
+        run: python scripts/build_corpus.py
+
+      # No footage is committed — every media artifact is script-generated so a
+      # clean clone reproduces the run without a 40MB download.
+      - name: Generate the demo clip
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg espeak-ng
+          python scripts/make_assets.py
+          python scripts/make_demo.py
+
+      - id: preflight
+        uses: ./
+        with:
+          video: ${{ github.event.inputs.video || 'samples/demo.mp4' }}
+          fail-on: NOT_READY
+          nvidia-api-key: ${{ secrets.NVIDIA_API_KEY }}
+        continue-on-error: true
+
+      # Findings render natively in the Security tab. SARIF is the whole reason
+      # a video repository can participate in the same tooling as a code one.
+      - name: Upload SARIF
+        if: always() && hashFiles('preflight-out/report.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: preflight-out/report.sarif
+          category: preflight
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: preflight-report
+          path: preflight-out/
+          retention-days: 14
+
+      - name: Comment on the pull request
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'preflight-out/report.json';
+            if (!fs.existsSync(path)) return;
+            const r = JSON.parse(fs.readFileSync(path, 'utf8'));
+            const { scores: s, meta: m } = r;
+            const icon = { READY_TO_PUBLISH: '✅', PUBLISH_WITH_FIXES: '🟡',
+                           NOT_READY: '🟠', DO_NOT_PUBLISH: '❌' }[s.verdict];
+            const dims = Object.entries(s.sub)
+              .map(([k, v]) => `| ${k} | ${v}${k === s.weakest ? ' ⚠️' : ''} |`)
+              .join('\n');
+            const body = [
+              `### ${icon} PREFLIGHT — ${s.overall}/100 · ${s.verdict.replace(/_/g, ' ')}`,
+              '',
+              `\`${r.video.filename}\` · coverage ${Math.round(m.coverage * 100)}% · policy ${m.policyVersion}`,
+              '',
+              '| Dimension | Score |', '|---|---:|', dims,
+              '',
+              `**${r.findings.length} findings**, ${r.remediation.ops.length} auto-remediable.`,
+              '',
+              s.verdict === 'READY_TO_PUBLISH' ? '' :
+                '<details><summary>Fix locally</summary>\n\n```bash\npreflight fix ' +
+                r.video.filename + ' --apply\n```\n</details>',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+
+      - name: Enforce the gate
+        if: steps.preflight.outcome == 'failure'
+        run: |
+          echo "::error::PREFLIGHT blocked this video: ${{ steps.preflight.outputs.verdict }}"
+          exit 1

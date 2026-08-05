@@ -1,0 +1,141 @@
+name: 'PREFLIGHT'
+description: 'Static analysis for video. Predicts monetization risk before upload and fails the build when a video is not safe to publish.'
+author: 'Rakesh Selvaraj'
+
+branding:
+  icon: 'film'
+  color: 'red'
+
+inputs:
+  video:
+    description: 'Path to the video file to analyse'
+    required: true
+  fail-on:
+    description: 'Verdict at or below which the build fails: DO_NOT_PUBLISH, NOT_READY, PUBLISH_WITH_FIXES'
+    required: false
+    default: 'NOT_READY'
+  offline:
+    description: 'Never contact a hosted model. The default path already runs local-only when no key is set.'
+    required: false
+    default: 'false'
+  output-dir:
+    description: 'Where to write report.json, report.sarif and certificate.json'
+    required: false
+    default: 'preflight-out'
+  nvidia-api-key:
+    description: 'Optional. Upgrades policy adjudication to the hosted triad. Without it the run is local-only at reduced coverage, and says so.'
+    required: false
+
+outputs:
+  readiness:
+    description: 'Release readiness score, 0-100'
+    value: ${{ steps.run.outputs.readiness }}
+  verdict:
+    description: 'READY_TO_PUBLISH | PUBLISH_WITH_FIXES | NOT_READY | DO_NOT_PUBLISH'
+    value: ${{ steps.run.outputs.verdict }}
+  coverage:
+    description: 'Fraction of the analysis surface actually inspected'
+    value: ${{ steps.run.outputs.coverage }}
+  sarif:
+    description: 'Path to the emitted SARIF file'
+    value: ${{ steps.run.outputs.sarif }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install ffmpeg
+      shell: bash
+      run: |
+        if ! command -v ffmpeg >/dev/null 2>&1; then
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+        fi
+        ffmpeg -version | head -1
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    # Model weights are the slow part of a cold run, not the analysis.
+    - name: Cache models
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/huggingface
+        key: preflight-models-${{ runner.os }}-base.en
+
+    # Content-addressed artifacts mean an unchanged video costs zero API calls
+    # on a re-run. Persisting the store across builds is what makes that real
+    # in CI rather than only on a developer's machine.
+    - name: Cache analysis artifacts
+      uses: actions/cache@v4
+      with:
+        path: .preflight/cache
+        key: preflight-cache-${{ hashFiles(inputs.video) }}
+        restore-keys: preflight-cache-
+
+    - name: Install PREFLIGHT
+      shell: bash
+      run: pip install --quiet -e '.[asr]'
+
+    - name: Analyse
+      id: run
+      shell: bash
+      env:
+        NVIDIA_API_KEY: ${{ inputs.nvidia-api-key }}
+      run: |
+        set +e
+        preflight check "${{ inputs.video }}" \
+          --format json,sarif,certificate \
+          --out "${{ inputs.output-dir }}" \
+          ${{ inputs.offline == 'true' && '--offline' || '' }}
+        set -e
+
+        report="${{ inputs.output-dir }}/report.json"
+        readiness=$(python -c "import json;print(json.load(open('$report'))['scores']['overall'])")
+        verdict=$(python -c "import json;print(json.load(open('$report'))['scores']['verdict'])")
+        coverage=$(python -c "import json;print(json.load(open('$report'))['meta']['coverage'])")
+
+        echo "readiness=$readiness" >> "$GITHUB_OUTPUT"
+        echo "verdict=$verdict"     >> "$GITHUB_OUTPUT"
+        echo "coverage=$coverage"   >> "$GITHUB_OUTPUT"
+        echo "sarif=${{ inputs.output-dir }}/report.sarif" >> "$GITHUB_OUTPUT"
+
+    - name: Summary
+      shell: bash
+      run: |
+        python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+        import json, os
+        r = json.load(open(os.path.join("${{ inputs.output-dir }}", "report.json")))
+        s, m = r["scores"], r["meta"]
+        icon = {"READY_TO_PUBLISH":"✅","PUBLISH_WITH_FIXES":"🟡",
+                "NOT_READY":"🟠","DO_NOT_PUBLISH":"❌"}[s["verdict"]]
+        print(f"## {icon} PREFLIGHT — {s['overall']}/100 · {s['verdict'].replace('_',' ')}\n")
+        print(f"`{r['video']['filename']}` · coverage {m['coverage']*100:.0f}% "
+              f"· policy {m['policyVersion']}\n")
+        print("| Dimension | Score |")
+        print("|---|---:|")
+        for k, v in s["sub"].items():
+            mark = " ⚠️" if k == s["weakest"] else ""
+            print(f"| {k.title()} | {v}{mark} |")
+        print(f"\n**{len(r['findings'])} findings**, "
+              f"{len(r['remediation']['ops'])} auto-remediable.\n")
+        degraded = [a for a in r["agents"] if a["status"] != "OK"]
+        if degraded:
+            print("> Partial analysis. " + ", ".join(
+                f"{a['name']} ({a['status'].lower()}, {a['coverage']*100:.0f}%)"
+                for a in degraded) + "\n")
+        PY
+
+    - name: Gate
+      shell: bash
+      run: |
+        rank() { case "$1" in
+          DO_NOT_PUBLISH) echo 0;; NOT_READY) echo 1;;
+          PUBLISH_WITH_FIXES) echo 2;; READY_TO_PUBLISH) echo 3;; *) echo 0;; esac; }
+        got=$(rank "${{ steps.run.outputs.verdict }}")
+        want=$(rank "${{ inputs.fail-on }}")
+        if [ "$got" -le "$want" ]; then
+          echo "::error title=PREFLIGHT::${{ steps.run.outputs.verdict }} at readiness ${{ steps.run.outputs.readiness }}/100 — not safe to publish"
+          exit 1
+        fi
+        echo "PREFLIGHT passed: ${{ steps.run.outputs.verdict }} (${{ steps.run.outputs.readiness }}/100)"
