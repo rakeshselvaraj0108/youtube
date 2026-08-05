@@ -29,6 +29,8 @@ from preflight.perception import asr as asr_mod
 from preflight.perception.asr import Transcript
 from preflight.policy.corpus import Corpus, load_corpus
 from preflight.policy.index import build_index
+from preflight.scoring.fusion import apply_fusion
+from preflight.scoring.readiness import Readiness, compute_readiness, sub_scores
 
 # id -> (tier, parents). Mirrors the DAG the UI's agent flow renders.
 TOPOLOGY: dict[str, tuple[int, list[str]]] = {
@@ -75,6 +77,15 @@ class PipelineResult:
     windows: list[Window] = field(default_factory=list)
     corpus: Corpus | None = None
     retrieval_backend: str = "none"
+    fusion_log: list[str] = field(default_factory=list)
+
+    @property
+    def sub_scores(self) -> dict[str, float]:
+        return sub_scores(self.findings)
+
+    @property
+    def readiness(self) -> Readiness:
+        return compute_readiness(self.sub_scores)
 
     @property
     def findings(self) -> list[Finding]:
@@ -186,25 +197,46 @@ def run_perception(
     )
     policy_agent, corpus, backend = _policy(windows, store, settings, transcript)
 
+    agents = [
+        orchestrator,
+        ingest_agent,
+        speech_agent,
+        audio_agent,
+        access_agent,
+        meta_agent,
+        policy_agent,
+    ]
+
+    # Fusion runs across every agent's findings at once — corroboration is only
+    # meaningful when the modalities can see each other.
+    per_agent_coverage = {a.agent_id: a.coverage for a in agents}
+    all_findings = [f for agent in agents for f in agent.findings]
+    fusion_log = apply_fusion(all_findings, per_agent_coverage)
+
+    scoring_agent = AgentResult(
+        agent_id="score",
+        name="Scoring Agent",
+        status="OK",
+        log=fusion_log
+        + [
+            f"{len(all_findings)} finding(s) fused · "
+            f"readiness {compute_readiness(sub_scores(all_findings)).overall}"
+        ],
+    )
+    agents.append(scoring_agent)
+
     orchestrator.elapsed_ms = int((time.perf_counter() - started_at) * 1000)
 
     return PipelineResult(
         source=source,
         ingested=ingested,
         transcript=transcript,
-        agents=[
-            orchestrator,
-            ingest_agent,
-            speech_agent,
-            audio_agent,
-            access_agent,
-            meta_agent,
-            policy_agent,
-        ],
+        agents=agents,
         started_at=started_at,
         windows=windows,
         corpus=corpus,
         retrieval_backend=backend,
+        fusion_log=fusion_log,
     )
 
 

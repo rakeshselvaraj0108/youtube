@@ -9,6 +9,8 @@ Exit codes:
 
 from __future__ import annotations
 
+import json
+import time
 from pathlib import Path
 
 import typer
@@ -20,6 +22,13 @@ from preflight.ingest.pipeline import ingest
 from preflight.ingest.probe import UnsupportedInput
 from preflight.models import SEVERITY_RANK
 from preflight.pipeline import SURFACE_WEIGHT, run_perception
+from preflight.remediate.captions import write_captions
+from preflight.remediate.codegen import build_program, write_fix_script
+from preflight.remediate.edl import InvalidEDL, compile_edl
+from preflight.scoring.readiness import SUB_SCORE_ORDER
+
+# Verdicts that let CI through.
+PASSING = {"READY_TO_PUBLISH", "PUBLISH_WITH_FIXES"}
 
 app = typer.Typer(
     add_completion=False,
@@ -221,6 +230,36 @@ def check(
                 console.print(f"      [dim]fix[/]         {finding.suggestedFix}")
             console.print()
 
+    # Release readiness.
+    sub = result.sub_scores
+    readiness = result.readiness
+    band = {
+        "READY_TO_PUBLISH": "green",
+        "PUBLISH_WITH_FIXES": "yellow",
+        "NOT_READY": "dark_orange",
+        "DO_NOT_PUBLISH": "red",
+    }[readiness.verdict]
+
+    console.print("  [bold]RELEASE READINESS[/bold]")
+    console.print()
+    for key in SUB_SCORE_ORDER:
+        value = sub[key]
+        filled = int(round(value / 5))
+        bar = "█" * filled + "·" * (20 - filled)
+        marker = " [dim]← weakest[/dim]" if key == readiness.weakest else ""
+        console.print(f"    {key:<14} {bar} {value:5.1f}{marker}")
+    console.print()
+    console.print(
+        f"    [bold {band}]{readiness.overall} / 100[/bold {band}]   "
+        f"[{band}]{readiness.verdict.replace('_', ' ')}[/{band}]"
+    )
+    if readiness.capped:
+        console.print(
+            f"    [dim]weighted mean {readiness.weighted:.1f}, capped at "
+            f"weakest + 15 — one fatal flaw is never averaged away[/dim]"
+        )
+    console.print()
+
     coverage = result.coverage
     console.print(
         f"  coverage [bold]{coverage * 100:.0f}%[/bold]   "
@@ -244,6 +283,130 @@ def check(
             console.print(f"    impaired: {', '.join(impaired)}")
         if unbuilt:
             console.print(f"    not yet implemented: {', '.join(sorted(unbuilt))}")
+    console.print()
+    raise typer.Exit(EXIT_OK if readiness.verdict in PASSING else EXIT_FINDINGS)
+
+
+@app.command()
+def fix(
+    video: Path = typer.Argument(..., help="Video file to remediate"),
+    apply: bool = typer.Option(
+        False, "--apply", help="Actually render. Without this, dry-run only."
+    ),
+    out: Path = typer.Option(None, "--out", help="Output path (default <name>.safe.mp4)"),
+    cache_dir: Path = typer.Option(Path(".preflight/cache"), "--cache-dir"),
+) -> None:
+    """Compile findings into an ffmpeg program and optionally run it.
+
+    Dry-runs by default. A tool that rewrites someone's master file because
+    they typed the wrong command has lost more than it gained.
+    """
+    if not ffmpeg.available():
+        console.print("[red]ffmpeg and ffprobe are required.[/red]")
+        raise typer.Exit(EXIT_UPSTREAM)
+
+    store = cas.Store(cache_dir)
+    try:
+        result = run_perception(video, store)
+    except (FileNotFoundError, UnsupportedInput, ffmpeg.FfmpegFailed) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(EXIT_INPUT) from exc
+
+    destination = out or video.with_suffix("").with_name(f"{video.stem}.safe.mp4")
+
+    try:
+        edl = compile_edl(
+            result.findings,
+            str(video),
+            result.ingested.meta.durationMs,
+            result.transcript,
+        )
+    except InvalidEDL as exc:
+        console.print(f"[red]invalid EDL: {exc}[/red]")
+        raise typer.Exit(EXIT_INPUT) from exc
+
+    program = build_program(edl, video, destination)
+
+    console.print()
+    console.print(f"[bold]REMEDIATION PLAN[/bold]   {len(edl.ops)} operation(s)")
+    console.print()
+    if not edl.ops:
+        console.print("  [green]nothing to remediate[/green]")
+        console.print()
+        raise typer.Exit(EXIT_OK)
+
+    table = Table(show_header=True, box=None, pad_edge=False, header_style="dim")
+    table.add_column("#", width=3, justify="right")
+    table.add_column("START", width=9)
+    table.add_column("END", width=9)
+    table.add_column("ACTION", width=15)
+    table.add_column("DETAILS", overflow="fold")
+    for op in edl.ops:
+        table.add_row(
+            str(op.index),
+            _timecode(op.start_ms),
+            _timecode(op.end_ms),
+            op.op.replace("_", " ").title(),
+            op.details,
+        )
+    console.print(table)
+    console.print()
+
+    for line in edl.log:
+        console.print(f"  [dim]·[/dim] {line}")
+    for warning in edl.warnings:
+        console.print(f"  [yellow]![/yellow] {warning}")
+    console.print()
+
+    console.print(
+        "  video stream "
+        + (
+            "[green]copied[/green] (-c:v copy, audio-only EDL)"
+            if program.video_stream_copied
+            else "[yellow]re-encoded[/yellow] (EDL contains a video op)"
+        )
+    )
+    console.print()
+    # markup=False: stream labels like [aout] are rich markup tags, and letting
+    # rich eat them prints a command that looks broken but is not.
+    console.print(program.pretty(), style="dim", markup=False, highlight=False)
+    console.print()
+
+    out_dir = destination.parent
+    script = write_fix_script(program, out_dir / "fix.sh", edl)
+    edl_path = out_dir / "edl.json"
+    edl_path.write_text(json.dumps(edl.to_json(), indent=2), encoding="utf-8")
+    console.print(f"  wrote [bold]{edl_path}[/bold] and [bold]{script}[/bold]")
+
+    if not apply:
+        console.print()
+        console.print("  [dim]dry run — pass --apply to render[/dim]")
+        console.print()
+        raise typer.Exit(EXIT_OK)
+
+    started = time.perf_counter()
+    try:
+        ffmpeg.run(program.command[1:])
+    except ffmpeg.FfmpegFailed as exc:
+        console.print(f"[red]render failed: {exc}[/red]")
+        raise typer.Exit(EXIT_INPUT) from exc
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+
+    console.print()
+    console.print(
+        f"  [green]rendered[/green] {destination}  "
+        f"({elapsed_ms} ms, video {'copied' if program.video_stream_copied else 're-encoded'})"
+    )
+
+    # Not every finding is fixed by a filter graph. Captions are repaired by
+    # writing a file, and the word-level timings are already in hand.
+    if result.transcript is not None:
+        captions = write_captions(
+            result.transcript, destination.with_suffix(".vtt")
+        )
+        if captions is not None:
+            console.print(f"  [green]wrote[/green] {captions}  (from word-level timings)")
+
     console.print()
     raise typer.Exit(EXIT_OK)
 
