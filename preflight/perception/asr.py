@@ -23,6 +23,12 @@ AGENT_ID = "speech"
 AGENT_NAME = "Speech Agent"
 DEFAULT_MODEL = "base.en"
 
+_PUNCT = str.maketrans("", "", ".,!?;:\"'()[]—–-")
+
+
+def _norm(token: str) -> str:
+    return token.lower().translate(_PUNCT).strip()
+
 
 @dataclass
 class Word:
@@ -81,6 +87,50 @@ class Transcript:
 
     def words_between(self, start_ms: int, end_ms: int) -> list[Word]:
         return [w for w in self.words if w.end_ms > start_ms and w.start_ms < end_ms]
+
+    def locate(self, phrase: str, near_ms: int | None = None) -> tuple[int, int] | None:
+        """Find a verbatim phrase in the transcript and return its real span.
+
+        Language models are poor at arithmetic over timestamps — asked for the
+        millisecond bounds of a phrase they return plausible-looking numbers
+        that are frequently seconds out. But they are asked to quote evidence
+        verbatim, and word-level ASR timings are exact, so the span can be
+        recovered from the quote rather than trusted from the model.
+
+        This matters beyond tidiness: the evidence span becomes the remediation
+        op's span. A bleep placed seven seconds early silences the wrong word
+        and leaves the profanity audible.
+        """
+        target = [_norm(t) for t in phrase.split() if _norm(t)]
+        if not target or not self.words:
+            return None
+
+        normalised = [_norm(w.w) for w in self.words]
+        span = len(target)
+        best_index = -1
+        best_score = 0.0
+
+        for start in range(0, max(1, len(normalised) - span + 1)):
+            window = normalised[start : start + span]
+            if not window:
+                continue
+            matches = sum(1 for a, b in zip(window, target) if a == b)
+            score = matches / span
+            if score > best_score:
+                # Prefer the occurrence nearest a hint when scores tie, so a
+                # phrase repeated across the video resolves to the right one.
+                best_score, best_index = score, start
+            elif score == best_score and near_ms is not None and best_index >= 0:
+                current = abs(self.words[start].start_ms - near_ms)
+                incumbent = abs(self.words[best_index].start_ms - near_ms)
+                if current < incumbent:
+                    best_index = start
+
+        if best_index < 0 or best_score < 0.6:
+            return None
+
+        matched = self.words[best_index : best_index + span]
+        return matched[0].start_ms, matched[-1].end_ms
 
     def snap_to_words(self, start_ms: int, end_ms: int) -> tuple[int, int]:
         """Widen a span to whole word boundaries.
