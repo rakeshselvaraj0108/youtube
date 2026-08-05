@@ -1,0 +1,25 @@
+{
+  "_event": "FINANCIAL_CLAIM",
+  "_note": "A hit here is EVIDENCE, never a verdict. A02 reports what was said and where. Whether it breaches a clause is decided downstream by the adversarial triad, which can see context this file cannot.",
+  "_purpose": "Single words are useless here: 'profit' and 'return' are ordinary business vocabulary. The scam signal lives in the guarantee, so this file is almost entirely phrases.",
+  "severity_default": "HIGH",
+  "terms": [],
+  "phrases": [
+    "double your money",
+    "triple your money",
+    "guaranteed return",
+    "guaranteed returns",
+    "guaranteed profit",
+    "risk free investment",
+    "no risk investment",
+    "crypto giveaway",
+    "send me one",
+    "get rich quick",
+    "passive income guaranteed",
+    "financial freedom in",
+    "insider tip",
+    "cannot lose",
+    "can't lose",
+    "secret method the banks"
+  ]
+}

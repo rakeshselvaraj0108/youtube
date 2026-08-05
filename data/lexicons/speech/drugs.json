@@ -1,0 +1,88 @@
+{
+  "_event": "DRUGS",
+  "_note": "A hit here is EVIDENCE, never a verdict. A02 reports what was said and where. Whether it breaches a clause is decided downstream by the adversarial triad, which can see context this file cannot.",
+  "_purpose": "Common names and widely used slang. Not exhaustive by design.",
+  "severity_default": "MEDIUM",
+  "terms": [
+    {
+      "term": "cocaine",
+      "severity": "HIGH",
+      "variants": [
+        "coke",
+        "blow"
+      ]
+    },
+    {
+      "term": "heroin",
+      "severity": "HIGH",
+      "variants": [
+        "smack"
+      ]
+    },
+    {
+      "term": "methamphetamine",
+      "severity": "HIGH",
+      "variants": [
+        "meth",
+        "crystal meth"
+      ]
+    },
+    {
+      "term": "mdma",
+      "severity": "MEDIUM",
+      "variants": [
+        "ecstasy",
+        "molly"
+      ]
+    },
+    {
+      "term": "ketamine",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "fentanyl",
+      "severity": "HIGH",
+      "variants": []
+    },
+    {
+      "term": "lsd",
+      "severity": "MEDIUM",
+      "variants": [
+        "acid tab"
+      ]
+    },
+    {
+      "term": "marijuana",
+      "severity": "LOW",
+      "variants": [
+        "weed",
+        "cannabis",
+        "pot"
+      ]
+    },
+    {
+      "term": "edible",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "bong",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "dab",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "psilocybin",
+      "severity": "MEDIUM",
+      "variants": [
+        "shrooms"
+      ]
+    }
+  ],
+  "phrases": []
+}

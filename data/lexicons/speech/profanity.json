@@ -1,0 +1,129 @@
+{
+  "_event": "PROFANITY",
+  "_note": "A hit here is EVIDENCE, never a verdict. A02 reports what was said and where. Whether it breaches a clause is decided downstream by the adversarial triad, which can see context this file cannot.",
+  "_purpose": "Vulgar language. Strength and position matter more than presence.",
+  "severity_default": "MEDIUM",
+  "terms": [
+    {
+      "term": "fuck",
+      "severity": "HIGH",
+      "variants": [
+        "f*ck",
+        "f**k",
+        "fck",
+        "fuk",
+        "phuck",
+        "fuq",
+        "f u c k"
+      ]
+    },
+    {
+      "term": "fucking",
+      "severity": "HIGH",
+      "variants": [
+        "f*cking",
+        "fkin",
+        "fukin",
+        "effing"
+      ]
+    },
+    {
+      "term": "motherfucker",
+      "severity": "HIGH",
+      "variants": [
+        "mf",
+        "m*therf*cker"
+      ]
+    },
+    {
+      "term": "shit",
+      "severity": "MEDIUM",
+      "variants": [
+        "sh*t",
+        "sh1t",
+        "shyt",
+        "s h i t"
+      ]
+    },
+    {
+      "term": "bullshit",
+      "severity": "MEDIUM",
+      "variants": [
+        "bs",
+        "bullsh*t"
+      ]
+    },
+    {
+      "term": "bitch",
+      "severity": "MEDIUM",
+      "variants": [
+        "b*tch",
+        "b1tch",
+        "biatch"
+      ]
+    },
+    {
+      "term": "asshole",
+      "severity": "MEDIUM",
+      "variants": [
+        "a**hole",
+        "arsehole",
+        "a-hole"
+      ]
+    },
+    {
+      "term": "bastard",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "dick",
+      "severity": "MEDIUM",
+      "variants": [
+        "d*ck"
+      ]
+    },
+    {
+      "term": "piss",
+      "severity": "LOW",
+      "variants": [
+        "p*ss"
+      ]
+    },
+    {
+      "term": "damn",
+      "severity": "LOW",
+      "variants": [
+        "d*mn",
+        "goddamn",
+        "dammit"
+      ]
+    },
+    {
+      "term": "hell",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "crap",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "bloody",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "bollocks",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "wanker",
+      "severity": "MEDIUM",
+      "variants": []
+    }
+  ],
+  "phrases": []
+}

@@ -1,0 +1,129 @@
+{
+  "_event": "VIOLENCE",
+  "_note": "A hit here is EVIDENCE, never a verdict. A02 reports what was said and where. Whether it breaches a clause is decided downstream by the adversarial triad, which can see context this file cannot.",
+  "_purpose": "Verbs, weapons and conflict terms. Enormously polysemous \u2014 'shoot' in basketball, 'kill' in a game review, 'attack' in chess. This is precisely why a hit is not a finding.",
+  "severity_default": "MEDIUM",
+  "terms": [
+    {
+      "term": "kill",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "killed",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "murder",
+      "severity": "HIGH",
+      "variants": []
+    },
+    {
+      "term": "stab",
+      "severity": "HIGH",
+      "variants": []
+    },
+    {
+      "term": "stabbed",
+      "severity": "HIGH",
+      "variants": []
+    },
+    {
+      "term": "shoot",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "shot",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "shooting",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "gun",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "rifle",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "pistol",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "knife",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "bomb",
+      "severity": "HIGH",
+      "variants": []
+    },
+    {
+      "term": "explosion",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "blood",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "bleeding",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "wound",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "injury",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "assault",
+      "severity": "HIGH",
+      "variants": []
+    },
+    {
+      "term": "beat",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "punch",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "strangle",
+      "severity": "HIGH",
+      "variants": []
+    },
+    {
+      "term": "execute",
+      "severity": "HIGH",
+      "variants": []
+    },
+    {
+      "term": "massacre",
+      "severity": "HIGH",
+      "variants": []
+    }
+  ],
+  "phrases": []
+}

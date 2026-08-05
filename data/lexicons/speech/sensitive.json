@@ -1,0 +1,84 @@
+{
+  "_event": "SENSITIVE_EVENT",
+  "_note": "A hit here is EVIDENCE, never a verdict. A02 reports what was said and where. Whether it breaches a clause is decided downstream by the adversarial triad, which can see context this file cannot.",
+  "_purpose": "An identifiable tragedy. Casualty patterns live in the regex layer.",
+  "severity_default": "MEDIUM",
+  "terms": [
+    {
+      "term": "terrorism",
+      "severity": "HIGH",
+      "variants": []
+    },
+    {
+      "term": "terrorist",
+      "severity": "HIGH",
+      "variants": []
+    },
+    {
+      "term": "massacre",
+      "severity": "HIGH",
+      "variants": []
+    },
+    {
+      "term": "genocide",
+      "severity": "HIGH",
+      "variants": []
+    },
+    {
+      "term": "earthquake",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "tsunami",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "hurricane",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "wildfire",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "pandemic",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "outbreak",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "hostage",
+      "severity": "HIGH",
+      "variants": []
+    },
+    {
+      "term": "evacuation",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "avalanche",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "derailment",
+      "severity": "MEDIUM",
+      "variants": []
+    }
+  ],
+  "phrases": [
+    "school shooting",
+    "mass shooting",
+    "suicide bombing",
+    "war crime"
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "_event": "COPYRIGHT_MENTION",
+  "_note": "A hit here is EVIDENCE, never a verdict. A02 reports what was said and where. Whether it breaches a clause is decided downstream by the adversarial triad, which can see context this file cannot.",
+  "_purpose": "Naming a rights holder is not infringement \u2014 this is a weak corroborating signal for COPY-01, nothing more. A review that says 'Netflix' has not used anything belonging to Netflix.",
+  "severity_default": "LOW",
+  "terms": [
+    {
+      "term": "disney",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "netflix",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "marvel",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "pixar",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "sony",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "universal",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "warner",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "hbo",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "nintendo",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "paramount",
+      "severity": "LOW",
+      "variants": []
+    }
+  ],
+  "phrases": [
+    "copyrighted music",
+    "owned by",
+    "all rights reserved"
+  ]
+}

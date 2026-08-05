@@ -1,0 +1,71 @@
+{
+  "_event": "ALCOHOL",
+  "_note": "A hit here is EVIDENCE, never a verdict. A02 reports what was said and where. Whether it breaches a clause is decided downstream by the adversarial triad, which can see context this file cannot.",
+  "_purpose": "Incidental adult reference is generally fine; promotion is not.",
+  "severity_default": "LOW",
+  "terms": [
+    {
+      "term": "beer",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "wine",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "vodka",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "whiskey",
+      "severity": "LOW",
+      "variants": [
+        "whisky"
+      ]
+    },
+    {
+      "term": "tequila",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "gin",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "rum",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "bourbon",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "shots",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "pint",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "drunk",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "hangover",
+      "severity": "LOW",
+      "variants": []
+    }
+  ],
+  "phrases": []
+}

@@ -1,0 +1,23 @@
+{
+  "_event": "MEDICAL_CLAIM",
+  "_note": "A hit here is EVIDENCE, never a verdict. A02 reports what was said and where. Whether it breaches a clause is decided downstream by the adversarial triad, which can see context this file cannot.",
+  "_purpose": "Also phrase-driven. 'Cancer' is not a claim; 'cures cancer' is. The harm is in the assertion of efficacy, not the condition named.",
+  "severity_default": "HIGH",
+  "terms": [],
+  "phrases": [
+    "cures cancer",
+    "cure cancer",
+    "miracle cure",
+    "miracle treatment",
+    "guaranteed treatment",
+    "guaranteed cure",
+    "big pharma doesn't want",
+    "reverses diabetes",
+    "detox your",
+    "boosts your immune system instantly",
+    "stop taking your medication",
+    "doctors hate this",
+    "no need for a doctor",
+    "natural alternative to chemotherapy"
+  ]
+}

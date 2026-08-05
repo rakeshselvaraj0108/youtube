@@ -1,0 +1,69 @@
+{
+  "_event": "GAMBLING",
+  "_note": "A hit here is EVIDENCE, never a verdict. A02 reports what was said and where. Whether it breaches a clause is decided downstream by the adversarial triad, which can see context this file cannot.",
+  "_purpose": "Betting, casino and simulated gambling including loot boxes.",
+  "severity_default": "MEDIUM",
+  "terms": [
+    {
+      "term": "casino",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "roulette",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "blackjack",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "poker",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "lottery",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "jackpot",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "sportsbook",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "wager",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "bookmaker",
+      "severity": "MEDIUM",
+      "variants": []
+    },
+    {
+      "term": "loot box",
+      "severity": "LOW",
+      "variants": []
+    },
+    {
+      "term": "slots",
+      "severity": "MEDIUM",
+      "variants": []
+    }
+  ],
+  "phrases": [
+    "place a bet",
+    "odds on",
+    "free spins",
+    "deposit bonus"
+  ]
+}
