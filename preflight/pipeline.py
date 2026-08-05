@@ -1,4 +1,4 @@
-"""Pipeline orchestration.
+﻿"""Pipeline orchestration.
 
 Phase 2 wires ingest plus the four offline perception agents. Retrieval, the
 adversarial triad, fusion, scoring and remediation land in later phases behind
@@ -18,11 +18,17 @@ from pathlib import Path
 from typing import Callable
 
 from preflight import cas
+from preflight.agents.nim import NimClient
+from preflight.agents.triad import run_triad, to_agent_result
+from preflight.chunking import Window, build_windows
+from preflight.config import Settings
 from preflight.ingest.pipeline import Ingested, ingest
 from preflight.models import AgentResult, Finding
 from preflight.perception import accessibility, audio, metadata
 from preflight.perception import asr as asr_mod
 from preflight.perception.asr import Transcript
+from preflight.policy.corpus import Corpus, load_corpus
+from preflight.policy.index import build_index
 
 # id -> (tier, parents). Mirrors the DAG the UI's agent flow renders.
 TOPOLOGY: dict[str, tuple[int, list[str]]] = {
@@ -66,6 +72,9 @@ class PipelineResult:
     transcript: Transcript | None
     agents: list[AgentResult] = field(default_factory=list)
     started_at: float = 0.0
+    windows: list[Window] = field(default_factory=list)
+    corpus: Corpus | None = None
+    retrieval_backend: str = "none"
 
     @property
     def findings(self) -> list[Finding]:
@@ -119,9 +128,11 @@ def run_perception(
     *,
     asr_model: str = asr_mod.DEFAULT_MODEL,
     skip_speech: bool = False,
+    settings: Settings | None = None,
 ) -> PipelineResult:
     source = Path(source)
     started_at = time.perf_counter()
+    settings = settings or Settings.load()
 
     orchestrator = AgentResult(
         agent_id="orchestrator",
@@ -165,6 +176,16 @@ def run_perception(
         lambda: metadata.analyse(source, ingested.meta.durationMs, transcript),
     )
 
+    # Policy grounding + adversarial adjudication.
+    windows = build_windows(
+        transcript,
+        ingested.meta.durationMs,
+        ingested.keyframes,
+        chunk_ms=settings.chunk_ms if settings else 30_000,
+        overlap_ms=settings.overlap_ms if settings else 5_000,
+    )
+    policy_agent, corpus, backend = _policy(windows, store, settings, transcript)
+
     orchestrator.elapsed_ms = int((time.perf_counter() - started_at) * 1000)
 
     return PipelineResult(
@@ -178,9 +199,40 @@ def run_perception(
             audio_agent,
             access_agent,
             meta_agent,
+            policy_agent,
         ],
         started_at=started_at,
+        windows=windows,
+        corpus=corpus,
+        retrieval_backend=backend,
     )
+
+
+def _policy(
+    windows: list[Window],
+    store: cas.Store,
+    settings: Settings | None,
+    transcript: Transcript | None = None,
+) -> tuple[AgentResult, Corpus | None, str]:
+    """Retrieval plus the triad, guarded like every other optional stage."""
+    settings = settings or Settings.load()
+    corpus: Corpus | None = None
+    backend = "none"
+
+    def run() -> AgentResult:
+        nonlocal corpus, backend
+        corpus = load_corpus(settings.policy_dir)
+        client = NimClient(settings, store)
+        index = build_index(corpus, settings, store, client)
+        backend = index.backend
+
+        result = run_triad(windows, corpus, index, client, settings, transcript)
+        agent = to_agent_result(result)
+        agent.log = index.log + agent.log
+        agent.calls += index.calls
+        return agent
+
+    return _guard("policy", "Policy Agent", run), corpus, backend
 
 
 def _speech(
@@ -199,3 +251,4 @@ def _speech(
     run.transcript = None  # type: ignore[attr-defined]
     agent = _guard("speech", "Speech Agent", run)
     return agent, getattr(run, "transcript", None)
+
