@@ -1,0 +1,29 @@
+{
+  "_category": "speakers",
+  "_note": "Acoustic EVIDENCE, never a verdict. A04 reports what the waveform shows. Whether a transient at 5:32 breaches a clause is A11's decision, made with the clause text and an advocate.",
+  "_purpose": "Deliberately thin. Speaker COUNT needs diarisation \u2014 clustering speaker embeddings \u2014 and estimating it from energy statistics produces a number that looks authoritative and is guesswork. A04 reports speech PRESENCE and leaves counting to a tier that can actually do it. The specification says never guess unknown sounds; this is the same rule applied to unknown speakers.",
+  "resolvable_by": [
+    "classifier",
+    "dsp"
+  ],
+  "labels": [
+    {
+      "label": "speech_present",
+      "tier": "dsp",
+      "evidence": "4Hz envelope modulation with high flux",
+      "aliases": []
+    },
+    {
+      "label": "speaker_count",
+      "tier": "classifier",
+      "evidence": "requires diarisation",
+      "aliases": []
+    },
+    {
+      "label": "speaker_change",
+      "tier": "classifier",
+      "evidence": "requires speaker embeddings",
+      "aliases": []
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "_category": "environment",
+  "_note": "Acoustic EVIDENCE, never a verdict. A04 reports what the waveform shows. Whether a transient at 5:32 breaches a clause is A11's decision, made with the clause text and an advocate.",
+  "_purpose": "Entirely classifier-tier. Rain, wind and applause are all broadband noise; sirens and birdsong are both pitched sweeps. Spectral arithmetic does not separate them, and pretending otherwise would produce confident nonsense.",
+  "resolvable_by": [
+    "classifier"
+  ],
+  "labels": [
+    {
+      "label": "rain",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "thunder",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "ocean",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "wind",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "birdsong",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "traffic",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "construction",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "crowd",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "police_siren",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "ambulance_siren",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "fire_alarm",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "engine",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "footsteps",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "door",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "_category": "animal",
+  "_note": "Acoustic EVIDENCE, never a verdict. A04 reports what the waveform shows. Whether a transient at 5:32 breaches a clause is A11's decision, made with the clause text and an advocate.",
+  "_purpose": "Classifier-tier. Included so the vocabulary is complete when one is available.",
+  "resolvable_by": [
+    "classifier"
+  ],
+  "labels": [
+    {
+      "label": "dog_bark",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "cat",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "bird",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "horse",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "lion",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "elephant",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "insect",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    }
+  ]
+}

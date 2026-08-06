@@ -1,0 +1,59 @@
+{
+  "_category": "quality",
+  "_note": "Acoustic EVIDENCE, never a verdict. A04 reports what the waveform shows. Whether a transient at 5:32 breaches a clause is A11's decision, made with the clause text and an advocate.",
+  "_purpose": "Production defects. Mostly measurable; a few need a model.",
+  "resolvable_by": [
+    "classifier",
+    "dsp"
+  ],
+  "labels": [
+    {
+      "label": "hum",
+      "tier": "dsp",
+      "evidence": "narrowband peak at mains frequency",
+      "aliases": []
+    },
+    {
+      "label": "static",
+      "tier": "dsp",
+      "evidence": "broadband high-flatness energy under speech",
+      "aliases": []
+    },
+    {
+      "label": "dead_channel",
+      "tier": "dsp",
+      "evidence": "one channel far below the other",
+      "aliases": []
+    },
+    {
+      "label": "dead_air",
+      "tier": "dsp",
+      "evidence": "sustained RMS below the floor",
+      "aliases": []
+    },
+    {
+      "label": "distortion",
+      "tier": "dsp",
+      "evidence": "clipping plus harmonic spread",
+      "aliases": []
+    },
+    {
+      "label": "reverb",
+      "tier": "dsp",
+      "evidence": "envelope autocorrelation decay estimate",
+      "aliases": []
+    },
+    {
+      "label": "echo",
+      "tier": "dsp",
+      "evidence": "discrete envelope autocorrelation peak",
+      "aliases": []
+    },
+    {
+      "label": "mic_quality",
+      "tier": "classifier",
+      "evidence": "subjective, needs a learned model",
+      "aliases": []
+    }
+  ]
+}

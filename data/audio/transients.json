@@ -1,0 +1,47 @@
+{
+  "_category": "transient",
+  "_note": "Acoustic EVIDENCE, never a verdict. A04 reports what the waveform shows. Whether a transient at 5:32 breaches a clause is A11's decision, made with the clause text and an advocate.",
+  "_purpose": "Impulsive events. THE honest boundary in this agent: DSP resolves that a transient occurred and characterises it \u2014 attack time, crest factor, bandwidth, decay. It does NOT resolve what made it. A gunshot, a door slam, a dropped microphone and a balloon pop are acoustically similar at this level of analysis.",
+  "resolvable_by": [
+    "classifier",
+    "dsp"
+  ],
+  "labels": [
+    {
+      "label": "impulsive_transient",
+      "tier": "dsp",
+      "evidence": "sub-20ms attack, crest factor above 8, broadband",
+      "aliases": []
+    },
+    {
+      "label": "sustained_transient",
+      "tier": "dsp",
+      "evidence": "fast attack with a long decay",
+      "aliases": []
+    },
+    {
+      "label": "gunshot",
+      "tier": "classifier",
+      "evidence": "not separable from a door slam by DSP",
+      "aliases": []
+    },
+    {
+      "label": "explosion",
+      "tier": "classifier",
+      "evidence": "not separable from a mic bump by DSP",
+      "aliases": []
+    },
+    {
+      "label": "glass_break",
+      "tier": "classifier",
+      "evidence": "needs learned spectral structure",
+      "aliases": []
+    },
+    {
+      "label": "scream",
+      "tier": "classifier",
+      "evidence": "needs learned features",
+      "aliases": []
+    }
+  ]
+}

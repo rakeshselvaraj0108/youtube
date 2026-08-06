@@ -1,0 +1,64 @@
+{
+  "_category": "technical",
+  "_note": "Acoustic EVIDENCE, never a verdict. A04 reports what the waveform shows. Whether a transient at 5:32 breaches a clause is A11's decision, made with the clause text and an advocate.",
+  "_purpose": "Measurements. Reproducible to the sample, no model involved.",
+  "resolvable_by": [
+    "dsp"
+  ],
+  "labels": [
+    {
+      "label": "loudness_lufs",
+      "tier": "dsp",
+      "evidence": "EBU R128 integrated, one ffmpeg pass",
+      "aliases": []
+    },
+    {
+      "label": "true_peak_dbtp",
+      "tier": "dsp",
+      "evidence": "inter-sample peak",
+      "aliases": []
+    },
+    {
+      "label": "rms",
+      "tier": "dsp",
+      "evidence": "windowed root mean square",
+      "aliases": []
+    },
+    {
+      "label": "dynamic_range",
+      "tier": "dsp",
+      "evidence": "loudness range, LRA",
+      "aliases": []
+    },
+    {
+      "label": "crest_factor",
+      "tier": "dsp",
+      "evidence": "peak over RMS",
+      "aliases": []
+    },
+    {
+      "label": "clipping",
+      "tier": "dsp",
+      "evidence": "samples at or beyond full scale",
+      "aliases": []
+    },
+    {
+      "label": "noise_floor",
+      "tier": "dsp",
+      "evidence": "tenth percentile of the RMS envelope",
+      "aliases": []
+    },
+    {
+      "label": "mains_hum",
+      "tier": "dsp",
+      "evidence": "narrowband peak at 50/60Hz and harmonics",
+      "aliases": []
+    },
+    {
+      "label": "channel_imbalance",
+      "tier": "dsp",
+      "evidence": "per-channel RMS difference",
+      "aliases": []
+    }
+  ]
+}

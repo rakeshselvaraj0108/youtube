@@ -1,0 +1,65 @@
+{
+  "_category": "music",
+  "_note": "Acoustic EVIDENCE, never a verdict. A04 reports what the waveform shows. Whether a transient at 5:32 breaches a clause is A11's decision, made with the clause text and an advocate.",
+  "_purpose": "Musical attributes. Tempo and energy are measured; genre is not.",
+  "resolvable_by": [
+    "classifier",
+    "dsp"
+  ],
+  "labels": [
+    {
+      "label": "music_present",
+      "tier": "dsp",
+      "evidence": "sustained low spectral flatness",
+      "aliases": []
+    },
+    {
+      "label": "tempo_bpm",
+      "tier": "dsp",
+      "evidence": "autocorrelation of the onset envelope",
+      "aliases": []
+    },
+    {
+      "label": "energy_calm",
+      "tier": "dsp",
+      "evidence": "low RMS, low spectral centroid",
+      "aliases": []
+    },
+    {
+      "label": "energy_medium",
+      "tier": "dsp",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "energy_high",
+      "tier": "dsp",
+      "evidence": "high RMS, high centroid, dense onsets",
+      "aliases": []
+    },
+    {
+      "label": "music_onset",
+      "tier": "dsp",
+      "evidence": "transition into a music segment",
+      "aliases": []
+    },
+    {
+      "label": "music_offset",
+      "tier": "dsp",
+      "evidence": "transition out of a music segment",
+      "aliases": []
+    },
+    {
+      "label": "genre",
+      "tier": "classifier",
+      "evidence": "not resolvable by DSP",
+      "aliases": []
+    },
+    {
+      "label": "commercial_recording",
+      "tier": "classifier",
+      "evidence": "requires fingerprint lookup",
+      "aliases": []
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "_category": "segment",
+  "_note": "Acoustic EVIDENCE, never a verdict. A04 reports what the waveform shows. Whether a transient at 5:32 breaches a clause is A11's decision, made with the clause text and an advocate.",
+  "_purpose": "The speech / music / ambient / silence timeline. Feeds the remediation compiler directly: REPLACE_AUDIO needs to know where the bed actually starts and stops.",
+  "resolvable_by": [
+    "dsp"
+  ],
+  "labels": [
+    {
+      "label": "silence",
+      "tier": "dsp",
+      "evidence": "RMS below the floor",
+      "aliases": []
+    },
+    {
+      "label": "speech",
+      "tier": "dsp",
+      "evidence": "high spectral flux, moderate flatness, 4Hz envelope modulation",
+      "aliases": []
+    },
+    {
+      "label": "music",
+      "tier": "dsp",
+      "evidence": "low spectral flatness with a stable beat",
+      "aliases": []
+    },
+    {
+      "label": "ambient",
+      "tier": "dsp",
+      "evidence": "steady broadband energy, no beat, low flux",
+      "aliases": []
+    },
+    {
+      "label": "noise",
+      "tier": "dsp",
+      "evidence": "high flatness, high energy, no structure",
+      "aliases": []
+    }
+  ]
+}

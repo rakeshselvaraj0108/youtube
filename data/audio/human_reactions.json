@@ -1,0 +1,47 @@
+{
+  "_category": "reaction",
+  "_note": "Acoustic EVIDENCE, never a verdict. A04 reports what the waveform shows. Whether a transient at 5:32 breaches a clause is A11's decision, made with the clause text and an advocate.",
+  "_purpose": "Applause is genuinely DSP-detectable \u2014 dense broadband impulses with no periodicity is a distinctive signature. Laughter is not; it overlaps speech too closely.",
+  "resolvable_by": [
+    "classifier",
+    "dsp"
+  ],
+  "labels": [
+    {
+      "label": "applause",
+      "tier": "dsp",
+      "evidence": "dense aperiodic broadband impulse train",
+      "aliases": []
+    },
+    {
+      "label": "crowd_noise",
+      "tier": "dsp",
+      "evidence": "sustained broadband with speech-like modulation",
+      "aliases": []
+    },
+    {
+      "label": "laughter",
+      "tier": "classifier",
+      "evidence": "overlaps speech in every DSP feature",
+      "aliases": []
+    },
+    {
+      "label": "crying",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "cheering",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    },
+    {
+      "label": "coughing",
+      "tier": "classifier",
+      "evidence": "",
+      "aliases": []
+    }
+  ]
+}
