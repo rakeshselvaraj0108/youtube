@@ -10,6 +10,7 @@ Exit codes:
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 
@@ -20,7 +21,7 @@ from rich.table import Table
 from preflight import __version__, cas, ffmpeg
 from preflight import bench as bench_mod
 from preflight.ingest.pipeline import ingest
-from preflight.ingest.probe import UnsupportedInput
+from preflight.ingest.probe import UnsupportedInput, probe_video
 from preflight.models import SEVERITY_RANK
 from preflight.pipeline import SURFACE_WEIGHT, run_perception
 from preflight.agents.nim import NimClient
@@ -557,13 +558,59 @@ def fix(
         console.print()
         raise typer.Exit(EXIT_OK)
 
+    # Atomic output. ffmpeg writes to a temp path in the same directory as the
+    # real destination — same filesystem, so the final step is a rename, not
+    # a copy — and only that succeeding temp file is ever moved onto the path
+    # the user is expecting a good file at. A process killed mid-render
+    # (Ctrl-C, OOM, disk full, a crash) leaves the temp file orphaned and the
+    # real destination exactly as it was, rather than a half-written file
+    # sitting where a repaired video should be.
+    # The real extension has to stay LAST — ffmpeg's muxer is chosen from the
+    # output filename, and a suffix like ".mp4.tmp1234" gives it nothing to
+    # infer a container from. ".tmp1234.mp4" keeps the container recognisable
+    # while still being distinct from the real destination.
+    tmp_destination = destination.with_name(
+        f"{destination.stem}.tmp{os.getpid()}{destination.suffix}"
+    )
+    atomic_command = program.command[:-1] + [tmp_destination.as_posix()]
+
     started = time.perf_counter()
     try:
-        ffmpeg.run(program.command[1:])
+        ffmpeg.run(atomic_command[1:])
     except ffmpeg.FfmpegFailed as exc:
+        tmp_destination.unlink(missing_ok=True)
         console.print(f"[red]render failed: {exc}[/red]")
         raise typer.Exit(EXIT_INPUT) from exc
     elapsed_ms = int((time.perf_counter() - started) * 1000)
+
+    if not tmp_destination.is_file() or tmp_destination.stat().st_size == 0:
+        tmp_destination.unlink(missing_ok=True)
+        console.print("[red]render produced no output[/red]")
+        raise typer.Exit(EXIT_INPUT)
+
+    # Probe the actual output rather than trusting the exit code. ffmpeg can
+    # return 0 having written a file whose duration does not match what the
+    # EDL specified — a truncated render from a killed process that still
+    # exited clean, or a filter graph mistake nothing else would catch.
+    try:
+        out_meta = probe_video(tmp_destination)
+        cut_ms = sum(op.duration_ms for op in edl.ops if op.op == "CUT")
+        expected_ms = result.ingested.meta.durationMs - cut_ms
+        drift_ms = abs(out_meta.durationMs - expected_ms)
+        if drift_ms > 1500:
+            tmp_destination.unlink(missing_ok=True)
+            console.print(
+                f"[red]render verification failed:[/red] output is "
+                f"{out_meta.durationMs}ms, expected {expected_ms}ms "
+                f"(drift {drift_ms}ms) — nothing was written to {destination}"
+            )
+            raise typer.Exit(EXIT_INPUT)
+    except (ffmpeg.FfmpegFailed, UnsupportedInput) as exc:
+        tmp_destination.unlink(missing_ok=True)
+        console.print(f"[red]could not verify the render: {exc}[/red]")
+        raise typer.Exit(EXIT_INPUT) from exc
+
+    tmp_destination.replace(destination)
 
     console.print()
     console.print(

@@ -1,0 +1,12 @@
+{
+  "audioCodec": "AAC",
+  "durationMs": 10000,
+  "filename": "dead_air.mp4",
+  "fps": 30.0,
+  "height": 180,
+  "posterUrl": "./dead_air.poster.jpg",
+  "sampleRate": 44100,
+  "sizeBytes": 68977,
+  "srcUrl": "./dead_air.mp4",
+  "width": 320
+}
