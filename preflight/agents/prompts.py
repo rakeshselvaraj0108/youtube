@@ -54,15 +54,31 @@ LEGITIMATE DEFENCES are only those documented in the provided clauses:
 - Quotation or condemnation of a third party rather than endorsement
 - The evidence not actually falling within the clause's stated scope
 
-Some candidates carry a `cross_modal_context` line — a signal from a different \
-agent's independent read of the same moment, not from you and not from the \
-AUDITOR. When present, weigh it as genuine evidence for a quotation-based \
-defence: a span another agent identified as an attributed quotation is a real \
-basis for arguing the third-party-quotation exemption, stronger than inferring \
-it from the evidence text alone. "Which the speaker then condemned" is a \
-materially stronger basis than attribution by itself, because it forecloses \
-the reading that the speaker endorses what was quoted. Absence of this line is \
-not evidence against a defence — it only means no such signal was available.
+Some candidates carry a `cross_modal_context` line — one or more signals from \
+OTHER agents' independent reads of the same moment, separated by "·". None of \
+this came from you or from the AUDITOR. Absence of any of it is not evidence \
+against a defence — it only means that signal was unavailable for this run.
+
+HOW TO WEIGH EACH SIGNAL:
+- "inside a quotation attributed by..." — real basis for the third-party- \
+quotation exemption, stronger than inferring it from the evidence text alone. \
+"...which the speaker then condemned" is materially stronger still, because it \
+forecloses the reading that the speaker endorses what was quoted.
+- "within Ns of X framing language" — supports an EDSA defence, but is NOT \
+sufficient alone. The clause requires the content itself to show the framing; \
+a nearby cue is corroborating evidence for that, not a substitute for it.
+- "a harm-reduction warning appears Ns away" — supports the dangerous-acts \
+exemption. The closer, the stronger; a warning at the very end of a long video \
+is weaker support for a dangerous act near the start.
+- "vision found graphic imagery" / "found no graphic imagery" (coverage N%) — \
+if the charge depends on graphic DEPICTION rather than verbal reference, a \
+"found no graphic imagery" reading materially supports the defence, but ONLY \
+when coverage is high. At low coverage the negative is thin — vision only \
+looked at a fraction of the frames — and should not carry a defence on its own.
+- "video metadata: declared category X, declared audience Y" — a declared \
+Education or News category supports EDSA or news framing, but is NOT \
+sufficient alone; the content itself must show the framing regardless of what \
+the uploader declared.
 
 You must NOT fabricate exemptions, and you must NOT argue that a violation is \
 minor or unlikely to be noticed. Those are not defences.

@@ -19,7 +19,7 @@ from typing import Callable
 
 from preflight import cas
 from preflight.agents.nim import NimClient
-from preflight.agents.triad import run_triad, to_agent_result
+from preflight.agents.triad import CrossModalContext, run_triad, to_agent_result
 from preflight.chunking import Window, build_windows
 from preflight.config import Settings
 from preflight.ingest.pipeline import Ingested, ingest
@@ -177,8 +177,11 @@ def run_perception(
         speech_agent = AgentResult.skipped("speech", "Speech Agent", "disabled by --no-speech")
         transcript = None
         quotation_spans: list = []
+        framing_cues: list = []
     else:
-        speech_agent, transcript, quotation_spans = _speech(ingested, store, asr_model)
+        speech_agent, transcript, quotation_spans, framing_cues = _speech(
+            ingested, store, asr_model
+        )
 
     audio_agent = _guard(
         "audio",
@@ -217,8 +220,19 @@ def run_perception(
         overlap_ms=settings.overlap_ms if settings else 5_000,
         ocr_items=ocr_report.items,
     )
+    cross_modal = CrossModalContext(
+        quotation_spans=quotation_spans,
+        framing_cues=framing_cues,
+        visual_tracks=tracks,
+        vision_coverage=vision_agent.coverage,
+        declared_category=str(meta_agent.artifacts.get("category", "")),
+        declared_audience=str(meta_agent.artifacts.get("declared_audience", "")),
+        music_deliberate_bed=(
+            audio_agent.artifacts.get("quality", {}).get("ducking", {}).get("deliberate_bed")
+        ),
+    )
     policy_agent, corpus, backend = _policy(
-        windows, store, settings, transcript, quotation_spans
+        windows, store, settings, transcript, cross_modal
     )
 
     agents = [
@@ -273,7 +287,7 @@ def _policy(
     store: cas.Store,
     settings: Settings | None,
     transcript: Transcript | None = None,
-    quotation_spans: list | None = None,
+    cross_modal: CrossModalContext | None = None,
 ) -> tuple[AgentResult, Corpus | None, str]:
     """Retrieval plus the triad, guarded like every other optional stage."""
     settings = settings or Settings.load()
@@ -306,7 +320,7 @@ def _policy(
             client,
             settings,
             transcript,
-            quotation_spans=quotation_spans,
+            cross_modal=cross_modal,
         )
         agent = to_agent_result(result)
         agent.log = indexes.log + agent.log
@@ -434,18 +448,19 @@ def _transcript_segments(transcript: Transcript | None) -> list[dict] | None:
 
 def _speech(
     ingested: Ingested, store: cas.Store, asr_model: str
-) -> tuple[AgentResult, Transcript | None, list]:
+) -> tuple[AgentResult, Transcript | None, list, list]:
     """A02, both tiers.
 
     `asr_mod.transcribe` produces the transcript — words, timing, language.
     `speech_intel.analyse` produces the intelligence layer on top of it:
     lexicon-matched events (profanity, PII, sensitive-event mentions, twelve
-    categories in all) and quotation spans. The second tier existed as a
-    722-line module with its own test suite and was never called from here —
-    `speech_intel` was imported for a helper function elsewhere in this file
-    and nothing ever reached `analyse()`. Folded into one agent node, the same
-    way A04's acoustic tier folds into `audio`, rather than inventing a
-    thirteenth agent the roster does not declare.
+    categories in all), quotation spans, and framing cues (EDSA + harm
+    reduction). The second tier existed as a 722-line module with its own
+    test suite and was never called from here — `speech_intel` was imported
+    for a helper function elsewhere in this file and nothing ever reached
+    `analyse()`. Folded into one agent node, the same way A04's acoustic tier
+    folds into `audio`, rather than inventing a thirteenth agent the roster
+    does not declare.
     """
 
     def run() -> AgentResult:
@@ -458,8 +473,9 @@ def _speech(
         run.transcript = transcript  # type: ignore[attr-defined]
 
         if agent.status not in {"SKIPPED", "FAILED"} and transcript is not None:
-            intel, _events, spans = speech_intel.analyse(transcript)
+            intel, _events, spans, framing = speech_intel.analyse(transcript)
             run.quotation_spans = spans  # type: ignore[attr-defined]
+            run.framing_cues = framing  # type: ignore[attr-defined]
             if intel.status == "OK":
                 agent.artifacts.update(intel.artifacts)
                 agent.log.extend(intel.log)
@@ -469,10 +485,12 @@ def _speech(
 
     run.transcript = None  # type: ignore[attr-defined]
     run.quotation_spans = []  # type: ignore[attr-defined]
+    run.framing_cues = []  # type: ignore[attr-defined]
     agent = _guard("speech", "Speech Agent", run)
     return (
         agent,
         getattr(run, "transcript", None),
         getattr(run, "quotation_spans", []),
+        getattr(run, "framing_cues", []),
     )
 

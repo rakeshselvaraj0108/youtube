@@ -293,6 +293,20 @@ PHRASE_GAP_TOLERANCE = 2
 
 def _phrase_matches_from(tokens: list[str], words: list[str], start: int) -> bool:
     """Do `words` appear in order starting at or after `start`, gaps allowed?"""
+    return _phrase_match_end(tokens, words, start) is not None
+
+
+def _phrase_match_end(tokens: list[str], words: list[str], start: int) -> int | None:
+    """Index one past the matched phrase's last word, or None.
+
+    "Starting at or after `start`" is deliberate for `_phrase_hit`, which asks
+    a single yes/no question of a bounded window. It is the wrong semantics
+    for scanning every position of a whole transcript as a candidate
+    occurrence: the search finding "this is dangerous" by starting from "do"
+    two words early, and again from "this" itself, and again from "it", all
+    within the same tolerance window, is one occurrence reported three times.
+    Returning the match's real extent lets the caller skip past it.
+    """
     cursor = start
     for word in words:
         found_at = None
@@ -301,9 +315,9 @@ def _phrase_matches_from(tokens: list[str], words: list[str], start: int) -> boo
                 found_at = offset
                 break
         if found_at is None:
-            return False
+            return None
         cursor = found_at + 1
-    return True
+    return cursor
 
 
 def _phrase_hit(tokens: list[str], phrases: list[str]) -> str | None:
@@ -714,6 +728,141 @@ def _merge_quotation_spans(
 
 
 # ------------------------------------------------------------------ #
+# Framing cues — EDSA context and harm-reduction warnings              #
+# ------------------------------------------------------------------ #
+
+EDSA_CUES_PATH = Path("data/lexicons/edsa_framing_cues.json")
+EDSA_CATEGORIES = ("educational", "documentary", "news", "scientific", "artistic")
+
+
+@dataclass(frozen=True)
+class FramingCue:
+    """One occurrence of framing language, timestamped.
+
+    Educational, documentary, news, scientific and artistic (EDSA) framing
+    is a documented exemption in several clauses, and harm-reduction language
+    ("never do this", "seriously hurt") is the basis for the dangerous-acts
+    exemption. Both are the same shape of signal as a quotation cue — lexical,
+    timestamped, evidence for the ADVOCATE rather than a verdict — and this
+    file existed, unloaded, since the data layer was authored.
+    """
+
+    ts_ms: int
+    category: str
+    cue: str
+
+    def to_json(self) -> dict[str, Any]:
+        return {"ts_ms": self.ts_ms, "category": self.category, "cue": self.cue}
+
+
+class FramingCues:
+    """`data/lexicons/edsa_framing_cues.json`, loaded once."""
+
+    def __init__(self, path: Path = EDSA_CUES_PATH) -> None:
+        payload: dict[str, Any] = {}
+        if Path(path).is_file():
+            payload = json.loads(Path(path).read_text(encoding="utf-8"))
+
+        self.by_category: dict[str, list[str]] = {
+            category: [normalize(p) for p in payload.get(category, [])]
+            for category in (*EDSA_CATEGORIES, "harm_reduction")
+        }
+        self.harm_reduction_max_distance_ms = int(
+            payload.get("harm_reduction_max_distance_ms", 15_000)
+        )
+        self.loaded = any(self.by_category.values())
+
+
+_DEFAULT_FRAMING = FramingCues()
+
+
+def find_framing_cues(
+    transcript: Transcript | None, cues: FramingCues | None = None
+) -> list[FramingCue]:
+    """Every framing-cue occurrence in the transcript, across all categories.
+
+    Unlike quotation cues, framing language is not anchored to a following
+    span — "in this lesson" at the start of a video frames everything after
+    it, not just the next sentence. So this returns bare timestamped
+    occurrences, and callers ask "how close is the nearest one" rather than
+    "does a span cover this evidence."
+    """
+    cues = cues or _DEFAULT_FRAMING
+    if transcript is None or not transcript.words:
+        return []
+
+    words = transcript.words
+    normalised = [normalize(w.w) for w in words]
+    found: list[FramingCue] = []
+
+    for category, phrases in cues.by_category.items():
+        if not phrases:
+            continue
+        # Skip past a match rather than re-scanning every position inside it.
+        # The tolerant matcher searches forward from wherever it is told to
+        # start, so scanning every index treats one occurrence of "this is
+        # dangerous" as three — found again starting from "do" and again from
+        # "it", both within the same tolerance window as the real start.
+        start = 0
+        while start < len(normalised):
+            match_end = None
+            matched_phrase = None
+            for phrase in phrases:
+                end = _phrase_match_end(normalised, phrase.split(), start)
+                if end is not None:
+                    match_end, matched_phrase = end, phrase
+                    break
+            if match_end is not None:
+                found.append(
+                    FramingCue(ts_ms=words[start].start_ms, category=category, cue=matched_phrase)
+                )
+                start = match_end
+            else:
+                start += 1
+
+    found.sort(key=lambda c: c.ts_ms)
+    return found
+
+
+def edsa_categories_near(
+    cues: list[FramingCue], start_ms: int, end_ms: int, window_ms: int = 8_000
+) -> list[str]:
+    """EDSA categories with a cue within `window_ms` of the evidence span,
+    deduplicated and in the order first encountered."""
+    seen: list[str] = []
+    for cue in cues:
+        if cue.category == "harm_reduction":
+            continue
+        distance = max(0, max(start_ms - cue.ts_ms, cue.ts_ms - end_ms, 0))
+        if distance <= window_ms and cue.category not in seen:
+            seen.append(cue.category)
+    return seen
+
+
+def harm_reduction_distance_ms(
+    cues: list[FramingCue], start_ms: int, end_ms: int, max_distance_ms: int | None = None
+) -> int | None:
+    """Distance in ms from the evidence span to the nearest harm-reduction
+    phrase, or None if none falls within `max_distance_ms`.
+
+    "Never do this" three sentences before a dangerous act is a materially
+    different video from the same act with no warning anywhere — this is
+    the measurement that lets the ADVOCATE tell them apart.
+    """
+    limit = max_distance_ms if max_distance_ms is not None else (
+        _DEFAULT_FRAMING.harm_reduction_max_distance_ms
+    )
+    best: int | None = None
+    for cue in cues:
+        if cue.category != "harm_reduction":
+            continue
+        distance = max(0, max(start_ms - cue.ts_ms, cue.ts_ms - end_ms, 0))
+        if distance <= limit and (best is None or distance < best):
+            best = distance
+    return best
+
+
+# ------------------------------------------------------------------ #
 # Agent entry point                                                   #
 # ------------------------------------------------------------------ #
 
@@ -722,12 +871,14 @@ def analyse(
     transcript: Transcript | None,
     lexicons: Lexicons | None = None,
     cues: AttributionCues | None = None,
-) -> tuple[AgentResult, list[SpeechEvent], list[QuotationSpan]]:
+    framing: FramingCues | None = None,
+) -> tuple[AgentResult, list[SpeechEvent], list[QuotationSpan], list[FramingCue]]:
     started = time.perf_counter()
 
     if transcript is None:
         return (
             AgentResult.skipped(AGENT_ID, AGENT_NAME, "Transcript unavailable"),
+            [],
             [],
             [],
         )
@@ -743,12 +894,15 @@ def analyse(
             ),
             [],
             [],
+            [],
         )
 
     lexicons = lexicons or Lexicons()
     cues = cues or _DEFAULT_CUES
+    framing = framing or _DEFAULT_FRAMING
     events = extract_events(transcript, lexicons)
     spans = quotation_spans(transcript, cues)
+    framing_cues = find_framing_cues(transcript, framing)
 
     by_type: dict[str, int] = {}
     for event in events:
@@ -766,6 +920,14 @@ def analyse(
             f"{len(spans)} quotation span(s), {condemned} with condemnation — "
             "cross-modal context for the ADVOCATE"
         )
+    if framing_cues:
+        by_category: dict[str, int] = {}
+        for cue in framing_cues:
+            by_category[cue.category] = by_category.get(cue.category, 0) + 1
+        log.append(
+            "framing cues: "
+            + ", ".join(f"{k} {v}" for k, v in sorted(by_category.items()))
+        )
 
     return (
         AgentResult(
@@ -776,20 +938,25 @@ def analyse(
             artifacts={
                 "events": [e.to_json() for e in events],
                 "quotation_spans": [s.to_json() for s in spans],
+                "framing_cues": [c.to_json() for c in framing_cues],
             },
             elapsed_ms=int((time.perf_counter() - started) * 1000),
             log=log,
         ),
         events,
         spans,
+        framing_cues,
     )
 
 
 def to_json(
-    events: Iterable[SpeechEvent], spans: Iterable[QuotationSpan] = ()
+    events: Iterable[SpeechEvent],
+    spans: Iterable[QuotationSpan] = (),
+    framing_cues: Iterable[FramingCue] = (),
 ) -> dict[str, Any]:
     """The A02 output contract. JSON only — never a paragraph."""
     return {
         "speech_events": [event.to_json() for event in events],
         "quotation_spans": [span.to_json() for span in spans],
+        "framing_cues": [cue.to_json() for cue in framing_cues],
     }

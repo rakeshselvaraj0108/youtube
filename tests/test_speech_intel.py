@@ -307,6 +307,105 @@ class TestQuotationSpans:
         }
 
 
+class TestFramingCues:
+    """EDSA framing and harm-reduction language, timestamped — the other half
+    of the cross-modal brief. `data/lexicons/edsa_framing_cues.json` existed
+    since the data layer was authored and nothing loaded it, same as
+    attribution_cues.json before it was wired in."""
+
+    def test_an_educational_cue_is_found(self):
+        from preflight.perception.speech_intel import find_framing_cues
+
+        cues = find_framing_cues(transcript("in this lesson we cover register shifts"))
+        assert any(c.category == "educational" for c in cues)
+
+    def test_a_harm_reduction_cue_is_found(self):
+        from preflight.perception.speech_intel import find_framing_cues
+
+        cues = find_framing_cues(transcript("never do this it is extremely dangerous"))
+        assert any(c.category == "harm_reduction" for c in cues)
+
+    def test_no_cues_in_ordinary_text(self):
+        from preflight.perception.speech_intel import find_framing_cues
+
+        assert find_framing_cues(transcript("the weather today is quite pleasant")) == []
+
+    def test_none_transcript_yields_no_cues(self):
+        from preflight.perception.speech_intel import find_framing_cues
+
+        assert find_framing_cues(None) == []
+
+    def test_one_occurrence_is_not_reported_three_times(self):
+        """The tolerant matcher searches forward from wherever it starts, so
+        naively scanning every word position found 'this is dangerous' three
+        times in 'never do this it is extremely dangerous' — once starting
+        from 'do', again from 'this', again from 'it', all within the same
+        tolerance window as the real occurrence. Advancing past a match once
+        found is what fixes it."""
+        from preflight.perception.speech_intel import find_framing_cues
+
+        cues = find_framing_cues(
+            transcript("never do this it is extremely dangerous and risky")
+        )
+        assert len(cues) == 1
+
+    def test_edsa_categories_near_finds_cues_inside_the_window(self):
+        from preflight.perception.speech_intel import (
+            edsa_categories_near,
+            find_framing_cues,
+        )
+
+        cues = find_framing_cues(
+            transcript("in this lesson we will bypass the safety cutout")
+        )
+        near = edsa_categories_near(cues, 1000, 2000, window_ms=8000)
+        assert "educational" in near
+
+    def test_edsa_categories_near_excludes_cues_outside_the_window(self):
+        from preflight.perception.speech_intel import (
+            edsa_categories_near,
+            find_framing_cues,
+        )
+
+        cues = find_framing_cues(
+            transcript("in this lesson we will bypass the safety cutout")
+        )
+        near = edsa_categories_near(cues, 500_000, 501_000, window_ms=8000)
+        assert near == []
+
+    def test_edsa_categories_near_never_returns_harm_reduction(self):
+        """harm_reduction is its own signal, scored by distance rather than
+        presence-in-a-window — it must not leak into the EDSA category list."""
+        from preflight.perception.speech_intel import (
+            edsa_categories_near,
+            find_framing_cues,
+        )
+
+        cues = find_framing_cues(transcript("never do this it is dangerous"))
+        assert "harm_reduction" not in edsa_categories_near(cues, 0, 100_000, window_ms=999_999)
+
+    def test_harm_reduction_distance_measures_proximity(self):
+        from preflight.perception.speech_intel import (
+            find_framing_cues,
+            harm_reduction_distance_ms,
+        )
+
+        cues = find_framing_cues(
+            transcript("never do this it is dangerous you could get seriously hurt")
+        )
+        near = harm_reduction_distance_ms(cues, 0, 1000)
+        far = harm_reduction_distance_ms(cues, 500_000, 501_000)
+        assert near is not None
+        assert far is None
+
+    def test_a_missing_lexicon_degrades_without_crashing(self, tmp_path):
+        from preflight.perception.speech_intel import FramingCues, find_framing_cues
+
+        cues = FramingCues(tmp_path / "does_not_exist.json")
+        assert not cues.loaded
+        assert find_framing_cues(transcript("in this lesson"), cues) == []
+
+
 class TestAttributionCuesLexicon:
     """The lexicon file, not a hardcoded duplicate, is what `_context_for`
     reads. `data/lexicons/attribution_cues.json` existed since the data layer
@@ -419,43 +518,46 @@ class TestSpansAndDedupe:
 
 class TestAgentContract:
     def test_missing_transcript_reports_the_specified_failure(self):
-        result, events, spans = analyse(None)
+        result, events, spans, framing = analyse(None)
         assert result.status == "SKIPPED"
         assert result.error == "Transcript unavailable"
         assert events == []
         assert spans == []
+        assert framing == []
 
     def test_empty_transcript_is_success_with_no_events(self):
-        result, events, spans = analyse(Transcript(language="en", duration_ms=0))
+        result, events, spans, framing = analyse(Transcript(language="en", duration_ms=0))
         assert result.status == "OK"
         assert events == []
         assert spans == []
+        assert framing == []
 
     def test_reports_lexicon_load_in_the_log(self):
-        result, _, _ = analyse(transcript("hello everyone"))
+        result, _, _, _ = analyse(transcript("hello everyone"))
         assert any("lexicons" in line for line in result.log)
 
     def test_output_is_json_only(self):
-        _, events, spans = analyse(transcript("this is bullshit"))
-        payload = to_json(events, spans)
-        assert set(payload) == {"speech_events", "quotation_spans"}
+        _, events, spans, framing = analyse(transcript("this is bullshit"))
+        payload = to_json(events, spans, framing)
+        assert set(payload) == {"speech_events", "quotation_spans", "framing_cues"}
         assert isinstance(payload["speech_events"], list)
         assert isinstance(payload["quotation_spans"], list)
+        assert isinstance(payload["framing_cues"], list)
 
     def test_never_emits_a_verdict(self):
         """'Never write Limited Ads. Never write Violation. Never write
         Unsafe.' Those belong to later agents."""
-        _, events, spans = analyse(
+        _, events, spans, framing = analyse(
             transcript(
                 "this is bullshit and someone got shot and the casino paid out"
             )
         )
-        blob = str(to_json(events, spans)).upper()
+        blob = str(to_json(events, spans, framing)).upper()
         for forbidden in ("LIMITED ADS", "VIOLATION", "UNSAFE", "DEMONETIZ"):
             assert forbidden not in blob
 
     def test_every_event_is_timestamped_and_scored(self):
-        _, events, _ = analyse(transcript("this is bullshit and there was a knife"))
+        _, events, _, _ = analyse(transcript("this is bullshit and there was a knife"))
         assert events
         for event in events:
             assert event.end_ms > event.start_ms
@@ -463,12 +565,20 @@ class TestAgentContract:
             assert event.severity in {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
 
     def test_quotation_spans_are_reported_in_the_artifacts_and_the_log(self):
-        result, _, spans = analyse(
+        result, _, spans, _ = analyse(
             transcript("he said quote this is bullshit unquote to the room")
         )
         assert spans
         assert result.artifacts["quotation_spans"]
         assert any("quotation span" in line for line in result.log)
+
+    def test_framing_cues_are_reported_in_the_artifacts_and_the_log(self):
+        result, _, _, framing = analyse(
+            transcript("in this lesson we will bypass the safety cutout")
+        )
+        assert framing
+        assert result.artifacts["framing_cues"]
+        assert any("framing cues" in line for line in result.log)
 
 
 class TestLexicons:

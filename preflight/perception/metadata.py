@@ -59,6 +59,7 @@ class Sidecar:
     description: str = ""
     tags: list[str] = field(default_factory=list)
     category: str = ""
+    declared_audience: str = ""
 
     @classmethod
     def load(cls, video: Path) -> "Sidecar | None":
@@ -76,6 +77,7 @@ class Sidecar:
             description=str(data.get("description", "")),
             tags=[str(t) for t in data.get("tags", [])],
             category=str(data.get("category", "")),
+            declared_audience=str(data.get("declared_audience", "")),
         )
 
 
@@ -134,7 +136,12 @@ def analyse(
         name=AGENT_NAME,
         status="OK",
         findings=findings,
-        artifacts={"title": sidecar.title, "tags": len(sidecar.tags)},
+        artifacts={
+            "title": sidecar.title,
+            "tags": len(sidecar.tags),
+            "category": sidecar.category,
+            "declared_audience": sidecar.declared_audience,
+        },
         elapsed_ms=int((time.perf_counter() - started) * 1000),
         log=log,
     )

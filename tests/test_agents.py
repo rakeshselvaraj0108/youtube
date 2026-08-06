@@ -230,6 +230,181 @@ class TestQuotationCrossModalContext:
         assert candidate.quotation_context is not None
 
 
+class TestFramingAndHarmReductionContext:
+    def _candidate(self, start: int, end: int, clause="AF-05"):
+        return Candidate(
+            id="c1", window=0, clause_id=clause, category="Dangerous acts",
+            evidence="bypass the safety cutout", start_ms=start, end_ms=end,
+            why="imitable act", chunk=chunk(clause),
+        )
+
+    def test_a_candidate_near_an_edsa_cue_is_tagged(self):
+        from preflight.agents.triad import _tag_edsa_and_harm_reduction
+        from preflight.perception.speech_intel import FramingCue
+
+        candidate = self._candidate(5000, 6000)
+        cue = FramingCue(ts_ms=3000, category="educational", cue="in this lesson")
+        tagged = _tag_edsa_and_harm_reduction([candidate], [cue])
+        assert tagged == 1
+        assert "educational" in candidate.edsa_context
+
+    def test_a_candidate_far_from_any_cue_is_not_tagged(self):
+        from preflight.agents.triad import _tag_edsa_and_harm_reduction
+        from preflight.perception.speech_intel import FramingCue
+
+        candidate = self._candidate(500_000, 501_000)
+        cue = FramingCue(ts_ms=3000, category="educational", cue="in this lesson")
+        assert _tag_edsa_and_harm_reduction([candidate], [cue]) == 0
+        assert candidate.edsa_context is None
+
+    def test_a_nearby_harm_reduction_cue_is_tagged_with_its_distance(self):
+        from preflight.agents.triad import _tag_edsa_and_harm_reduction
+        from preflight.perception.speech_intel import FramingCue
+
+        candidate = self._candidate(10_000, 11_000)
+        cue = FramingCue(ts_ms=8000, category="harm_reduction", cue="never do this")
+        _tag_edsa_and_harm_reduction([candidate], [cue])
+        assert candidate.harm_reduction_context is not None
+        assert "2.0s" in candidate.harm_reduction_context
+
+    def test_no_cues_tags_nothing_and_does_not_crash(self):
+        from preflight.agents.triad import _tag_edsa_and_harm_reduction
+
+        candidate = self._candidate(5000, 6000)
+        assert _tag_edsa_and_harm_reduction([candidate], []) == 0
+
+
+class TestVisionCrossModalContext:
+    def _candidate(self, start=5000, end=6000):
+        return Candidate(
+            id="c1", window=0, clause_id="AF-02", category="Violence",
+            evidence="there is a knife", start_ms=start, end_ms=end,
+            why="weapon reference", chunk=chunk("AF-02"),
+        )
+
+    @staticmethod
+    def _track(category: str, start=4000, end=7000):
+        from preflight.perception.vision import Track
+
+        return Track(
+            label=category, category=category, start_ms=start, end_ms=end,
+            frames=3, peak_confidence=0.9, confidence=0.85,
+        )
+
+    def test_overlapping_graphic_track_is_reported(self):
+        from preflight.agents.triad import _tag_vision_context
+
+        candidate = self._candidate()
+        tagged = _tag_vision_context([candidate], [self._track("weapon")], coverage=1.0)
+        assert tagged == 1
+        assert "found graphic imagery" in candidate.vision_context
+        assert "100%" in candidate.vision_context
+
+    def test_overlapping_non_graphic_track_says_so(self):
+        from preflight.agents.triad import _tag_vision_context
+
+        candidate = self._candidate()
+        _tag_vision_context([candidate], [self._track("scene")], coverage=0.8)
+        assert "found no graphic imagery" in candidate.vision_context
+
+    def test_low_coverage_is_reported_alongside_the_negative(self):
+        """A 'found no graphic imagery' claim at 42% coverage is a much
+        weaker defence than the same claim at 100%, and the ADVOCATE needs
+        the number to weigh it correctly."""
+        from preflight.agents.triad import _tag_vision_context
+
+        candidate = self._candidate()
+        _tag_vision_context([candidate], [self._track("scene")], coverage=0.42)
+        assert "42%" in candidate.vision_context
+
+    def test_no_tracks_at_all_tags_nothing(self):
+        from preflight.agents.triad import _tag_vision_context
+
+        candidate = self._candidate()
+        assert _tag_vision_context([candidate], [], coverage=0.0) == 0
+        assert candidate.vision_context is None
+
+    def test_a_non_overlapping_track_still_tags_as_no_graphic_imagery(self):
+        """Absence in THIS window is itself the signal — a weapon seen
+        elsewhere in the video does not make this window graphic."""
+        from preflight.agents.triad import _tag_vision_context
+
+        candidate = self._candidate(5000, 6000)
+        distant = self._track("weapon", start=90_000, end=91_000)
+        _tag_vision_context([candidate], [distant], coverage=1.0)
+        assert "found no graphic imagery" in candidate.vision_context
+
+
+class TestVideoCrossModalContext:
+    def _candidate(self):
+        return Candidate(
+            id="c1", window=0, clause_id="AF-01", category="Language",
+            evidence="this is fucked", start_ms=1000, end_ms=2000,
+            why="profanity", chunk=chunk("AF-01"),
+        )
+
+    def test_category_and_audience_are_both_reported(self):
+        from preflight.agents.triad import _tag_video_context
+
+        candidate = self._candidate()
+        tagged = _tag_video_context([candidate], "Education", "general")
+        assert tagged == 1
+        assert "Education" in candidate.video_context
+        assert "general" in candidate.video_context
+
+    def test_neither_present_tags_nothing(self):
+        from preflight.agents.triad import _tag_video_context
+
+        candidate = self._candidate()
+        assert _tag_video_context([candidate], "", "") == 0
+        assert candidate.video_context is None
+
+    def test_every_candidate_gets_the_same_video_level_line(self):
+        """Category/audience describe the whole video, not one window — every
+        candidate carries it, not just ones near some cue."""
+        from preflight.agents.triad import _tag_video_context
+
+        candidates = [self._candidate(), self._candidate()]
+        _tag_video_context(candidates, "News", "")
+        assert candidates[0].video_context == candidates[1].video_context
+
+
+class TestUnifiedCrossModalTagging:
+    def test_tags_every_signal_in_one_pass_and_reports_counts(self):
+        from preflight.agents.triad import CrossModalContext, _tag_cross_modal_context
+        from preflight.perception.speech_intel import FramingCue, QuotationSpan
+        from preflight.perception.vision import Track
+
+        candidate = Candidate(
+            id="c1", window=0, clause_id="AF-01", category="Language",
+            evidence="this is fucked", start_ms=5000, end_ms=6000,
+            why="profanity", chunk=chunk("AF-01"),
+        )
+        context = CrossModalContext(
+            quotation_spans=[QuotationSpan(4000, 7000, "said", "attributed", 0.55)],
+            framing_cues=[FramingCue(4500, "educational", "in this lesson")],
+            visual_tracks=[Track("weapon", "weapon", 4000, 7000, 2, 0.9, 0.85)],
+            vision_coverage=1.0,
+            declared_category="Education",
+            declared_audience="general",
+        )
+        counts = _tag_cross_modal_context([candidate], context)
+        assert counts == {"quotation": 1, "framing": 1, "vision": 1, "video": 1}
+        assert len(candidate.cross_modal_lines) == 4
+
+    def test_an_empty_context_tags_nothing_and_does_not_crash(self):
+        from preflight.agents.triad import CrossModalContext, _tag_cross_modal_context
+
+        candidate = Candidate(
+            id="c1", window=0, clause_id="AF-01", category="Language",
+            evidence="this is fucked", start_ms=5000, end_ms=6000,
+            why="profanity", chunk=chunk("AF-01"),
+        )
+        counts = _tag_cross_modal_context([candidate], CrossModalContext())
+        assert sum(counts.values()) == 0
+        assert candidate.cross_modal_lines == []
+
+
 class TestToFindings:
     def test_carries_the_full_adversarial_record(self):
         candidate = Candidate(
