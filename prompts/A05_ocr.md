@@ -2,7 +2,7 @@
 agent_id: A05
 codename: OCR
 kind: deterministic
-status: unimplemented
+status: implemented
 implementation: preflight/perception/ocr.py
 model: none
 tier: 3

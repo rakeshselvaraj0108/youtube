@@ -116,6 +116,13 @@ class LocalTesseract(BaseProvider):
         return True, f"tesseract {version}"
 
     def invoke(self, *, image: Path, **kwargs: Any) -> Result:
+        """Words with boxes and confidences, not a blob of text.
+
+        `image_to_string` throws away everything A05 needs. A caption's role
+        is decided by where it sits and how long it persists, so position is
+        not a nicety here — without a box there is no way to tell a corner
+        watermark from meme text, and both would land in the same bucket.
+        """
         try:
             import pytesseract
             from PIL import Image
@@ -123,9 +130,40 @@ class LocalTesseract(BaseProvider):
             return Unavailable("pytesseract/Pillow not installed", "local")
 
         started = time.monotonic()
-        text = pytesseract.image_to_string(Image.open(image))
+        with Image.open(image) as handle:
+            width, height = handle.size
+            data = pytesseract.image_to_data(
+                handle, output_type=pytesseract.Output.DICT
+            )
+
+        words: list[dict[str, Any]] = []
+        for index, text in enumerate(data.get("text", [])):
+            text = (text or "").strip()
+            if not text:
+                continue
+            try:
+                confidence = float(data["conf"][index])
+            except (KeyError, IndexError, TypeError, ValueError):
+                continue
+            if confidence < 0:  # tesseract's "no estimate" sentinel
+                continue
+            words.append(
+                {
+                    "text": text,
+                    # Normalised so downstream rules are resolution-independent.
+                    "box": (
+                        data["left"][index] / max(width, 1),
+                        data["top"][index] / max(height, 1),
+                        data["width"][index] / max(width, 1),
+                        data["height"][index] / max(height, 1),
+                    ),
+                    "conf": confidence / 100.0,
+                    "line": (data["block_num"][index], data["line_num"][index]),
+                }
+            )
+
         return Served(
-            value=text.strip(),
+            value={"words": words, "text": " ".join(w["text"] for w in words)},
             provider=f"local:{self.model}",
             tier=1,
             calls=0,

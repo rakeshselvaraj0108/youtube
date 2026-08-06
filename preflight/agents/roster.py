@@ -141,7 +141,41 @@ class Roster:
                     f"{spec.agent_id} is deterministic but requests "
                     f"capability {spec.model_capability}"
                 )
+            problems.extend(self._implementation_problems(spec))
         return problems
+
+    @staticmethod
+    def _implementation_problems(spec: AgentSpec) -> list[str]:
+        """Does the code this specification claims exists actually exist?
+
+        The test suite already asserted this, but only the test suite did.
+        `preflight agents` and the roster digest that goes into the
+        attestation both read `status` and believed it, so the one place the
+        claim was visible to a judge was the one place it was unchecked.
+        Moving it into `validate` means the drift surfaces wherever the roster
+        is loaded rather than only under pytest.
+
+        Both directions are wrong and both are reported. Claiming implemented
+        with no code overstates what is built; claiming unimplemented with
+        code sitting there understates it, and an honest status board has to
+        fail in that direction too.
+        """
+        if not spec.implementation:
+            return [f"{spec.agent_id} declares no implementation path"]
+
+        target = Path(spec.implementation)
+        exists = target.exists()
+        if spec.implemented and not exists:
+            return [
+                f"{spec.agent_id} is marked implemented but "
+                f"{spec.implementation} does not exist"
+            ]
+        if not spec.implemented and exists:
+            return [
+                f"{spec.agent_id} is marked unimplemented but "
+                f"{spec.implementation} exists — the roster understates what is built"
+            ]
+        return []
 
     def to_json(self) -> dict[str, Any]:
         return {

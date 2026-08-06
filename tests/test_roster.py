@@ -216,11 +216,26 @@ class TestImplementationConformance:
                 "is missing — mark it `status: unimplemented` or write it"
             )
 
-    def test_unimplemented_agents_are_declared_honestly(self, roster):
+    def test_the_roster_declares_what_is_built_in_both_directions(self, roster):
         """The roster is a status board, not a directory of files that all
-        look finished. A05 (OCR) is specified and not yet built."""
+        look finished. All twelve are now built; the assertion stays because
+        the failure it guards against is a spec drifting away from its code,
+        which is as easy to do downward as upward."""
         unbuilt = {s.agent_id for s in roster.ordered if not s.implemented}
-        assert unbuilt == {"A05"}
+        assert unbuilt == set()
+        assert roster.validate() == []
+
+    def test_a_spec_claiming_code_that_is_absent_is_a_validation_error(self):
+        """The check that caught A03 and A05 declaring modules never written,
+        now enforced by the library rather than only by this file."""
+        from dataclasses import replace
+
+        from preflight.agents.roster import Roster
+
+        real = load_roster("prompts")["A05"]
+        broken = Roster(agents={"A05": replace(real, implementation="preflight/nope.py")})
+        problems = broken.validate()
+        assert any("preflight/nope.py does not exist" in p for p in problems)
 
     def test_no_unimplemented_agent_is_required_by_an_implemented_one(self, roster):
         """A built agent depending on an unbuilt one is a pipeline that cannot
