@@ -55,6 +55,32 @@ class Window:
         return "\n".join(lines)
 
 
+def window_bounds(
+    duration_ms: int, chunk_ms: int = 30_000, overlap_ms: int = 5_000
+) -> list[tuple[int, int]]:
+    """The (start, end) spans `build_windows` will produce.
+
+    Extracted so the decomposition plan can count windows without
+    reimplementing this loop. Two copies of the same stride arithmetic drift
+    the moment one is touched, and a plan that predicts a different chunk
+    count than the chunker produces is worse than no plan — it is a
+    confident wrong number.
+    """
+    if duration_ms <= 0:
+        return []
+
+    step = max(1, chunk_ms - overlap_ms)
+    bounds: list[tuple[int, int]] = []
+    start = 0
+    while start < duration_ms:
+        end = min(start + chunk_ms, duration_ms)
+        bounds.append((start, end))
+        if end >= duration_ms:
+            break
+        start += step
+    return bounds
+
+
 def build_windows(
     transcript: Transcript | None,
     duration_ms: int,
@@ -75,18 +101,13 @@ def build_windows(
     reached the AUDITOR at all — a silent window with a slur burned into the
     frame produced no candidate, because nothing was ever attached here.
     """
-    if duration_ms <= 0:
-        return []
-
-    step = max(1, chunk_ms - overlap_ms)
     keyframes = keyframes or []
     ocr_items = ocr_items or []
     windows: list[Window] = []
 
-    index = 0
-    start = 0
-    while start < duration_ms:
-        end = min(start + chunk_ms, duration_ms)
+    for index, (start, end) in enumerate(
+        window_bounds(duration_ms, chunk_ms, overlap_ms)
+    ):
         text = transcript.text_between(start, end) if transcript else ""
         frames = [f for f in keyframes if start <= f.ts_ms < end]
         on_screen = [
@@ -104,10 +125,6 @@ def build_windows(
                 ocr=on_screen,
             )
         )
-        index += 1
-        if end >= duration_ms:
-            break
-        start += step
 
     return windows
 

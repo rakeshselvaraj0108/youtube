@@ -103,6 +103,90 @@ class TestQualityDelta:
         assert ffmpeg.quality_delta(moving_clip, tmp_path / "does_not_exist.mp4") is None
 
 
+class TestRedirectedOutputSurvives:
+    """The CI case. Attached to a console Windows hands Python a UTF-8
+    writer and every glyph renders; redirect stdout and it falls back to the
+    ANSI code page, where cp1252 cannot encode the finding bullet, the
+    readiness bar or the weakest-dimension arrow. The command then died with
+    UnicodeEncodeError *after* finishing the analysis. A tool whose whole
+    premise is running in CI has to survive having its output captured.
+
+    Runs the real binary as a subprocess — `CliRunner` substitutes its own
+    stream and cannot reproduce this."""
+
+    def test_check_does_not_crash_when_stdout_is_a_pipe(self, dead_air_clip, tmp_path):
+        proc = subprocess.run(
+            [
+                sys.executable, "-m", "preflight.cli", "check", str(dead_air_clip),
+                "--offline", "--out", str(tmp_path / "out"),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        combined = proc.stdout + proc.stderr
+        assert "UnicodeEncodeError" not in combined
+        assert "Traceback" not in combined
+        assert proc.returncode in (0, 1), combined
+
+    def test_the_glyphs_that_used_to_break_it_still_render(
+        self, dead_air_clip, tmp_path
+    ):
+        """Proves the fix is encoding the glyphs, not quietly dropping them."""
+        proc = subprocess.run(
+            [
+                sys.executable, "-m", "preflight.cli", "check", str(dead_air_clip),
+                "--offline", "--out", str(tmp_path / "out"),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        assert "█" in proc.stdout or "●" in proc.stdout
+
+
+class TestAtomicEgress:
+    """Schema validation already refuses to write a *wrong* report. This
+    refuses to write a partial set of right ones — an output directory
+    holding report.json but not certificate.json is indistinguishable from a
+    complete one to anything reading it later."""
+
+    def test_a_failure_midway_leaves_no_artifacts_behind(
+        self, dead_air_clip, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(
+            cli, "build_sarif",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
+        out = tmp_path / "out"
+        runner.invoke(
+            app,
+            [
+                "check", str(dead_air_clip), "--offline",
+                "--format", "all", "--out", str(out),
+            ],
+        )
+        leftovers = [p.name for p in out.iterdir()] if out.exists() else []
+        assert leftovers == [], f"partial output written: {leftovers}"
+
+    def test_a_successful_run_leaves_no_staging_directory(
+        self, dead_air_clip, tmp_path
+    ):
+        out = tmp_path / "out"
+        result = runner.invoke(
+            app,
+            [
+                "check", str(dead_air_clip), "--offline",
+                "--format", "all", "--out", str(out),
+            ],
+        )
+        assert result.exit_code in (0, 1), result.output
+        assert [p.name for p in out.iterdir() if p.name.startswith(".staging")] == []
+        assert (out / "report.json").is_file()
+
+
 class TestModelsPull:
     """`doctor` and both local providers point an unresolved capability at
     `preflight models pull` in their fix hints — a command that did not

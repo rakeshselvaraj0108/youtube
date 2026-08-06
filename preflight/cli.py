@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -24,6 +26,7 @@ from preflight.ingest.pipeline import ingest
 from preflight.ingest.probe import UnsupportedInput, probe_video
 from preflight.models import SEVERITY_RANK
 from preflight.pipeline import SURFACE_WEIGHT, run_perception
+from preflight.plan import build_plan
 from preflight.agents.nim import NimClient
 from preflight.agents.roster import load_roster
 from preflight.archive import Archive
@@ -44,6 +47,34 @@ from preflight.scoring.readiness import SUB_SCORE_ORDER
 
 # Verdicts that let CI through.
 PASSING = {"READY_TO_PUBLISH", "PUBLISH_WITH_FIXES"}
+
+def _force_utf8_output() -> None:
+    """Make stdout survive being redirected on Windows.
+
+    Attached to a console, Windows gives Python a UTF-8-capable writer and
+    everything renders. Redirect it — `preflight check > run.log`, a pipe, or
+    any CI runner capturing output — and Python falls back to the ANSI code
+    page, where cp1252 has no mapping for the finding bullet, the readiness
+    bar, or the arrow marking the weakest dimension. The command then dies
+    with UnicodeEncodeError *after* completing the analysis, which is the
+    worst possible moment and precisely the case a CI tool has to survive.
+
+    `errors="replace"` is the belt to that braces: a terminal that genuinely
+    cannot represent a glyph prints a substitute instead of taking the run
+    down with it.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):  # detached or already-closed stream
+            pass
+
+
+# Must run before Console() — rich samples the stream's encoding at construction.
+_force_utf8_output()
 
 app = typer.Typer(
     add_completion=False,
@@ -196,6 +227,27 @@ def check(
     store = cas.Store(cache_dir)
     settings = Settings.load(offline=True) if offline else Settings.load()
     console.print(f"[dim]{settings.describe_mode()}[/dim]")
+
+    # Probe before anything expensive, so a bad file fails in milliseconds and
+    # the decomposition plan can be shown before the first agent runs rather
+    # than reconstructed afterwards. ffprobe's result is what ingest caches
+    # against anyway, so this costs one process, not one pass over the video.
+    try:
+        preview = probe_video(video)
+    except (FileNotFoundError, UnsupportedInput, ffmpeg.FfmpegFailed) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(EXIT_INPUT) from exc
+
+    plan = build_plan(
+        preview.durationMs,
+        chunk_ms=settings.chunk_ms,
+        overlap_ms=settings.overlap_ms,
+    )
+    console.print()
+    console.print("  [bold]DECOMPOSITION PLAN[/bold]")
+    for line in plan.describe():
+        console.print(f"    [dim]{line}[/dim]")
+
     try:
         result = run_perception(
             video,
@@ -390,7 +442,96 @@ def _emit(
             console.print(f"[red]report failed schema validation: {exc}[/red]")
             raise typer.Exit(EXIT_INPUT) from exc
 
+    # Stage every artifact in a scratch directory and promote only once they
+    # all exist. Schema validation above already refuses to write a wrong
+    # report; this refuses to write a *partial* set of right ones. A run that
+    # dies after report.json and before certificate.json leaves an output
+    # directory a reader cannot distinguish from a complete one.
     out.mkdir(parents=True, exist_ok=True)
+    staging = out / f".staging_{os.getpid()}"
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True, exist_ok=True)
+    try:
+        written = _write_artifacts(
+            bundle, staging, formats, settings, result, fixture
+        )
+        _assert_no_credentials(staging, settings)
+        written = _promote(staging, out, written)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+    _record_archive(bundle, result)
+
+    if written:
+        console.print()
+        for path in written:
+            size = path.stat().st_size
+            console.print(f"  wrote [bold]{path}[/bold]  ({size:,} bytes)")
+
+
+def _promote(staging: Path, out: Path, written: list[Path]) -> list[Path]:
+    """Move staged artifacts into place. Last step, after everything exists."""
+    promoted: list[Path] = []
+    for path in written:
+        if path.parent != staging:
+            promoted.append(path)          # written outside the run's out dir
+            continue
+        destination = out / path.name
+        path.replace(destination)
+        promoted.append(destination)
+    return promoted
+
+
+def _assert_no_credentials(directory: Path, settings: Settings) -> None:
+    """No artifact may contain the API key.
+
+    `redact()` and `RedactFilter` are unit-tested and a CLI-level test greps
+    the output, but both prove the paths that were thought of. This is the
+    last gate before bytes become durable, and it costs a single scan.
+    """
+    key = (settings.api_key or "").strip()
+    if len(key) < 12:
+        return
+    for path in directory.rglob("*"):
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        if key in text:
+            raise RuntimeError(
+                f"refusing to write {path.name}: it contains the API key"
+            )
+
+
+def _record_archive(bundle, result) -> None:
+    """Record into the archive so the Drift Watcher has something to monitor.
+
+    Clauses that were retrieved but did not fire are recorded too: when a
+    clause tightens, those are exactly the videos it will newly catch.
+    """
+    considered = {
+        chunk.clause_id
+        for window in result.windows
+        for chunk in getattr(window, "retrieved", []) or []
+    }
+    Archive(Path(".preflight/archive.db")).record(
+        bundle.report,
+        video_hash=result.ingested.video_hash,
+        policy_digest=result.corpus.digest if result.corpus else "none",
+        considered=considered,
+    )
+
+
+def _write_artifacts(
+    bundle,
+    out: Path,
+    formats: set[str],
+    settings: Settings,
+    result,
+    fixture: Path | None,
+) -> list[Path]:
     written: list[Path] = []
 
     if "json" in formats:
@@ -428,28 +569,11 @@ def _emit(
             console.print(f"[yellow]{exc}[/yellow]")
 
     if fixture is not None:
+        # Written to a caller-chosen path outside the staging directory, so
+        # `_promote` passes it through untouched.
         written.append(emit_fixture_file(bundle.report, fixture))
 
-    # Record into the archive so the Drift Watcher has something to monitor.
-    # Clauses that were retrieved but did not fire are recorded too: when a
-    # clause tightens, those are exactly the videos it will newly catch.
-    considered = {
-        chunk.clause_id
-        for window in result.windows
-        for chunk in getattr(window, "retrieved", []) or []
-    }
-    Archive(Path(".preflight/archive.db")).record(
-        bundle.report,
-        video_hash=result.ingested.video_hash,
-        policy_digest=result.corpus.digest if result.corpus else "none",
-        considered=considered,
-    )
-
-    if written:
-        console.print()
-        for path in written:
-            size = path.stat().st_size
-            console.print(f"  wrote [bold]{path}[/bold]  ({size:,} bytes)")
+    return written
 
 
 @app.command()
