@@ -20,6 +20,7 @@ from preflight.perception.audio_intel import (
     TRANSIENT_CREST,
     AudioEvent,
     AudioTaxonomy,
+    analyse_ducking,
     analyse_spectra,
     band,
     detect_applause,
@@ -64,12 +65,27 @@ def click(at: float, total: float, amplitude: float = 0.95) -> np.ndarray:
     return out
 
 
-def speech_like(duration: float) -> np.ndarray:
-    """Noise amplitude-modulated at 4Hz — the syllable rate."""
-    carrier = RNG.normal(0, 0.25, seconds(duration))
-    t = np.linspace(0, duration, seconds(duration), endpoint=False)
-    envelope = 0.5 + 0.5 * np.abs(np.sin(2 * np.pi * 4.0 * t))
-    return carrier * envelope
+def speech_like(duration: float, amplitude: float = 0.3, rate: float = 3.5) -> np.ndarray:
+    """Word-shaped noise bursts with genuine gaps between them.
+
+    An earlier version of this fixture was continuous noise under a `0.5 +
+    0.5·|sin|` tremolo. It modulated at the syllable rate but never fell
+    silent, giving it an envelope depth of 0.14 — closer to a wobbling
+    ventilation fan than to a person talking. Speech stops between words, and
+    a fixture that does not stop cannot exercise the feature the segmenter now
+    keys on.
+    """
+    out = np.zeros(seconds(duration))
+    step = 1.0 / rate
+    position = 0.05
+    while position + 0.18 < duration:
+        start = seconds(position)
+        length = seconds(0.18)
+        out[start : start + length] += (
+            amplitude * RNG.normal(0, 1, length) * np.hanning(length)
+        )
+        position += step
+    return out
 
 
 def music_like(duration: float, bpm: float = 120) -> np.ndarray:
@@ -251,6 +267,86 @@ class TestApplause:
 
     def test_silence_is_not_applause(self):
         assert detect_applause(analyse_spectra(silence(4.0), RATE)) == []
+
+
+class TestDucking:
+    """Was the bed placed by an editor, or was it in the room?
+
+    Every fixture here is a bed at a known level with speech over a known
+    attenuation of it, so the assertion is that the estimator recovers the
+    number that was constructed.
+    """
+
+    @staticmethod
+    def analyse(signal: np.ndarray):
+        spectra = analyse_spectra(signal, RATE)
+        return analyse_ducking(spectra, segment(spectra))
+
+    def test_recovers_a_constructed_duck(self):
+        bed = music_like(4.0)
+        ducked = music_like(4.0) * (10 ** (-9 / 20))
+        result = self.analyse(np.concatenate([bed, ducked + speech_like(4.0)]))
+        assert result is not None
+        assert abs(result.duck_db - 9.0) < 2.0
+        assert result.deliberate_bed is True
+
+    def test_a_bed_that_holds_its_level_is_not_deliberate(self):
+        """Music at a constant level through dialogue is more likely in the
+        room than on a timeline — a café, a car radio, a busker in shot."""
+        bed = music_like(4.0)
+        result = self.analyse(np.concatenate([bed, music_like(4.0) + speech_like(4.0)]))
+        assert result is not None
+        assert abs(result.duck_db) < 3.0
+        assert result.deliberate_bed is False
+
+    def test_speech_with_no_music_yields_nothing(self):
+        assert self.analyse(speech_like(6.0)) is None
+
+    def test_music_with_no_speech_yields_nothing(self):
+        assert self.analyse(music_like(6.0)) is None
+
+    def test_silence_yields_nothing(self):
+        assert self.analyse(silence(5.0)) is None
+
+    def test_reports_the_frame_counts_behind_the_number(self):
+        bed = music_like(4.0)
+        ducked = music_like(4.0) * (10 ** (-9 / 20))
+        result = self.analyse(np.concatenate([bed, ducked + speech_like(4.0)]))
+        payload = result.to_json()
+        assert payload["speech_frames"] >= 10
+        assert payload["music_frames"] >= 10
+
+    def test_a_deliberate_bed_only_ever_raises_copyright_priority(self):
+        """There is no reading of this measurement that makes music safer, and
+        the payload must not be usable to argue one."""
+        bed = music_like(4.0)
+        ducked = music_like(4.0) * (10 ** (-9 / 20))
+        result = self.analyse(np.concatenate([bed, ducked + speech_like(4.0)]))
+        assert result.to_json()["raises_copyright_priority"] is True
+
+
+class TestSpeechOverAMusicBed:
+    """The commonest configuration in real video, and the one that broke.
+
+    Spectral flatness was the speech gate. Narration over a bed measures 0.046
+    — below the 0.05 music gate — so a presenter talking over their own intro
+    was classified as music, and every downstream consumer of speech spans was
+    blind to it.
+    """
+
+    def test_narration_over_a_bed_is_speech_not_music(self):
+        signal = speech_like(6.0) + music_like(6.0) * (10 ** (-9 / 20))
+        kinds = {s.kind for s in segment(analyse_spectra(signal, RATE))}
+        assert "speech" in kinds
+
+    def test_the_bed_alone_is_still_music(self):
+        kinds = {s.kind for s in segment(analyse_spectra(music_like(6.0), RATE))}
+        assert kinds == {"music"}
+
+    def test_a_loud_bed_does_not_swallow_the_speech(self):
+        signal = speech_like(6.0) + music_like(6.0)
+        kinds = {s.kind for s in segment(analyse_spectra(signal, RATE))}
+        assert "speech" in kinds
 
 
 class TestQualityMetrics:

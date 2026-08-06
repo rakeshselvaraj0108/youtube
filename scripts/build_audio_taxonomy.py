@@ -104,6 +104,15 @@ FILES = {
             label("energy_high", DSP, evidence="high RMS, high centroid, dense onsets"),
             label("music_onset", DSP, evidence="transition into a music segment"),
             label("music_offset", DSP, evidence="transition out of a music segment"),
+            label(
+                "ducking_db", DSP,
+                evidence="bed level in the gaps between words versus music-only spans",
+            ),
+            label(
+                "deliberate_bed", DSP,
+                evidence="bed lowered more than 3dB under dialogue, so it was placed "
+                "on a timeline rather than picked up in the room",
+            ),
             label("genre", CLASSIFIER, evidence="not resolvable by DSP"),
             label("commercial_recording", CLASSIFIER, evidence="requires fingerprint lookup"),
         ],
@@ -219,7 +228,7 @@ def main() -> int:
 
     print(f"\nwrote {len(FILES)} taxonomy files to {OUT}")
     print(f"{dsp_total} labels resolvable with no dependencies, "
-          f"{classifier_total}需 a classifier tier".replace("需", "need"))
+          f"{classifier_total} need a classifier tier")
     return 0
 
 
