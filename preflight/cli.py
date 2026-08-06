@@ -18,6 +18,7 @@ from rich.console import Console
 from rich.table import Table
 
 from preflight import __version__, cas, ffmpeg
+from preflight import bench as bench_mod
 from preflight.ingest.pipeline import ingest
 from preflight.ingest.probe import UnsupportedInput
 from preflight.models import SEVERITY_RANK
@@ -632,6 +633,131 @@ def agents() -> None:
         raise typer.Exit(EXIT_INPUT)
     console.print("  [dim]roster is a valid DAG[/dim]")
     console.print()
+    raise typer.Exit(EXIT_OK)
+
+
+@app.command()
+def bench(
+    ablation: bool = typer.Option(
+        False, "--ablation", help="Report every layer, not just the shipped one"
+    ),
+    labels_path: Path = typer.Option(
+        Path("data/corpus/labels.jsonl"), "--labels", help="Ground truth"
+    ),
+    clips_dir: Path = typer.Option(Path("data/corpus/clips"), "--clips"),
+    cache_dir: Path = typer.Option(Path(".preflight/cache"), "--cache-dir"),
+    out: Path = typer.Option(None, "--out", help="Write the full result as JSON"),
+    offline: bool = typer.Option(False, "--offline", help="Never touch the network"),
+    limit: int = typer.Option(0, "--limit", help="First N clips only, for a smoke run"),
+) -> None:
+    """Score the pipeline against the golden corpus.
+
+    Pair accuracy is the number to read. Clip accuracy is near-worthless on a
+    corpus built as twins — answer VIOLATION to everything and you score 50%.
+    A pair counts only when BOTH twins are right, which a keyword filter
+    cannot do by construction, because at the level of the words present the
+    twins are identical.
+    """
+    if not ffmpeg.available():
+        console.print("[red]ffmpeg and ffprobe are required.[/red]")
+        raise typer.Exit(EXIT_UPSTREAM)
+
+    labels = bench_mod.load_labels(labels_path)
+    if not labels:
+        console.print(f"[red]no ground truth at {labels_path}[/red]")
+        raise typer.Exit(EXIT_INPUT)
+
+    present = [
+        label for label in labels if (Path(clips_dir) / label.clip).is_file()
+    ]
+    if not present:
+        console.print(
+            f"[red]no clips in {clips_dir}[/red] — "
+            "the corpus is gitignored; run [bold]make corpus[/bold] to generate it"
+        )
+        raise typer.Exit(EXIT_INPUT)
+    if limit:
+        present = present[:limit]
+
+    settings = Settings.load(offline=True) if offline else Settings.load()
+    stages = bench_mod.STAGES if ablation else ("triad",)
+
+    console.print()
+    console.print(
+        f"  [bold]BENCH[/bold]   {len(present)}/{len(labels)} clips · "
+        f"{len(bench_mod.pairs(present))} pairs · [dim]{settings.describe_mode()}[/dim]"
+    )
+    console.print()
+
+    with console.status("[dim]running…[/dim]") as status:
+        def progress(row):
+            mark = "[green]ok[/green]" if row[stages[-1]]["correct"] else "[red]x[/red]"
+            status.update(f"[dim]{row['clip']} {mark}[/dim]")
+
+        scored, per_clip = bench_mod.run_bench(
+            present,
+            clips_dir=clips_dir,
+            settings=settings,
+            store=cas.Store(cache_dir),
+            stages=stages,
+            progress=progress,
+        )
+
+    table = Table(show_header=True, box=None, pad_edge=False, header_style="dim")
+    table.add_column("LAYER", width=10, no_wrap=True)
+    table.add_column("PREC", width=7, justify="right")
+    table.add_column("RECALL", width=7, justify="right")
+    table.add_column("F1", width=7, justify="right")
+    table.add_column("PAIRS", width=9, justify="right")
+    table.add_column("SPAN", width=7, justify="right")
+    table.add_column("CALLS", width=7, justify="right")
+
+    describe = {
+        "lexicon": "what a keyword filter sees",
+        "auditor": "+ retrieval, charges before any defence",
+        "triad": "+ advocate and adjudicator — shipped",
+    }
+    for stage in stages:
+        metrics = scored[stage]
+        table.add_row(
+            stage,
+            f"{metrics.precision:.2f}",
+            f"{metrics.recall:.2f}",
+            f"{metrics.f1:.2f}",
+            f"{metrics.pairs_correct}/{metrics.pairs_total}",
+            f"{metrics.span_accuracy:.2f}",
+            str(metrics.calls),
+        )
+
+    console.print(table)
+    console.print()
+    for stage in stages:
+        console.print(f"  [dim]{stage:<9} {describe.get(stage, '')}[/dim]")
+    console.print()
+
+    shipped = scored[stages[-1]]
+    console.print(
+        f"  [bold]{shipped.pairs_correct}/{shipped.pairs_total} pairs[/bold] "
+        f"({shipped.pair_accuracy:.0%}) — both twins correct"
+    )
+    if len(stages) > 1 and "auditor" in scored:
+        delta = shipped.pairs_correct - scored["auditor"].pairs_correct
+        console.print(
+            f"  [dim]the advocate and adjudicator are worth "
+            f"{delta:+d} pair(s) over the charge sheet alone[/dim]"
+        )
+    console.print()
+
+    if out:
+        out = Path(out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(
+            json.dumps(bench_mod.to_json(scored, per_clip), indent=2) + "\n",
+            encoding="utf-8",
+        )
+        console.print(f"  [dim]wrote {out}[/dim]")
+        console.print()
+
     raise typer.Exit(EXIT_OK)
 
 

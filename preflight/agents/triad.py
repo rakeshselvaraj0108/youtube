@@ -72,6 +72,20 @@ class TriadResult:
     windows_seen: int = 0
     windows_with_candidates: int = 0
 
+    # Every candidate the AUDITOR raised, carrying whatever the ADVOCATE and
+    # ADJUDICATOR did to it. Retained rather than discarded for two reasons.
+    #
+    # A dismissal is evidence the triad works. "AF-01 charged at 02:14,
+    # dismissed — attributed quotation, exemption applied" is the single most
+    # convincing line this system produces, and it only exists if the losing
+    # candidates survive the function that ruled on them.
+    #
+    # And it makes the ablation a real ablation. The charge set, the defended
+    # set and the upheld set are three depths of the SAME run on the SAME
+    # inputs, so the difference between them is attributable to the stage
+    # rather than to two runs disagreeing.
+    candidates: list[Candidate] = field(default_factory=list)
+
 
 def _clauses_block(chunks: list[Chunk]) -> str:
     return "\n\n".join(chunk.for_prompt() for chunk in chunks)
@@ -201,6 +215,7 @@ def run_triad(
 
     try:
         candidates = _audit(active, retrieved, client, settings, transcript)
+        result.candidates = candidates
         result.windows_with_candidates = len({c.window for c in candidates})
         result.log.append(
             f"AUDITOR: {len(candidates)} candidate(s) across "
@@ -495,6 +510,31 @@ def to_agent_result(result: TriadResult) -> AgentResult:
         artifacts={
             "windows_seen": result.windows_seen,
             "windows_with_candidates": result.windows_with_candidates,
+            "candidates": [
+                {
+                    "id": c.id,
+                    "clause_id": c.clause_id,
+                    "evidence": c.evidence,
+                    "start_ms": c.start_ms,
+                    "end_ms": c.end_ms,
+                    "why": c.why,
+                    "defense": c.defense,
+                    "defense_strength": round(c.defense_strength, 3),
+                    "verdict": c.verdict,
+                    "rationale": c.rationale,
+                }
+                for c in result.candidates
+            ],
+            "dismissed": [
+                {
+                    "clause_id": c.clause_id,
+                    "evidence": c.evidence,
+                    "start_ms": c.start_ms,
+                    "rationale": c.rationale,
+                }
+                for c in result.candidates
+                if c.verdict != "UPHELD"
+            ],
         },
     )
 

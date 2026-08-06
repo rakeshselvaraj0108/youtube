@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import re
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -16,7 +20,18 @@ def corpus():
     return load_corpus("data/policy")
 
 
-EXPECTED_CLAUSES = 17
+@pytest.fixture(scope="module")
+def manifest_entries():
+    payload = json.loads(Path("data/policy/manifest.json").read_text(encoding="utf-8"))
+    return {entry["clause_id"]: entry for entry in payload["clauses"]}
+
+
+EXPECTED_POLICY_CLAUSES = 17
+# Ten PREFLIGHT house rules were added so that every clause id an agent
+# cites resolves to real text. They are marked `kind: house_rule` and are
+# not platform policy.
+EXPECTED_HOUSE_RULES = 11
+EXPECTED_CLAUSES = EXPECTED_POLICY_CLAUSES + EXPECTED_HOUSE_RULES
 
 
 class TestCorpus:
@@ -50,8 +65,16 @@ class TestCorpus:
         assert manifest["clause_count"] == EXPECTED_CLAUSES
         assert manifest["corpus_hash"]
         for entry in manifest["clauses"]:
-            assert entry["source_url"].startswith("http")
-            assert "not a verbatim copy" in entry["derivation"]
+            # Two kinds, and the distinction is the point: a restatement
+            # points at published guidance, a house rule points at nobody but
+            # us. Asserting one rule over both would let a loudness target
+            # inherit a support.google.com citation.
+            if entry["kind"] == "policy_restatement":
+                assert entry["source_url"].startswith("http")
+                assert "not a verbatim copy" in entry["derivation"]
+            else:
+                assert entry["kind"] == "house_rule"
+                assert "not a restatement of any platform policy" in entry["derivation"]
 
     def test_chunks_at_heading_level(self, corpus):
         sections = {c.section for c in corpus.chunks if c.clause_id == "AF-01"}
@@ -98,7 +121,8 @@ class TestCorpus:
             ("accessibility", "ACC-01"),
         ]:
             sub = corpus.scoped(scope)
-            assert [c.clause_id for c in sub.clauses] == [clause_id]
+            assert clause_id in [c.clause_id for c in sub.clauses]
+            assert sub.clauses
 
     def test_scope_digests_are_independent(self, corpus):
         """Editing a metadata clause must not invalidate the policy index."""
@@ -284,3 +308,100 @@ class TestIoU:
 
     def test_degenerate_spans_do_not_divide_by_zero(self):
         assert iou((0, 0), (0, 0)) == 0.0
+
+
+class TestEveryCitedClauseExists:
+    """A finding citing a clause id that is not in the manifest is a bug.
+
+    This project's whole claim is that a finding names the specific clause it
+    breaches, so a reader can check the machine. Eleven of the fourteen clause
+    ids the agents emitted did not exist in the corpus at all, and the one
+    accessibility id that did exist was attached to the wrong finding: a "No
+    caption track present" finding cited ACC-01, whose text is about
+    photosensitive seizure risk. Clicking through gave you a policy about
+    strobing.
+
+    Nothing caught it, because each agent's tests asserted the shape of its own
+    findings and none of them asked the corpus whether the clause was real.
+    """
+
+    CITED = re.compile(r'(?:clauseId=|_clause\(\s*)["\']([A-Z]+-\d+)["\']')
+
+    @pytest.fixture()
+    def known(self, manifest_entries):
+        return manifest_entries
+
+    def _cited(self):
+        found: dict[str, str] = {}
+        for path in Path("preflight").rglob("*.py"):
+            for clause_id in self.CITED.findall(path.read_text(encoding="utf-8")):
+                found.setdefault(clause_id, str(path))
+        return found
+
+    def test_every_clause_id_in_code_exists_in_the_manifest(self, known):
+        for clause_id, path in sorted(self._cited().items()):
+            assert clause_id in known, (
+                f"{path} cites {clause_id}, which no clause defines — "
+                "a reader following that citation gets nothing, or worse, "
+                "gets someone else's rule"
+            )
+
+    def test_every_clause_the_corpus_expects_exists(self, known):
+        from preflight.bench import load_labels
+
+        for label in load_labels():
+            if label.clause:
+                assert label.clause in known, label.clause
+
+    def test_photosensitivity_is_acc01_in_code_and_corpus_alike(self, known):
+        """The specific swap that made a caption finding cite a seizure policy.
+
+        Pinned behaviourally — build both findings and read the clause each
+        one actually carries.
+        """
+        assert "Photosensitive" in known["ACC-01"]["title"]
+        assert "Caption" in known["ACC-02"]["title"]
+
+        from preflight.perception import accessibility
+
+        flash = accessibility._flash_finding(
+            {"max_flashes_per_second": 10, "worst_ts_ms": 4000, "risk": "HIGH"}
+        )
+        captions = accessibility._caption_finding(20_000, None)
+
+        assert flash.clauseId == "ACC-01"
+        assert captions.clauseId == "ACC-02"
+
+    def test_every_finding_carries_the_clause_text_it_cites(self, known):
+        """A finding's embedded PolicyRef must agree with its own clause id.
+
+        Two ways to get this wrong: cite an id nothing defines, or cite a real
+        id and attach someone else's text. Both make the citation worse than
+        useless, because a reader who checks it is actively misled.
+        """
+        from preflight.perception import accessibility
+
+        for finding in (
+            accessibility._flash_finding(
+                {"max_flashes_per_second": 10, "worst_ts_ms": 4000, "risk": "HIGH"}
+            ),
+            accessibility._caption_finding(20_000, None),
+        ):
+            assert finding.policy.clauseId == finding.clauseId
+            assert finding.policy.title == known[finding.clauseId]["title"]
+
+    def test_house_rules_are_not_presented_as_platform_policy(self, known):
+        """A loudness target is PREFLIGHT's rule, not YouTube's. Blurring that
+        would make every citation in the report untrustworthy."""
+        house = [e for e in known.values() if e.get("kind") == "house_rule"]
+        assert house
+        for entry in house:
+            assert "not a restatement of any platform policy" in entry["derivation"]
+            assert "support.google.com" not in entry["source_url"]
+
+    def test_policy_restatements_keep_their_source_and_fetch_date(self, known):
+        restated = [e for e in known.values() if e.get("kind") == "policy_restatement"]
+        assert restated
+        for entry in restated:
+            assert entry["source_url"].startswith("http")
+            assert entry["fetched_at"]

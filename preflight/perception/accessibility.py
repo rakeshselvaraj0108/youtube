@@ -167,7 +167,7 @@ def _flash_finding(flash: dict[str, object]) -> Finding:
     high = flash["risk"] == "HIGH"
     return Finding(
         id="x_flash",
-        clauseId="ACC-02",
+        clauseId="ACC-01",
         category="Accessibility",
         title=f"Photosensitive flash risk — {peak} flashes/s",
         description=(
@@ -184,7 +184,7 @@ def _flash_finding(flash: dict[str, object]) -> Finding:
             f"{worst // 1000}s, sampled at {SAMPLE_FPS}fps]"
         ),
         policy=_clause(
-            "ACC-02",
+            "ACC-01",
             "Photosensitive content",
             "PREFLIGHT accessibility ruleset § 1.4",
             "Content flashing more than three times per second, or containing rapid "
@@ -209,7 +209,7 @@ def _caption_finding(duration_ms: int, transcript: Transcript | None) -> Finding
     have_words = transcript is not None and transcript.word_count > 0
     return Finding(
         id="x_captions",
-        clauseId="ACC-01",
+        clauseId="ACC-02",
         category="Accessibility",
         title="No caption track present",
         description=(
@@ -225,7 +225,7 @@ def _caption_finding(duration_ms: int, transcript: Transcript | None) -> Finding
         modalities={"access": 0.99},
         evidence=Evidence(transcript="[file-scoped · no timed-text stream in container]"),
         policy=_clause(
-            "ACC-01",
+            "ACC-02",
             "Caption availability",
             "PREFLIGHT accessibility ruleset § 1.1",
             "A published video should ship with a caption track. Automatic captions are "

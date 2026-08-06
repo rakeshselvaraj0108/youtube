@@ -50,6 +50,279 @@ BASE_EXEMPTIONS = [
     "Quotation of a third party, particularly where it is also condemned",
 ]
 
+SRC_HOUSE = "PREFLIGHT engineering ruleset"
+DERIVATION_HOUSE = (
+    "PREFLIGHT's own production rule, not a restatement of any platform policy"
+)
+
+# House exemptions. Deliberately thinner than the policy ones: a measurement
+# has fewer honest defences than a judgement. You cannot argue that -6 LUFS is
+# contextually appropriate the way you can argue that a quoted slur is
+# educational.
+HOUSE_EXEMPTIONS = [
+    "Deliberate artistic choice where the content itself makes the intent "
+    "evident rather than the metadata asserting it",
+    "A measurement taken over a span too short to characterise the file",
+]
+
+
+def house(
+    *,
+    file: str,
+    clause_id: str,
+    title: str,
+    severity: str,
+    scope: str,
+    green: list[str],
+    yellow: list[str],
+    red: list[str],
+    signals: list[str],
+    fix: str,
+    span_note: str,
+) -> dict:
+    """A PREFLIGHT house rule in the same shape as a policy clause.
+
+    These are the tool's own engineering thresholds — loudness targets, caption
+    availability, tag stuffing — and they are NOT platform policy. They carry a
+    different source and a different derivation so nothing in the report can
+    imply that a -14 LUFS target was published by YouTube. The distinction is
+    load-bearing: this project's entire claim is that a finding cites the
+    clause it was judged under, and a citation is worthless if the reader
+    cannot tell whose rule it is.
+    """
+    return {
+        "file": file,
+        "id": clause_id,
+        "title": title,
+        "severity": severity,
+        "source": SRC_HOUSE,
+        "derivation": DERIVATION_HOUSE,
+        "scope": scope,
+        "green": green,
+        "yellow": yellow,
+        "red": red,
+        "exemptions": HOUSE_EXEMPTIONS,
+        "signals": signals,
+        "fix": fix,
+        "span_note": span_note,
+    }
+
+
+HOUSE_RULES: list[dict] = [
+    house(
+        file="ACC-02_captions.md",
+        clause_id="ACC-02",
+        title="Caption availability",
+        severity="LIMITING",
+        scope=(
+            "Whether the file ships a timed-text track. File-scoped: this is a "
+            "property of the container, not of any moment in the video."
+        ),
+        green=["A caption track is present and covers the spoken content"],
+        yellow=[
+            "No caption track, but word-level timings exist in this run and "
+            "captions can be emitted directly from them",
+        ],
+        red=[
+            "No caption track and no transcript available to generate one",
+            "Audio containing technical vocabulary, strong accents or heavy "
+            "background noise, where automatic captions are least reliable",
+        ],
+        signals=[
+            "vs ACC-01 (photosensitive content): ACC-01 is a harm to a viewer "
+            "with a medical condition and is scoped to a span. This is an "
+            "access gap scoped to the whole file. They were once the same "
+            "clause id, which meant a caption finding cited a seizure-risk "
+            "policy.",
+        ],
+        fix="NONE",
+        span_note="File-scoped. Start 0, end at duration.",
+    ),
+    house(
+        file="ACC-03_speech_rate.md",
+        clause_id="ACC-03",
+        title="Speech rate",
+        severity="ADVISORY",
+        scope=(
+            "Sustained words per minute over a rolling window. Fast delivery "
+            "reduces comprehension for non-native speakers and for anyone "
+            "relying on automatic captions, which degrade as rate rises."
+        ),
+        green=["Sustained rate within a comfortable listening range"],
+        yellow=["Sustained rate well above conversational pace"],
+        red=["Rate high enough that automatic captions are unlikely to track it"],
+        signals=[
+            "Advisory only. A fast talker is not a policy problem, and this "
+            "clause exists to inform rather than to gate.",
+        ],
+        fix="NONE",
+        span_note="The window that exceeded the threshold, not the whole file.",
+    ),
+    house(
+        file="ACC-04_chapters.md",
+        clause_id="ACC-04",
+        title="Chapter markers",
+        severity="ADVISORY",
+        scope=(
+            "Whether a long video carries chapter markers. Navigation aid; "
+            "matters more the longer the runtime."
+        ),
+        green=["Chapters present, or a runtime short enough not to need them"],
+        yellow=["Long runtime with no chapter markers"],
+        red=[],
+        signals=[
+            "Advisory. Absence of chapters is never a monetization risk and "
+            "must never be scored as one.",
+        ],
+        fix="NONE",
+        span_note="File-scoped.",
+    ),
+    house(
+        file="AUD-01_loudness.md",
+        clause_id="AUD-01",
+        title="Loudness normalisation",
+        severity="ADVISORY",
+        scope=(
+            "Integrated loudness against the platform's normalisation target, "
+            "measured to EBU R128. Content far from target is turned down on "
+            "playback, and a mix built loud loses its dynamics in the process."
+        ),
+        green=["Integrated loudness within tolerance of the target"],
+        yellow=["Loudness outside tolerance in either direction"],
+        red=["Loudness far enough from target that playback normalisation will "
+             "materially change the mix"],
+        signals=[
+            "vs AUD-02 (clipping): loudness is where the whole file sits; "
+            "clipping is samples destroyed at individual peaks. A quiet file "
+            "can clip and a loud one need not.",
+        ],
+        fix="REPLACE_AUDIO",
+        span_note="File-scoped — an integrated measurement has no span.",
+    ),
+    house(
+        file="AUD-02_clipping.md",
+        clause_id="AUD-02",
+        title="Clipping",
+        severity="LIMITING",
+        scope=(
+            "Samples at or beyond full scale. Clipping is destroyed signal: the "
+            "waveform above the ceiling is gone and no later processing "
+            "restores it."
+        ),
+        green=["No samples at full scale"],
+        yellow=["Isolated clipped samples, likely inaudible"],
+        red=["Sustained clipping across a span, audible as distortion"],
+        signals=[
+            "vs AUD-01 (loudness): clipping is a defect in the recording. "
+            "Turning the file down does not repair it.",
+        ],
+        fix="REPLACE_AUDIO",
+        span_note="The clipped region, padded to the nearest zero crossing.",
+    ),
+    house(
+        file="AUD-03_dead_air.md",
+        clause_id="AUD-03",
+        title="Dead air",
+        severity="ADVISORY",
+        scope=(
+            "A sustained span with RMS below the noise floor. Usually an "
+            "editing error — a muted track, a dropped clip, a gap left in the "
+            "timeline."
+        ),
+        green=["No silent span longer than a natural pause"],
+        yellow=["A silent span long enough to read as a mistake"],
+        red=["Extended silence where content was clearly intended"],
+        signals=[
+            "A deliberate pause for effect is short. This clause is scoped to "
+            "spans long enough that a viewer checks whether their audio broke.",
+        ],
+        fix="CUT",
+        span_note="The silent span itself.",
+    ),
+    house(
+        file="AUD-04_channel_balance.md",
+        clause_id="AUD-04",
+        title="Channel balance",
+        severity="LIMITING",
+        scope=(
+            "Per-channel RMS difference. A recording where one channel sits far "
+            "below the other is a dead microphone — real, common, and expensive, "
+            "because nobody notices until the video is live and half the "
+            "audience is hearing silence."
+        ),
+        green=["Channels within a few dB of each other, or genuinely mono"],
+        yellow=["Noticeable imbalance between channels"],
+        red=["One channel effectively silent — a dead mic"],
+        signals=[
+            "Intentional hard-panning exists but is rare outside music, and a "
+            "channel that is silent for the whole runtime is not a pan.",
+        ],
+        fix="REPLACE_AUDIO",
+        span_note="File-scoped — measured across the whole track.",
+    ),
+    house(
+        file="META-02_description.md",
+        clause_id="META-02",
+        title="Description depth",
+        severity="ADVISORY",
+        scope="Length and substance of the description field.",
+        green=["A description that describes the content"],
+        yellow=["A description too short to describe anything"],
+        red=[],
+        signals=["Advisory. PREFLIGHT verifies metadata and never writes it."],
+        fix="NONE",
+        span_note="File-scoped.",
+    ),
+    house(
+        file="META-03_title_length.md",
+        clause_id="META-03",
+        title="Title length",
+        severity="ADVISORY",
+        scope="Title length against what survives truncation in a results list.",
+        green=["A title that reads fully in search and on mobile"],
+        yellow=["A title long enough to be truncated where it matters"],
+        red=[],
+        signals=["Advisory. Never a monetization risk."],
+        fix="NONE",
+        span_note="File-scoped.",
+    ),
+    house(
+        file="META-04_title_presentation.md",
+        clause_id="META-04",
+        title="Title presentation",
+        severity="ADVISORY",
+        scope=(
+            "Presentation of the title — sustained capitals, runs of "
+            "punctuation, and other patterns associated with clickbait."
+        ),
+        green=["Ordinary sentence presentation"],
+        yellow=["Sustained capitals or repeated punctuation"],
+        red=[],
+        signals=[
+            "vs META-01 (paid promotion): META-01 is a disclosure obligation "
+            "with real consequences. This is presentation, and advisory.",
+        ],
+        fix="REFRAME",
+        span_note="File-scoped.",
+    ),
+    house(
+        file="META-05_tags.md",
+        clause_id="META-05",
+        title="Tag stuffing",
+        severity="ADVISORY",
+        scope=(
+            "Tag count, duplication, and tags with no support anywhere in the "
+            "content."
+        ),
+        green=["A tag set that reflects the content"],
+        yellow=["Excessive, duplicated, or unsupported tags"],
+        red=[],
+        signals=["Advisory. Reported so a human can decide."],
+        fix="NONE",
+        span_note="File-scoped.",
+    ),
+]
+
 CLAUSES: list[dict] = [
     {
         "file": "AF-01_language.md",
@@ -839,14 +1112,15 @@ def main() -> int:
     # simulation would otherwise survive a rebuild and end up in the next
     # baseline snapshot, so the change being demonstrated is already present
     # before the demonstration starts.
-    expected = {clause["file"] for clause in CLAUSES}
+    every_clause = CLAUSES + HOUSE_RULES
+    expected = {clause["file"] for clause in every_clause}
     for stale in OUT.glob("*.md"):
         if stale.name not in expected:
             stale.unlink()
             print(f"removed stale clause {stale.name}")
 
     manifest: list[dict] = []
-    for clause in CLAUSES:
+    for clause in every_clause:
         body = TEMPLATE.format(
             id=clause["id"],
             title=clause["title"],
@@ -854,7 +1128,7 @@ def main() -> int:
             version=VERSION,
             source=clause["source"],
             fetched=FETCHED,
-            derivation=DERIVATION,
+            derivation=clause.get("derivation", DERIVATION),
             scope=clause["scope"],
             green=bullets(clause["green"]),
             yellow=bullets(clause["yellow"]),
@@ -875,7 +1149,8 @@ def main() -> int:
                 "sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
                 "source_url": clause["source"],
                 "fetched_at": FETCHED,
-                "derivation": DERIVATION,
+                "derivation": clause.get("derivation", DERIVATION),
+                "kind": "house_rule" if clause in HOUSE_RULES else "policy_restatement",
             }
         )
 
@@ -892,11 +1167,19 @@ def main() -> int:
                 "corpus_hash": corpus_hash,
                 "clause_count": len(manifest),
                 "fetched_at": FETCHED,
-                "sources": sorted({c["source"] for c in CLAUSES}),
+                "sources": sorted({c["source"] for c in every_clause}),
+                "policy_clauses": len(CLAUSES),
+                "house_rules": len(HOUSE_RULES),
                 "note": (
-                    "Structured restatements in our own words of publicly published "
-                    "guidance, used for retrieval-grounded classification. Not "
-                    "authoritative, not verbatim, and not affiliated with YouTube."
+                    "Two kinds of clause, distinguished by `kind`. "
+                    "`policy_restatement` entries are structured restatements in "
+                    "our own words of publicly published guidance — not "
+                    "authoritative, not verbatim, not affiliated with YouTube. "
+                    "`house_rule` entries are PREFLIGHT's own production "
+                    "thresholds — loudness targets, caption availability, tag "
+                    "hygiene — and are NOT platform policy. A finding cites the "
+                    "clause it was judged under, and the citation is worthless "
+                    "if a reader cannot tell whose rule it is."
                 ),
                 "clauses": manifest,
             },

@@ -1,15 +1,18 @@
 {
   "version": "2026-08",
-  "corpus_hash": "2ca427efdb062236c25b8760911796d8",
-  "clause_count": 17,
+  "corpus_hash": "45ce324c02c2baac8140c9dd8bde3837",
+  "clause_count": 28,
   "fetched_at": "2026-08-05",
   "sources": [
+    "PREFLIGHT engineering ruleset",
     "https://support.google.com/youtube/answer/154235",
     "https://support.google.com/youtube/answer/2797370",
     "https://support.google.com/youtube/answer/6162278",
     "https://www.w3.org/WAI/WCAG22/Understanding/three-flashes-or-below-threshold.html"
   ],
-  "note": "Structured restatements in our own words of publicly published guidance, used for retrieval-grounded classification. Not authoritative, not verbatim, and not affiliated with YouTube.",
+  "policy_clauses": 17,
+  "house_rules": 11,
+  "note": "Two kinds of clause, distinguished by `kind`. `policy_restatement` entries are structured restatements in our own words of publicly published guidance \u2014 not authoritative, not verbatim, not affiliated with YouTube. `house_rule` entries are PREFLIGHT's own production thresholds \u2014 loudness targets, caption availability, tag hygiene \u2014 and are NOT platform policy. A finding cites the clause it was judged under, and the citation is worthless if a reader cannot tell whose rule it is.",
   "clauses": [
     {
       "clause_id": "AF-01",
@@ -19,7 +22,8 @@
       "sha256": "774ba92bc17fe376a9d58e129ba9fa0a7c5ae415048bd8656c67f661b391f533",
       "source_url": "https://support.google.com/youtube/answer/6162278",
       "fetched_at": "2026-08-05",
-      "derivation": "structured restatement in own words; not a verbatim copy"
+      "derivation": "structured restatement in own words; not a verbatim copy",
+      "kind": "policy_restatement"
     },
     {
       "clause_id": "AF-02",
@@ -29,7 +33,8 @@
       "sha256": "8a81e4446ee1a59f9fe8c919033a6b8b89ed4095946c763453a63886d58e4e08",
       "source_url": "https://support.google.com/youtube/answer/6162278",
       "fetched_at": "2026-08-05",
-      "derivation": "structured restatement in own words; not a verbatim copy"
+      "derivation": "structured restatement in own words; not a verbatim copy",
+      "kind": "policy_restatement"
     },
     {
       "clause_id": "AF-03",
@@ -39,7 +44,8 @@
       "sha256": "1aa77149044ae6ff1774ee8b95245f0b3446af5070a018bc7b93f09ea20f2f00",
       "source_url": "https://support.google.com/youtube/answer/6162278",
       "fetched_at": "2026-08-05",
-      "derivation": "structured restatement in own words; not a verbatim copy"
+      "derivation": "structured restatement in own words; not a verbatim copy",
+      "kind": "policy_restatement"
     },
     {
       "clause_id": "AF-04",
@@ -49,7 +55,8 @@
       "sha256": "1ff76e3180bd875c3f878dce40bb8b9138d3774983bd8ab16a8ffd673b75ed7e",
       "source_url": "https://support.google.com/youtube/answer/6162278",
       "fetched_at": "2026-08-05",
-      "derivation": "structured restatement in own words; not a verbatim copy"
+      "derivation": "structured restatement in own words; not a verbatim copy",
+      "kind": "policy_restatement"
     },
     {
       "clause_id": "AF-05",
@@ -59,7 +66,8 @@
       "sha256": "665c005e41c77fbdf63e6bde8f1a5dd2ebbaf580e6bd8cce70f1ace35dc30368",
       "source_url": "https://support.google.com/youtube/answer/6162278",
       "fetched_at": "2026-08-05",
-      "derivation": "structured restatement in own words; not a verbatim copy"
+      "derivation": "structured restatement in own words; not a verbatim copy",
+      "kind": "policy_restatement"
     },
     {
       "clause_id": "AF-06",
@@ -69,7 +77,8 @@
       "sha256": "2c421cc66115d012d0c8b2d9932e5f0c824c9881105735000aad1ae33345c044",
       "source_url": "https://support.google.com/youtube/answer/6162278",
       "fetched_at": "2026-08-05",
-      "derivation": "structured restatement in own words; not a verbatim copy"
+      "derivation": "structured restatement in own words; not a verbatim copy",
+      "kind": "policy_restatement"
     },
     {
       "clause_id": "AF-07",
@@ -79,7 +88,8 @@
       "sha256": "32f3df0f69dacfdbda5de1990d8d432684c1a722613e518a1a287c168e6cf406",
       "source_url": "https://support.google.com/youtube/answer/6162278",
       "fetched_at": "2026-08-05",
-      "derivation": "structured restatement in own words; not a verbatim copy"
+      "derivation": "structured restatement in own words; not a verbatim copy",
+      "kind": "policy_restatement"
     },
     {
       "clause_id": "AF-08",
@@ -89,7 +99,8 @@
       "sha256": "ad2297f240e2b9687a45ad329499a82a0f1b9aff5e2f26941425a453f469d5c5",
       "source_url": "https://support.google.com/youtube/answer/6162278",
       "fetched_at": "2026-08-05",
-      "derivation": "structured restatement in own words; not a verbatim copy"
+      "derivation": "structured restatement in own words; not a verbatim copy",
+      "kind": "policy_restatement"
     },
     {
       "clause_id": "AF-09",
@@ -99,7 +110,8 @@
       "sha256": "28c525cb9c3094eb94e22963138a15f87c8df1233bf76d65a3dea0faec868b81",
       "source_url": "https://support.google.com/youtube/answer/6162278",
       "fetched_at": "2026-08-05",
-      "derivation": "structured restatement in own words; not a verbatim copy"
+      "derivation": "structured restatement in own words; not a verbatim copy",
+      "kind": "policy_restatement"
     },
     {
       "clause_id": "AF-10",
@@ -109,7 +121,8 @@
       "sha256": "893918db8cb090e5a0c19e7021b3ce63225d71143ee0eed21a24df4aa44bb9e6",
       "source_url": "https://support.google.com/youtube/answer/6162278",
       "fetched_at": "2026-08-05",
-      "derivation": "structured restatement in own words; not a verbatim copy"
+      "derivation": "structured restatement in own words; not a verbatim copy",
+      "kind": "policy_restatement"
     },
     {
       "clause_id": "AF-11",
@@ -119,7 +132,8 @@
       "sha256": "40e08313cb4ddd02e5ec39a2d9835ba129a69a87af8fa9a1710e0e859ba910fb",
       "source_url": "https://support.google.com/youtube/answer/6162278",
       "fetched_at": "2026-08-05",
-      "derivation": "structured restatement in own words; not a verbatim copy"
+      "derivation": "structured restatement in own words; not a verbatim copy",
+      "kind": "policy_restatement"
     },
     {
       "clause_id": "AF-12",
@@ -129,7 +143,8 @@
       "sha256": "ef933bbd4bdcd7743c491a67a7072a5680db0a8e0c76a1b3e2122e8414b50261",
       "source_url": "https://support.google.com/youtube/answer/6162278",
       "fetched_at": "2026-08-05",
-      "derivation": "structured restatement in own words; not a verbatim copy"
+      "derivation": "structured restatement in own words; not a verbatim copy",
+      "kind": "policy_restatement"
     },
     {
       "clause_id": "AF-13",
@@ -139,7 +154,8 @@
       "sha256": "20d4a9adf149c889ba02e6c89c9016bff9f67226eb088dfe510180dfd30d4a18",
       "source_url": "https://support.google.com/youtube/answer/6162278",
       "fetched_at": "2026-08-05",
-      "derivation": "structured restatement in own words; not a verbatim copy"
+      "derivation": "structured restatement in own words; not a verbatim copy",
+      "kind": "policy_restatement"
     },
     {
       "clause_id": "AF-14",
@@ -149,7 +165,8 @@
       "sha256": "adc30ec513a32af8aa24b76b128ee2ca787f03e131b515bc82ca417135bf64eb",
       "source_url": "https://support.google.com/youtube/answer/6162278",
       "fetched_at": "2026-08-05",
-      "derivation": "structured restatement in own words; not a verbatim copy"
+      "derivation": "structured restatement in own words; not a verbatim copy",
+      "kind": "policy_restatement"
     },
     {
       "clause_id": "META-01",
@@ -159,7 +176,8 @@
       "sha256": "070ccc594e1a8a7afd91494e559e6d156fb72a4a156dda58b1c7f1b8f3f43be9",
       "source_url": "https://support.google.com/youtube/answer/154235",
       "fetched_at": "2026-08-05",
-      "derivation": "structured restatement in own words; not a verbatim copy"
+      "derivation": "structured restatement in own words; not a verbatim copy",
+      "kind": "policy_restatement"
     },
     {
       "clause_id": "ACC-01",
@@ -169,7 +187,8 @@
       "sha256": "a132d6b276f905a3bc11aeb0193fc29bf35792dcedef24ad73cab4688db85e48",
       "source_url": "https://www.w3.org/WAI/WCAG22/Understanding/three-flashes-or-below-threshold.html",
       "fetched_at": "2026-08-05",
-      "derivation": "structured restatement in own words; not a verbatim copy"
+      "derivation": "structured restatement in own words; not a verbatim copy",
+      "kind": "policy_restatement"
     },
     {
       "clause_id": "COPY-01",
@@ -179,7 +198,129 @@
       "sha256": "924e4fe03a7788207d2d282936d98981457760bf736c0300eb6f9ff0b2c62821",
       "source_url": "https://support.google.com/youtube/answer/2797370",
       "fetched_at": "2026-08-05",
-      "derivation": "structured restatement in own words; not a verbatim copy"
+      "derivation": "structured restatement in own words; not a verbatim copy",
+      "kind": "policy_restatement"
+    },
+    {
+      "clause_id": "ACC-02",
+      "file": "ACC-02_captions.md",
+      "title": "Caption availability",
+      "severity_default": "LIMITING",
+      "sha256": "b0a9247cf2deb886966afb0a122f01042b61390bf9c392e0fa934291d965acc8",
+      "source_url": "PREFLIGHT engineering ruleset",
+      "fetched_at": "2026-08-05",
+      "derivation": "PREFLIGHT's own production rule, not a restatement of any platform policy",
+      "kind": "house_rule"
+    },
+    {
+      "clause_id": "ACC-03",
+      "file": "ACC-03_speech_rate.md",
+      "title": "Speech rate",
+      "severity_default": "ADVISORY",
+      "sha256": "2e9329e7174bb3a266edd8cc41965bc09b10640b8a5d47ca02fc192013343bca",
+      "source_url": "PREFLIGHT engineering ruleset",
+      "fetched_at": "2026-08-05",
+      "derivation": "PREFLIGHT's own production rule, not a restatement of any platform policy",
+      "kind": "house_rule"
+    },
+    {
+      "clause_id": "ACC-04",
+      "file": "ACC-04_chapters.md",
+      "title": "Chapter markers",
+      "severity_default": "ADVISORY",
+      "sha256": "24cee5712475b173dda45d8fd6d4c75cafa03749331f808f13394051bb055576",
+      "source_url": "PREFLIGHT engineering ruleset",
+      "fetched_at": "2026-08-05",
+      "derivation": "PREFLIGHT's own production rule, not a restatement of any platform policy",
+      "kind": "house_rule"
+    },
+    {
+      "clause_id": "AUD-01",
+      "file": "AUD-01_loudness.md",
+      "title": "Loudness normalisation",
+      "severity_default": "ADVISORY",
+      "sha256": "438c26cd0138a9064bbb40b3869bb07acd8217a09fccfd3713ce06a88e5895e7",
+      "source_url": "PREFLIGHT engineering ruleset",
+      "fetched_at": "2026-08-05",
+      "derivation": "PREFLIGHT's own production rule, not a restatement of any platform policy",
+      "kind": "house_rule"
+    },
+    {
+      "clause_id": "AUD-02",
+      "file": "AUD-02_clipping.md",
+      "title": "Clipping",
+      "severity_default": "LIMITING",
+      "sha256": "1267c795de573eac515605dbfda3518b7297a0eb233e957c93b58e42a849720a",
+      "source_url": "PREFLIGHT engineering ruleset",
+      "fetched_at": "2026-08-05",
+      "derivation": "PREFLIGHT's own production rule, not a restatement of any platform policy",
+      "kind": "house_rule"
+    },
+    {
+      "clause_id": "AUD-03",
+      "file": "AUD-03_dead_air.md",
+      "title": "Dead air",
+      "severity_default": "ADVISORY",
+      "sha256": "aecc6a0c8deecc845427fdc3899ff3ab45ad2c6e0379702a8b0ff493fe1568af",
+      "source_url": "PREFLIGHT engineering ruleset",
+      "fetched_at": "2026-08-05",
+      "derivation": "PREFLIGHT's own production rule, not a restatement of any platform policy",
+      "kind": "house_rule"
+    },
+    {
+      "clause_id": "AUD-04",
+      "file": "AUD-04_channel_balance.md",
+      "title": "Channel balance",
+      "severity_default": "LIMITING",
+      "sha256": "31a69bff987a0484e613a5009fad02b7153c2d2e9cf5878be4073a26e6891eab",
+      "source_url": "PREFLIGHT engineering ruleset",
+      "fetched_at": "2026-08-05",
+      "derivation": "PREFLIGHT's own production rule, not a restatement of any platform policy",
+      "kind": "house_rule"
+    },
+    {
+      "clause_id": "META-02",
+      "file": "META-02_description.md",
+      "title": "Description depth",
+      "severity_default": "ADVISORY",
+      "sha256": "911c30914b2861bebd4d0160bd12b004d5ba4625cc91339dfe4a7de811f10584",
+      "source_url": "PREFLIGHT engineering ruleset",
+      "fetched_at": "2026-08-05",
+      "derivation": "PREFLIGHT's own production rule, not a restatement of any platform policy",
+      "kind": "house_rule"
+    },
+    {
+      "clause_id": "META-03",
+      "file": "META-03_title_length.md",
+      "title": "Title length",
+      "severity_default": "ADVISORY",
+      "sha256": "b56b1f8eb45a833e75799439889a8048770653aea787ecf7749117191f683ce3",
+      "source_url": "PREFLIGHT engineering ruleset",
+      "fetched_at": "2026-08-05",
+      "derivation": "PREFLIGHT's own production rule, not a restatement of any platform policy",
+      "kind": "house_rule"
+    },
+    {
+      "clause_id": "META-04",
+      "file": "META-04_title_presentation.md",
+      "title": "Title presentation",
+      "severity_default": "ADVISORY",
+      "sha256": "500259ad6d2ed891a0a75400fa065c48d1a2385bb77dfb881af1aa7410ce72f3",
+      "source_url": "PREFLIGHT engineering ruleset",
+      "fetched_at": "2026-08-05",
+      "derivation": "PREFLIGHT's own production rule, not a restatement of any platform policy",
+      "kind": "house_rule"
+    },
+    {
+      "clause_id": "META-05",
+      "file": "META-05_tags.md",
+      "title": "Tag stuffing",
+      "severity_default": "ADVISORY",
+      "sha256": "d48fad51a58f69007e3938d333e18297017e6ea2586da3591fc0fd79f807c004",
+      "source_url": "PREFLIGHT engineering ruleset",
+      "fetched_at": "2026-08-05",
+      "derivation": "PREFLIGHT's own production rule, not a restatement of any platform policy",
+      "kind": "house_rule"
     }
   ]
 }
