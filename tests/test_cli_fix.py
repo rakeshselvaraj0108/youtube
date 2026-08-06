@@ -14,8 +14,11 @@ command.
 
 from __future__ import annotations
 
+import os
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -145,6 +148,79 @@ class TestRedirectedOutputSurvives:
             errors="replace",
         )
         assert "█" in proc.stdout or "●" in proc.stdout
+
+
+class TestInterrupt:
+    """Ctrl-C during a render used to leave a half-written .tmp<pid>.mp4 and
+    a Python traceback. Sends a real signal to a real process — a unit test
+    of the handler would only prove the handler exists."""
+
+    def test_an_interrupted_run_exits_130_without_a_traceback(
+        self, dead_air_clip, tmp_path
+    ):
+        destination = tmp_path / "out.mp4"
+        proc = subprocess.Popen(
+            [
+                sys.executable, "-m", "preflight.cli", "fix", str(dead_air_clip),
+                "--offline", "--apply", "--out", str(destination),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            creationflags=(
+                subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+            ),
+        )
+        time.sleep(1.5)
+        proc.send_signal(
+            signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT
+        )
+        try:
+            output, _ = proc.communicate(timeout=45)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            pytest.skip("process did not respond to the signal in time")
+
+        if proc.returncode == 0:
+            pytest.skip("run completed before the signal arrived")
+        # Asserting the handler ran, not merely that the process stopped.
+        # Windows kills an unhandled CTRL_BREAK_EVENT outright with
+        # STATUS_CONTROL_C_EXIT (0xC000013A) — which leaves no traceback
+        # either, and would pass a weaker assertion while cleaning up nothing.
+        assert proc.returncode == 130, f"not a handled interrupt: {proc.returncode}"
+        assert "interrupted" in output
+        assert "Traceback" not in output
+
+    def test_no_temp_render_survives_an_interrupt(self, dead_air_clip, tmp_path):
+        destination = tmp_path / "out.mp4"
+        proc = subprocess.Popen(
+            [
+                sys.executable, "-m", "preflight.cli", "fix", str(dead_air_clip),
+                "--offline", "--apply", "--out", str(destination),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            creationflags=(
+                subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+            ),
+        )
+        time.sleep(1.5)
+        proc.send_signal(
+            signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT
+        )
+        try:
+            proc.communicate(timeout=45)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            pytest.skip("process did not respond to the signal in time")
+
+        leftovers = [p.name for p in tmp_path.iterdir() if ".tmp" in p.name]
+        assert leftovers == [], f"interrupted render left {leftovers}"
 
 
 class TestAtomicEgress:

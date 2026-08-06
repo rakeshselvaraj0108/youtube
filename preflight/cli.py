@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import sys
 import time
 from pathlib import Path
@@ -75,6 +76,49 @@ def _force_utf8_output() -> None:
 
 # Must run before Console() — rich samples the stream's encoding at construction.
 _force_utf8_output()
+
+# Paths that must not outlive an interrupted run: the egress staging directory
+# and any half-rendered video. Every ordinary failure path already cleans up
+# after itself; this covers the one that does not get to run its own handlers.
+_SCRATCH: list[Path] = []
+
+
+def _scratch(path: Path) -> Path:
+    _SCRATCH.append(path)
+    return path
+
+
+def _clear_scratch() -> None:
+    while _SCRATCH:
+        path = _SCRATCH.pop()
+        try:
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _on_interrupt(signum, frame) -> None:
+    """Ctrl-C leaves no partial render and no traceback.
+
+    ffmpeg runs as a blocking child in this process group, so the console
+    already delivered the same signal to it — there is no orphan to kill,
+    only its unfinished output to remove. Exit 130 is the shell convention
+    for SIGINT, and CI reads it as "cancelled" rather than "failed".
+    """
+    _clear_scratch()
+    print("\ninterrupted — partial output removed", flush=True)
+    raise SystemExit(130)
+
+
+signal.signal(signal.SIGINT, _on_interrupt)
+# Windows raises SIGBREAK for Ctrl-Break and for a CTRL_BREAK_EVENT sent to
+# the process group; without this the OS kills the process outright
+# (STATUS_CONTROL_C_EXIT) and nothing above ever gets to clean up.
+if hasattr(signal, "SIGBREAK"):
+    signal.signal(signal.SIGBREAK, _on_interrupt)
 
 app = typer.Typer(
     add_completion=False,
@@ -448,7 +492,7 @@ def _emit(
     # dies after report.json and before certificate.json leaves an output
     # directory a reader cannot distinguish from a complete one.
     out.mkdir(parents=True, exist_ok=True)
-    staging = out / f".staging_{os.getpid()}"
+    staging = _scratch(out / f".staging_{os.getpid()}")
     shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir(parents=True, exist_ok=True)
     try:
@@ -700,8 +744,10 @@ def fix(
     # output filename, and a suffix like ".mp4.tmp1234" gives it nothing to
     # infer a container from. ".tmp1234.mp4" keeps the container recognisable
     # while still being distinct from the real destination.
-    tmp_destination = destination.with_name(
-        f"{destination.stem}.tmp{os.getpid()}{destination.suffix}"
+    tmp_destination = _scratch(
+        destination.with_name(
+            f"{destination.stem}.tmp{os.getpid()}{destination.suffix}"
+        )
     )
     atomic_command = program.command[:-1] + [tmp_destination.as_posix()]
 
