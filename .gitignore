@@ -20,6 +20,11 @@ build/
 .preflight/
 preflight-out/
 out/
+# Any other cas.Store rooted outside .preflight/ — ad-hoc debugging sessions
+# have used cache_render_test/ and similar names, and a content-addressed
+# store's own directory layout (v/<hash>/, t/<hash>/) makes an accidental
+# `git add -A` easy to miss until the diff shows a hundred renamed frames.
+cache_*/
 
 # Media is generated, not committed. A judge cloning this should not wait on a
 # 40MB download to run the tests, and every artifact here is reproducible:
