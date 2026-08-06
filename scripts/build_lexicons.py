@@ -67,7 +67,7 @@ ATTRIBUTION_CUES = {
     "reporting_verbs": [
         "said", "says", "wrote", "posted", "tweeted", "claimed", "told",
         "argued", "insisted", "replied", "commented", "stated", "remarked",
-        "put it", "described it as",
+        "quoted", "put it", "described it as",
     ],
     "quote_markers": [
         "quote", "end quote", "unquote", "in his words", "in her words",

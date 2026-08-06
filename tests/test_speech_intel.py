@@ -177,6 +177,157 @@ class TestAttributionContext:
         assert not found.context.get("negated")
         assert found.confidence == pytest.approx(0.95)
 
+    def test_a_condemnation_phrase_stretched_too_thin_does_not_match(self):
+        """The gap tolerance is bounded — two unrelated clauses sharing one
+        word each side of 'disgusting' is not the lexicon's phrase."""
+        found = events_of(
+            "that is bullshit and which is a totally different thing that "
+            "happens to also be disgusting somehow",
+            "PROFANITY",
+        )
+        assert not found[0].context.get("condemned")
+
+    def test_past_tense_quoted_is_a_reporting_verb(self):
+        """The old hardcoded set had 'quote' and 'quoted'. Switching to the
+        lexicon file first lost 'quoted' — the file only had 'quote' as a
+        marker, not as a verb form — which silently stopped catching 'she
+        quoted him saying bullshit'. Fixed in the lexicon, not patched around
+        in code, since the file is the source now."""
+        found = events_of("he quoted the article saying that is bullshit", "PROFANITY")
+        assert found[0].context.get("in_quotation") is True
+
+    def test_a_quote_marker_phrase_from_the_lexicon_is_recognised(self):
+        """'in his words' is only in the JSON lexicon, never in the old
+        hardcoded set — proof the file drives behaviour now."""
+        found = events_of(
+            "in his words this is complete bullshit and nothing more", "PROFANITY"
+        )
+        assert found[0].context.get("in_quotation") is True
+
+
+class TestQuotationSpans:
+    """Standalone spans over the transcript, independent of any lexicon hit —
+    the ADVOCATE needs this for candidates the AUDITOR raised from clause
+    text alone, not only for A02's own findings."""
+
+    def test_a_span_exists_even_with_no_lexicon_hit_inside_it(self):
+        """The AUDITOR can charge a candidate under a clause A02's own
+        lexicons never touch. The span still has to be there."""
+        from preflight.perception.speech_intel import quotation_spans
+
+        spans = quotation_spans(
+            transcript("she said quote the plan is completely reckless unquote")
+        )
+        assert spans
+        assert spans[0].kind == "attributed"
+
+    def test_condemnation_after_the_quote_upgrades_the_kind(self):
+        """A sentence terminator on 'unquote.' is what tells the span where
+        the quoted material ends — the same signal a punctuated ASR
+        transcript would carry — so the condemnation that follows reads as
+        the speaker's own words, not part of what was quoted."""
+        from preflight.perception.speech_intel import quotation_spans
+
+        spans = quotation_spans(
+            transcript(
+                "he said quote this is fine unquote. which is disgusting and wrong"
+            )
+        )
+        assert spans
+        assert spans[0].kind == "attributed_and_condemned"
+        assert spans[0].strength > 0.55
+
+    def test_a_condemned_span_scores_higher_than_a_bare_one(self):
+        from preflight.perception.speech_intel import quotation_spans
+
+        bare = quotation_spans(transcript("he said quote this is fine unquote."))[0]
+        condemned = quotation_spans(
+            transcript("he said quote this is fine unquote. which is disgusting")
+        )[0]
+        assert condemned.strength > bare.strength
+
+    def test_span_covers_the_quoted_material_not_the_cue_itself(self):
+        from preflight.perception.speech_intel import quotation_spans
+
+        text = "he said quote this is completely reckless unquote to everyone"
+        spans = quotation_spans(transcript(text))
+        assert spans
+        span = spans[0]
+        words = text.split()
+        cue_end_ms = 1000 + words.index("said") * 400 + 300
+        assert span.start_ms >= cue_end_ms
+
+    def test_no_cue_yields_no_span(self):
+        from preflight.perception.speech_intel import quotation_spans
+
+        assert quotation_spans(transcript("the weather today is quite pleasant")) == []
+
+    def test_none_transcript_yields_no_span(self):
+        from preflight.perception.speech_intel import quotation_spans
+
+        assert quotation_spans(None) == []
+
+    def test_span_length_is_capped_by_max_quote_span_ms(self):
+        """One missing sentence terminator must not swallow the rest of the
+        file into a single 'quotation'."""
+        from preflight.perception.speech_intel import AttributionCues, quotation_spans
+
+        long_text = "he said quote " + " ".join(f"word{i}" for i in range(200))
+        cues = AttributionCues()
+        spans = quotation_spans(transcript(long_text), cues)
+        assert spans
+        assert spans[0].end_ms - spans[0].start_ms <= cues.max_quote_span_ms
+
+    def test_two_cues_in_one_sentence_merge_into_one_span(self):
+        """'She said, and I quote,' must not double-count as two pieces of
+        corroborating evidence for the same quotation."""
+        from preflight.perception.speech_intel import quotation_spans
+
+        spans = quotation_spans(
+            transcript("she said and i quote this plan is reckless unquote")
+        )
+        assert len(spans) == 1
+
+    def test_overlaps_is_the_span_membership_test_the_triad_uses(self):
+        from preflight.perception.speech_intel import QuotationSpan
+
+        span = QuotationSpan(1000, 5000, "said", "attributed", 0.55)
+        assert span.overlaps(2000, 3000) is True
+        assert span.overlaps(6000, 7000) is False
+        assert span.overlaps(4500, 6000) is True
+
+    def test_to_json_round_trips_every_field(self):
+        from preflight.perception.speech_intel import QuotationSpan
+
+        span = QuotationSpan(1000, 5000, "said", "attributed_and_condemned", 0.75)
+        payload = span.to_json()
+        assert payload == {
+            "start_ms": 1000, "end_ms": 5000, "cue": "said",
+            "kind": "attributed_and_condemned", "strength": 0.75,
+        }
+
+
+class TestAttributionCuesLexicon:
+    """The lexicon file, not a hardcoded duplicate, is what `_context_for`
+    reads. `data/lexicons/attribution_cues.json` existed since the data layer
+    was authored and was never loaded by anything."""
+
+    def test_the_lexicon_file_loads(self):
+        from preflight.perception.speech_intel import AttributionCues
+
+        cues = AttributionCues()
+        assert cues.loaded
+        assert "said" in cues.reporting_verbs
+        assert any("unquote" in m for m in cues.quote_markers)
+        assert cues.condemnation_markers
+
+    def test_a_missing_lexicon_degrades_without_crashing(self, tmp_path):
+        from preflight.perception.speech_intel import AttributionCues
+
+        cues = AttributionCues(tmp_path / "does_not_exist.json")
+        assert not cues.loaded
+        assert cues.reporting_verbs == set()
+
 
 class TestPhrases:
     def test_detects_sponsorship(self):
@@ -268,45 +419,56 @@ class TestSpansAndDedupe:
 
 class TestAgentContract:
     def test_missing_transcript_reports_the_specified_failure(self):
-        result, events = analyse(None)
+        result, events, spans = analyse(None)
         assert result.status == "SKIPPED"
         assert result.error == "Transcript unavailable"
         assert events == []
+        assert spans == []
 
     def test_empty_transcript_is_success_with_no_events(self):
-        result, events = analyse(Transcript(language="en", duration_ms=0))
+        result, events, spans = analyse(Transcript(language="en", duration_ms=0))
         assert result.status == "OK"
         assert events == []
+        assert spans == []
 
     def test_reports_lexicon_load_in_the_log(self):
-        result, _ = analyse(transcript("hello everyone"))
+        result, _, _ = analyse(transcript("hello everyone"))
         assert any("lexicons" in line for line in result.log)
 
     def test_output_is_json_only(self):
-        _, events = analyse(transcript("this is bullshit"))
-        payload = to_json(events)
-        assert set(payload) == {"speech_events"}
+        _, events, spans = analyse(transcript("this is bullshit"))
+        payload = to_json(events, spans)
+        assert set(payload) == {"speech_events", "quotation_spans"}
         assert isinstance(payload["speech_events"], list)
+        assert isinstance(payload["quotation_spans"], list)
 
     def test_never_emits_a_verdict(self):
         """'Never write Limited Ads. Never write Violation. Never write
         Unsafe.' Those belong to later agents."""
-        _, events = analyse(
+        _, events, spans = analyse(
             transcript(
                 "this is bullshit and someone got shot and the casino paid out"
             )
         )
-        blob = str(to_json(events)).upper()
+        blob = str(to_json(events, spans)).upper()
         for forbidden in ("LIMITED ADS", "VIOLATION", "UNSAFE", "DEMONETIZ"):
             assert forbidden not in blob
 
     def test_every_event_is_timestamped_and_scored(self):
-        _, events = analyse(transcript("this is bullshit and there was a knife"))
+        _, events, _ = analyse(transcript("this is bullshit and there was a knife"))
         assert events
         for event in events:
             assert event.end_ms > event.start_ms
             assert 0.0 < event.confidence <= 1.0
             assert event.severity in {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
+
+    def test_quotation_spans_are_reported_in_the_artifacts_and_the_log(self):
+        result, _, spans = analyse(
+            transcript("he said quote this is bullshit unquote to the room")
+        )
+        assert spans
+        assert result.artifacts["quotation_spans"]
+        assert any("quotation span" in line for line in result.log)
 
 
 class TestLexicons:

@@ -54,6 +54,16 @@ LEGITIMATE DEFENCES are only those documented in the provided clauses:
 - Quotation or condemnation of a third party rather than endorsement
 - The evidence not actually falling within the clause's stated scope
 
+Some candidates carry a `cross_modal_context` line — a signal from a different \
+agent's independent read of the same moment, not from you and not from the \
+AUDITOR. When present, weigh it as genuine evidence for a quotation-based \
+defence: a span another agent identified as an attributed quotation is a real \
+basis for arguing the third-party-quotation exemption, stronger than inferring \
+it from the evidence text alone. "Which the speaker then condemned" is a \
+materially stronger basis than attribution by itself, because it forecloses \
+the reading that the speaker endorses what was quoted. Absence of this line is \
+not evidence against a defence — it only means no such signal was available.
+
 You must NOT fabricate exemptions, and you must NOT argue that a violation is \
 minor or unlikely to be noticed. Those are not defences.
 

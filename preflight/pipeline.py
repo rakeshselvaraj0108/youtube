@@ -168,8 +168,9 @@ def run_perception(
     if skip_speech:
         speech_agent = AgentResult.skipped("speech", "Speech Agent", "disabled by --no-speech")
         transcript = None
+        quotation_spans: list = []
     else:
-        speech_agent, transcript = _speech(ingested, store, asr_model)
+        speech_agent, transcript, quotation_spans = _speech(ingested, store, asr_model)
 
     audio_agent = _guard(
         "audio",
@@ -208,7 +209,9 @@ def run_perception(
         overlap_ms=settings.overlap_ms if settings else 5_000,
         ocr_items=ocr_report.items,
     )
-    policy_agent, corpus, backend = _policy(windows, store, settings, transcript)
+    policy_agent, corpus, backend = _policy(
+        windows, store, settings, transcript, quotation_spans
+    )
 
     agents = [
         orchestrator,
@@ -262,6 +265,7 @@ def _policy(
     store: cas.Store,
     settings: Settings | None,
     transcript: Transcript | None = None,
+    quotation_spans: list | None = None,
 ) -> tuple[AgentResult, Corpus | None, str]:
     """Retrieval plus the triad, guarded like every other optional stage."""
     settings = settings or Settings.load()
@@ -288,7 +292,13 @@ def _policy(
             return agent
 
         result = run_triad(
-            windows, corpus.scoped("policy"), policy_index, client, settings, transcript
+            windows,
+            corpus.scoped("policy"),
+            policy_index,
+            client,
+            settings,
+            transcript,
+            quotation_spans=quotation_spans,
         )
         agent = to_agent_result(result)
         agent.log = indexes.log + agent.log
@@ -416,7 +426,20 @@ def _transcript_segments(transcript: Transcript | None) -> list[dict] | None:
 
 def _speech(
     ingested: Ingested, store: cas.Store, asr_model: str
-) -> tuple[AgentResult, Transcript | None]:
+) -> tuple[AgentResult, Transcript | None, list]:
+    """A02, both tiers.
+
+    `asr_mod.transcribe` produces the transcript — words, timing, language.
+    `speech_intel.analyse` produces the intelligence layer on top of it:
+    lexicon-matched events (profanity, PII, sensitive-event mentions, twelve
+    categories in all) and quotation spans. The second tier existed as a
+    722-line module with its own test suite and was never called from here —
+    `speech_intel` was imported for a helper function elsewhere in this file
+    and nothing ever reached `analyse()`. Folded into one agent node, the same
+    way A04's acoustic tier folds into `audio`, rather than inventing a
+    thirteenth agent the roster does not declare.
+    """
+
     def run() -> AgentResult:
         agent, transcript = asr_mod.transcribe(
             ingested.asr_wav,
@@ -425,9 +448,23 @@ def _speech(
             duration_ms=ingested.meta.durationMs,
         )
         run.transcript = transcript  # type: ignore[attr-defined]
+
+        if agent.status not in {"SKIPPED", "FAILED"} and transcript is not None:
+            intel, _events, spans = speech_intel.analyse(transcript)
+            run.quotation_spans = spans  # type: ignore[attr-defined]
+            if intel.status == "OK":
+                agent.artifacts.update(intel.artifacts)
+                agent.log.extend(intel.log)
+                agent.elapsed_ms += intel.elapsed_ms
+
         return agent
 
     run.transcript = None  # type: ignore[attr-defined]
+    run.quotation_spans = []  # type: ignore[attr-defined]
     agent = _guard("speech", "Speech Agent", run)
-    return agent, getattr(run, "transcript", None)
+    return (
+        agent,
+        getattr(run, "transcript", None),
+        getattr(run, "quotation_spans", []),
+    )
 

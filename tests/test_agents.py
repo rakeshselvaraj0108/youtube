@@ -12,8 +12,9 @@ import time
 import pytest
 
 from preflight.agents.nim import TokenBucket, extract_json
-from preflight.agents.triad import Candidate, _dedupe, _to_findings
+from preflight.agents.triad import Candidate, _dedupe, _tag_quotation_context, _to_findings
 from preflight.perception.asr import Segment, Transcript, Word
+from preflight.perception.speech_intel import QuotationSpan
 from preflight.policy.corpus import Chunk
 
 
@@ -174,6 +175,59 @@ class TestDedupe:
             ]
         )
         assert [c.start_ms for c in kept] == [10_000, 90_000]
+
+
+class TestQuotationCrossModalContext:
+    """What makes the ADVOCATE more than a second opinion: it sees a signal
+    from a different agent's independent read of the same moment, which the
+    AUDITOR was deliberately never shown."""
+
+    def _candidate(self, start: int, end: int, clause="AF-01"):
+        return Candidate(
+            id="c1", window=0, clause_id=clause, category="Language",
+            evidence="this is fucked", start_ms=start, end_ms=end,
+            why="profanity", chunk=chunk(clause),
+        )
+
+    def test_a_candidate_inside_a_quotation_span_is_tagged(self):
+        candidate = self._candidate(31_000, 32_000)
+        span = QuotationSpan(30_000, 33_000, "said", "attributed", 0.55)
+        tagged = _tag_quotation_context([candidate], [span])
+        assert tagged == 1
+        assert candidate.quotation_context is not None
+        assert "said" in candidate.quotation_context
+
+    def test_a_condemned_span_says_so_in_the_context_line(self):
+        candidate = self._candidate(31_000, 32_000)
+        span = QuotationSpan(30_000, 33_000, "said", "attributed_and_condemned", 0.75)
+        _tag_quotation_context([candidate], [span])
+        assert "condemned" in candidate.quotation_context
+
+    def test_a_bare_attribution_does_not_claim_condemnation(self):
+        candidate = self._candidate(31_000, 32_000)
+        span = QuotationSpan(30_000, 33_000, "said", "attributed", 0.55)
+        _tag_quotation_context([candidate], [span])
+        assert "condemned" not in candidate.quotation_context
+
+    def test_a_candidate_outside_every_span_is_not_tagged(self):
+        candidate = self._candidate(50_000, 51_000)
+        span = QuotationSpan(30_000, 33_000, "said", "attributed", 0.55)
+        tagged = _tag_quotation_context([candidate], [span])
+        assert tagged == 0
+        assert candidate.quotation_context is None
+
+    def test_no_spans_at_all_tags_nothing_and_does_not_crash(self):
+        candidate = self._candidate(31_000, 32_000)
+        assert _tag_quotation_context([candidate], []) == 0
+        assert candidate.quotation_context is None
+
+    def test_a_candidate_from_a_charge_with_no_matching_lexicon_hit_can_still_be_tagged(self):
+        """The AUDITOR can charge from clause text alone, with no A02 lexicon
+        hit anywhere near it. The tag must not depend on one."""
+        candidate = self._candidate(31_000, 32_000, clause="AF-06")
+        span = QuotationSpan(30_000, 33_000, "according to", "attributed", 0.55)
+        _tag_quotation_context([candidate], [span])
+        assert candidate.quotation_context is not None
 
 
 class TestToFindings:

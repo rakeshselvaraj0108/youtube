@@ -237,23 +237,94 @@ CASUALTY = re.compile(
 # Context                                                             #
 # ------------------------------------------------------------------ #
 
-REPORTING_VERBS = {
-    "said", "says", "wrote", "posted", "tweeted", "claimed", "told", "argued",
-    "insisted", "replied", "commented", "stated", "quote", "quoted",
-}
-QUOTE_CLOSERS = {"unquote", "endquote"}
 NEGATIONS = {"not", "never", "no", "dont", "doesnt", "didnt", "wont", "cannot", "cant"}
-CONDEMNATION = {
-    "disgusting", "appalling", "unacceptable", "wrong", "disagree", "condemn",
-    "awful", "inexcusable",
-}
 HARM_REDUCTION = {
     "dangerous", "warning", "never", "dont", "do not", "unsafe", "seriously hurt",
 }
 
+ATTRIBUTION_CUES_PATH = Path("data/lexicons/attribution_cues.json")
 
-def _context_for(words: list[Word], index: int) -> dict[str, Any]:
+
+class AttributionCues:
+    """Reporting verbs, quote markers and condemnation phrases.
+
+    `data/lexicons/attribution_cues.json` existed from the day the data layer
+    was authored and was never loaded — this module carried its own smaller,
+    hardcoded set of the same vocabulary instead, which meant the file on
+    disk was decorative and editing it changed nothing. Loading it here makes
+    the lexicon the single source rather than two lists that can drift.
+
+    Phrases (multi-word cues like "in his words", "which is disgusting") are
+    matched against the joined, normalised context window rather than
+    token-by-token, since a reporting-verb-shaped set membership test cannot
+    see a two-word phrase.
+    """
+
+    def __init__(self, path: Path = ATTRIBUTION_CUES_PATH) -> None:
+        payload: dict[str, Any] = {}
+        if Path(path).is_file():
+            payload = json.loads(Path(path).read_text(encoding="utf-8"))
+
+        self.reporting_verbs = {
+            normalize(v) for v in payload.get("reporting_verbs", [])
+        }
+        self.quote_markers = [
+            normalize(m) for m in payload.get("quote_markers", [])
+        ]
+        self.condemnation_markers = [
+            normalize(m) for m in payload.get("condemnation_markers", [])
+        ]
+        self.max_quote_span_ms = int(payload.get("max_quote_span_ms", QUOTE_SPAN_MS))
+        self.loaded = bool(self.reporting_verbs)
+
+
+_DEFAULT_CUES = AttributionCues()
+
+
+# A phrase's words matching in order but not touching — "which is frankly
+# disgusting" for the lexicon's "which is disgusting" — is still the phrase.
+# Real speech inserts adverbs and hedges between the words that carry the
+# meaning ("which is, frankly, disgusting"), and a literal substring match
+# would miss the phrase specifically where it sounds most natural. The gap is
+# capped so "which is a totally different thing that happens to also be
+# disgusting" does not count as the same phrase stretched thin.
+PHRASE_GAP_TOLERANCE = 2
+
+
+def _phrase_matches_from(tokens: list[str], words: list[str], start: int) -> bool:
+    """Do `words` appear in order starting at or after `start`, gaps allowed?"""
+    cursor = start
+    for word in words:
+        found_at = None
+        for offset in range(cursor, min(cursor + PHRASE_GAP_TOLERANCE + 1, len(tokens))):
+            if tokens[offset] == word:
+                found_at = offset
+                break
+        if found_at is None:
+            return False
+        cursor = found_at + 1
+    return True
+
+
+def _phrase_hit(tokens: list[str], phrases: list[str]) -> str | None:
+    """Does any phrase's words appear in order in `tokens`, gaps allowed?"""
+    for phrase in phrases:
+        words = phrase.split()
+        if not words:
+            continue
+        if any(
+            _phrase_matches_from(tokens, words, start)
+            for start in range(len(tokens))
+        ):
+            return phrase
+    return None
+
+
+def _context_for(
+    words: list[Word], index: int, cues: AttributionCues | None = None
+) -> dict[str, Any]:
     """Framing signals around an event. Evidence, not judgement."""
+    cues = cues or _DEFAULT_CUES
     low = max(0, index - CONTEXT_WORDS)
     high = min(len(words), index + CONTEXT_WORDS + 1)
     before = [normalize(w.w) for w in words[low:index]]
@@ -264,24 +335,32 @@ def _context_for(words: list[Word], index: int) -> dict[str, Any]:
 
     # Attribution: a reporting verb *before* the span, inside the quote window.
     for offset, token in enumerate(reversed(before)):
-        if token in REPORTING_VERBS:
+        if token in cues.reporting_verbs:
             distance_ms = words[index].start_ms - words[index - offset - 1].start_ms
-            if distance_ms <= QUOTE_SPAN_MS:
+            if distance_ms <= cues.max_quote_span_ms:
                 context["in_quotation"] = True
                 context["attribution_cue"] = token
                 context["attribution_distance_ms"] = int(distance_ms)
             break
 
-    if any(token in QUOTE_CLOSERS for token in after[:6]):
+    # Markers cut both ways: "unquote" and "end quote" close a span from
+    # after it, while "in his words" and "according to" open one from before
+    # it. The lexicon mixes both kinds in one list, so both directions are
+    # checked rather than assuming every marker is a closer.
+    marker = _phrase_hit(before[-8:], cues.quote_markers) or _phrase_hit(
+        after[:8], cues.quote_markers
+    )
+    if marker:
         context["in_quotation"] = True
+        context["attribution_cue"] = context.get("attribution_cue", marker)
 
     if any(token in NEGATIONS for token in before[-4:]):
         context["negated"] = True
 
-    condemning = [t for t in window if t in CONDEMNATION]
-    if condemning:
+    condemned = _phrase_hit(window, cues.condemnation_markers)
+    if condemned:
         context["condemned"] = True
-        context["condemnation_cue"] = condemning[0]
+        context["condemnation_cue"] = condemned
 
     warning = [t for t in window if t in HARM_REDUCTION]
     if warning:
@@ -489,18 +568,167 @@ def _extract_patterns(words: list[Word]) -> list[SpeechEvent]:
 
 
 # ------------------------------------------------------------------ #
+# Quotation spans — cross-modal context for the ADVOCATE               #
+# ------------------------------------------------------------------ #
+
+
+@dataclass(frozen=True)
+class QuotationSpan:
+    """A stretch of the transcript introduced by a reporting cue.
+
+    Policy treats quoting objectionable speech differently from asserting
+    it, and this is what gives the ADVOCATE a real, evidenced defence to
+    argue instead of an invented one. Deliberately independent of any
+    lexicon hit: a span exists wherever the transcript reads like a
+    quotation, whether or not A02's own lexicons found anything inside it,
+    because the ADVOCATE needs this for candidates the AUDITOR raised from
+    the clause text alone.
+    """
+
+    start_ms: int
+    end_ms: int
+    cue: str
+    kind: str  # "attributed" | "attributed_and_condemned"
+    strength: float
+
+    def overlaps(self, start_ms: int, end_ms: int) -> bool:
+        return self.start_ms < end_ms and self.end_ms > start_ms
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "start_ms": self.start_ms,
+            "end_ms": self.end_ms,
+            "cue": self.cue,
+            "kind": self.kind,
+            "strength": round(self.strength, 3),
+        }
+
+
+def _next_terminator(words: list[Word], index: int, limit: int = 60) -> int:
+    """Index of the word ending the sentence that starts at `index`."""
+    cursor = index
+    while cursor < len(words) - 1 and not words[cursor].w.endswith((".", "?", "!")):
+        cursor += 1
+        if cursor - index > limit:
+            break
+    return cursor
+
+
+def quotation_spans(
+    transcript: Transcript | None, cues: AttributionCues | None = None
+) -> list[QuotationSpan]:
+    """Every attributed-quotation span in the transcript, merged and scored.
+
+    Two passes. The first finds cues — a reporting verb or an opening marker
+    — and builds a span from the cue to the end of that sentence, capped by
+    the lexicon's `max_quote_span_ms` so one missing terminator cannot swallow
+    the rest of the file. The second checks the text immediately after each
+    span for a condemnation marker: quoting AND condemning is a materially
+    stronger exemption than quoting alone, since it forecloses the reading
+    that the speaker endorses what was quoted.
+
+    No prosody signal. The published design for this also measures pitch
+    deviation against the speaker's baseline — quoted speech commonly shifts
+    register — which needs a pitch tracker this project does not depend on.
+    Lexical detection alone is the honest scope: it catches an attributed
+    quotation that says it is one, and does not claim to catch a silent
+    tonal shift no cue announces.
+    """
+    cues = cues or _DEFAULT_CUES
+    if transcript is None or not transcript.words:
+        return []
+
+    words = transcript.words
+    normalised = [normalize(w.w) for w in words]
+    spans: list[QuotationSpan] = []
+
+    for index, token in enumerate(normalised):
+        cue_text: str | None = None
+        if token in cues.reporting_verbs:
+            cue_text = token
+        else:
+            marker = _phrase_hit(normalised[index : index + 4], cues.quote_markers)
+            if marker and normalised[index : index + 1] == [marker.split()[0]]:
+                cue_text = marker
+
+        if cue_text is None:
+            continue
+
+        end_index = _next_terminator(words, index)
+        start_ms = words[index].end_ms
+        end_ms = min(words[end_index].end_ms, start_ms + cues.max_quote_span_ms)
+        if end_ms <= start_ms:
+            continue
+
+        after = normalised[end_index + 1 : end_index + 9]
+        condemned = _phrase_hit(after, cues.condemnation_markers)
+        kind = "attributed_and_condemned" if condemned else "attributed"
+        # A condemned quotation is a stronger, more legible exemption than a
+        # bare one, and the strength communicates that ordering to the
+        # ADVOCATE without asserting a confidence this lexical signal alone
+        # cannot support.
+        strength = 0.75 if condemned else 0.55
+
+        spans.append(
+            QuotationSpan(
+                start_ms=start_ms, end_ms=end_ms, cue=cue_text, kind=kind,
+                strength=strength,
+            )
+        )
+
+    return _merge_quotation_spans(spans, cues.max_quote_span_ms)
+
+
+def _merge_quotation_spans(
+    spans: list[QuotationSpan], max_span_ms: int = QUOTE_SPAN_MS
+) -> list[QuotationSpan]:
+    """Two cues inside one sentence ('she said, and I quote,') should not
+    produce two overlapping spans that double-count as corroboration.
+
+    Each individual span already respects `max_quote_span_ms` on its own, but
+    "he said quote ..." triggers on BOTH "said" and "quote" one word apart,
+    producing two independently-capped spans whose union can still exceed the
+    cap — measured at 20,400ms against a 20,000ms limit. The merge re-clamps
+    to the earliest span's own budget rather than trusting that a union of
+    two valid spans is itself valid.
+    """
+    if not spans:
+        return []
+    ordered = sorted(spans, key=lambda s: s.start_ms)
+    merged = [ordered[0]]
+    for span in ordered[1:]:
+        last = merged[-1]
+        if span.start_ms <= last.end_ms:
+            stronger = span if span.strength > last.strength else last
+            end_ms = min(max(last.end_ms, span.end_ms), last.start_ms + max_span_ms)
+            merged[-1] = QuotationSpan(
+                start_ms=last.start_ms,
+                end_ms=end_ms,
+                cue=stronger.cue,
+                kind=stronger.kind,
+                strength=stronger.strength,
+            )
+        else:
+            merged.append(span)
+    return merged
+
+
+# ------------------------------------------------------------------ #
 # Agent entry point                                                   #
 # ------------------------------------------------------------------ #
 
 
 def analyse(
-    transcript: Transcript | None, lexicons: Lexicons | None = None
-) -> tuple[AgentResult, list[SpeechEvent]]:
+    transcript: Transcript | None,
+    lexicons: Lexicons | None = None,
+    cues: AttributionCues | None = None,
+) -> tuple[AgentResult, list[SpeechEvent], list[QuotationSpan]]:
     started = time.perf_counter()
 
     if transcript is None:
         return (
             AgentResult.skipped(AGENT_ID, AGENT_NAME, "Transcript unavailable"),
+            [],
             [],
         )
     if not transcript.words:
@@ -514,15 +742,30 @@ def analyse(
                 elapsed_ms=int((time.perf_counter() - started) * 1000),
             ),
             [],
+            [],
         )
 
     lexicons = lexicons or Lexicons()
+    cues = cues or _DEFAULT_CUES
     events = extract_events(transcript, lexicons)
+    spans = quotation_spans(transcript, cues)
 
     by_type: dict[str, int] = {}
     for event in events:
         by_type[event.type] = by_type.get(event.type, 0) + 1
     summary = ", ".join(f"{k.lower()} {v}" for k, v in sorted(by_type.items())) or "none"
+
+    log = [
+        f"{len(lexicons.loaded)} lexicons, {lexicons.term_count} terms, "
+        f"{len(lexicons.phrases)} phrases in RAM",
+        f"{len(events)} speech event(s): {summary}",
+    ]
+    if spans:
+        condemned = sum(1 for s in spans if s.kind == "attributed_and_condemned")
+        log.append(
+            f"{len(spans)} quotation span(s), {condemned} with condemnation — "
+            "cross-modal context for the ADVOCATE"
+        )
 
     return (
         AgentResult(
@@ -530,18 +773,23 @@ def analyse(
             name=AGENT_NAME,
             status="OK",
             coverage=1.0,
-            artifacts={"events": [e.to_json() for e in events]},
+            artifacts={
+                "events": [e.to_json() for e in events],
+                "quotation_spans": [s.to_json() for s in spans],
+            },
             elapsed_ms=int((time.perf_counter() - started) * 1000),
-            log=[
-                f"{len(lexicons.loaded)} lexicons, {lexicons.term_count} terms, "
-                f"{len(lexicons.phrases)} phrases in RAM",
-                f"{len(events)} speech event(s): {summary}",
-            ],
+            log=log,
         ),
         events,
+        spans,
     )
 
 
-def to_json(events: Iterable[SpeechEvent]) -> dict[str, Any]:
+def to_json(
+    events: Iterable[SpeechEvent], spans: Iterable[QuotationSpan] = ()
+) -> dict[str, Any]:
     """The A02 output contract. JSON only — never a paragraph."""
-    return {"speech_events": [event.to_json() for event in events]}
+    return {
+        "speech_events": [event.to_json() for event in events],
+        "quotation_spans": [span.to_json() for span in spans],
+    }

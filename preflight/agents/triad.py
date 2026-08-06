@@ -54,6 +54,13 @@ class Candidate:
     defense: str | None = None
     defense_strength: float = 0.0
 
+    # Cross-modal context, attached before the ADVOCATE runs. Set by
+    # `_tag_quotation_context` when this candidate's evidence span overlaps a
+    # quotation A02 found in the transcript — independent of whether A02's own
+    # lexicons happened to also fire on the same words, since a charge can
+    # come from clause text alone.
+    quotation_context: str | None = None
+
     verdict: str = "UPHELD"
     severity: str = "MEDIUM"
     confidence: float = 0.5
@@ -185,6 +192,8 @@ def run_triad(
     client: NimClient,
     settings: Settings,
     transcript: "Transcript | None" = None,
+    *,
+    quotation_spans: list | None = None,
 ) -> TriadResult:
     started = time.perf_counter()
     result = TriadResult()
@@ -223,10 +232,12 @@ def run_triad(
         )
 
         if candidates:
+            in_quotation = _tag_quotation_context(candidates, quotation_spans or [])
             _defend(candidates, client, settings)
             defended = sum(1 for c in candidates if c.defense)
             result.log.append(
                 f"ADVOCATE: {defended}/{len(candidates)} candidate(s) defended"
+                + (f" · {in_quotation} inside a quotation span" if in_quotation else "")
             )
 
             _adjudicate(candidates, client, settings)
@@ -335,12 +346,47 @@ def _audit(
     return candidates
 
 
+def _tag_quotation_context(candidates: list[Candidate], spans: list) -> int:
+    """Attach quotation cross-modal context to every candidate it overlaps.
+
+    This is what makes the ADVOCATE more than a second opinion running the
+    same charge back through a different prompt: it gets to see something the
+    AUDITOR was deliberately not shown, drawn from a different agent's read of
+    the same moment. A candidate charged from clause text alone — no lexicon
+    hit of A02's own — still gets tagged if its evidence sits inside a span
+    A02 found by a different route.
+    """
+    tagged = 0
+    for candidate in candidates:
+        hit = next(
+            (s for s in spans if s.overlaps(candidate.start_ms, candidate.end_ms)),
+            None,
+        )
+        if hit is None:
+            continue
+        candidate.quotation_context = (
+            f'inside a quotation attributed by the cue "{hit.cue}"'
+            + (
+                ", which the speaker then condemned"
+                if hit.kind == "attributed_and_condemned"
+                else ""
+            )
+        )
+        tagged += 1
+    return tagged
+
+
 def _defend(candidates: list[Candidate], client: NimClient, settings: Settings) -> None:
     for batch in _batched(candidates, ADVOCATE_BATCH):
         chunks = {c.chunk.id: c.chunk for c in batch}
         block = "\n\n".join(
             f'candidate_id: {c.id}\nclause_id: {c.clause_id}\n'
             f'evidence: "{c.evidence}"\ncharge: {c.why}'
+            + (
+                f'\ncross_modal_context: {c.quotation_context}'
+                if c.quotation_context
+                else ""
+            )
             for c in batch
         )
         payload = client.chat_json(
