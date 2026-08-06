@@ -29,6 +29,35 @@ DEFAULT_BOX = (0.29, 0.35, 0.42, 0.30)
 DEFAULT_BLEEP_HZ = 1000
 DEFAULT_BED = "assets/cc_music/glacier_calm.mp3"
 
+Strategy = Literal["conservative", "balanced", "aggressive"]
+
+# (viewer_impact, forces_reencode, risk_reduction). Impact and risk reduction
+# are both 0-1 and independently authored — they are not derived from each
+# other, because the whole point of the table is that a fix can score high on
+# one and low on the other. REPLACE_AUDIO scores the least destructive of the
+# audio ops: something plays where something else did, rather than a gap.
+# CUT scores full risk reduction because nothing survives to re-offend, at
+# the highest cost because it is the one op a viewer always notices.
+COST: dict[str, tuple[float, bool, float]] = {
+    "BLEEP": (0.15, False, 0.90),
+    "MUTE": (0.25, False, 0.90),
+    "REPLACE_AUDIO": (0.10, False, 0.95),
+    "BLUR_REGION": (0.20, True, 0.85),
+    "CUT": (0.80, True, 1.00),
+}
+
+# Cumulative viewer-impact budget for one file, by strategy. Aggressive still
+# has a ceiling — "aggressive" means willing to cut, not willing to gut the
+# video, and a ceiling below 1.0 is what keeps that true under a finding list
+# long enough that summing every fix's impact would otherwise exceed it.
+STRATEGY_CEILING: dict[str, float] = {
+    "conservative": 0.25,
+    "balanced": 0.45,
+    "aggressive": 0.80,
+}
+
+SEVERITY_SCORE = {"CRITICAL": 1.00, "HIGH": 0.76, "MEDIUM": 0.52, "LOW": 0.28}
+
 
 @dataclass
 class Op:
@@ -103,29 +132,141 @@ class InvalidEDL(ValueError):
 # ------------------------------------------------------------------ #
 
 
-def lower(findings: list[Finding], source: str, duration_ms: int) -> EDL:
-    """Findings -> typed ops. Only findings carrying a fix produce one."""
-    ops: list[Op] = []
+def _make_op(finding: Finding, kind: str) -> Op:
+    return Op(
+        op=kind,  # type: ignore[arg-type]
+        start_ms=int(finding.startMs),
+        end_ms=int(finding.endMs),
+        finding_id=finding.id,
+        reason=finding.clauseId,
+        details=f"{finding.title} · {finding.clauseId}",
+        box=DEFAULT_BOX if kind == "BLUR_REGION" else None,
+        asset=DEFAULT_BED if kind == "REPLACE_AUDIO" else None,
+        freq_hz=DEFAULT_BLEEP_HZ if kind == "BLEEP" else None,
+    )
+
+
+def lower(
+    findings: list[Finding],
+    source: str,
+    duration_ms: int,
+    strategy: Strategy | None = None,
+) -> EDL:
+    """Findings -> typed ops. Only findings carrying a fix produce one.
+
+    Without a strategy, each finding's own `suggestedFix` — the ADJUDICATOR's
+    single least-destructive pick — is trusted directly, which is this
+    function's original and still-default behaviour. With one, `choose()`
+    decides instead: not just where to fix something, but which fix to use,
+    under a budget on how much the file can visibly change in one pass.
+    """
+    if strategy is not None:
+        ops, log = choose(findings, strategy)
+        edl = EDL(source=source, duration_ms=duration_ms, ops=ops)
+        edl.log.extend(log)
+        return edl
+
+    ops = []
     for finding in findings:
         kind = finding.suggestedFix
         if kind == "NONE" or kind not in AUDIO_OPS | VIDEO_OPS:
             continue
-
-        ops.append(
-            Op(
-                op=kind,  # type: ignore[arg-type]
-                start_ms=int(finding.startMs),
-                end_ms=int(finding.endMs),
-                finding_id=finding.id,
-                reason=finding.clauseId,
-                details=f"{finding.title} · {finding.clauseId}",
-                box=DEFAULT_BOX if kind == "BLUR_REGION" else None,
-                asset=DEFAULT_BED if kind == "REPLACE_AUDIO" else None,
-                freq_hz=DEFAULT_BLEEP_HZ if kind == "BLEEP" else None,
-            )
-        )
+        ops.append(_make_op(finding, kind))
 
     return EDL(source=source, duration_ms=duration_ms, ops=ops)
+
+
+# ------------------------------------------------------------------ #
+# Cost-aware strategy selection                                       #
+# ------------------------------------------------------------------ #
+
+
+def candidates_for(finding: Finding) -> list[str]:
+    """Which fix kinds could plausibly resolve this finding.
+
+    Inferred from modality rather than from the finding's own `suggestedFix`,
+    so a downgrade under budget pressure has real alternatives to downgrade
+    TO. A visual finding cannot be fixed by muting audio, so BLUR_REGION and
+    CUT are its only candidates; an audio finding has the full audio set plus
+    CUT as the last resort common to both.
+    """
+    if finding.suggestedFix == "NONE":
+        return []
+    if finding.modalities.get("vision", 0.0) >= max(
+        (v for k, v in finding.modalities.items() if k != "vision"), default=0.0
+    ):
+        return ["BLUR_REGION", "CUT"]
+    return ["BLEEP", "MUTE", "REPLACE_AUDIO", "CUT"]
+
+
+def choose(
+    findings: list[Finding], strategy: Strategy = "balanced"
+) -> tuple[list[Op], list[str]]:
+    """Decide HOW to fix each finding, not just where.
+
+    Findings are processed most-severe-and-most-confident first, so if the
+    budget runs out it runs out on the findings that matter least. For each,
+    every candidate fix is scored as risk reduction minus a discounted
+    viewer-impact cost minus a re-encode penalty — the same shape of tradeoff
+    an editor makes by hand, made explicit and consistent across every
+    finding in the file rather than improvised per clip.
+
+    The budget is the total viewer impact this pass may spend, by strategy.
+    A finding whose only candidates would blow the remaining budget is
+    skipped rather than forced through over budget — reported, not silently
+    dropped, so a reader knows the plan is partial and why.
+    """
+    ceiling = STRATEGY_CEILING[strategy]
+    ordered = sorted(
+        findings,
+        key=lambda f: -(SEVERITY_SCORE.get(f.severity, 0.0) * f.confidence),
+    )
+
+    ops: list[Op] = []
+    log: list[str] = []
+    spent = 0.0
+
+    for finding in ordered:
+        candidates = candidates_for(finding)
+        if not candidates:
+            continue
+
+        best: tuple[float, str, float] | None = None  # (score, kind, impact)
+        for kind in candidates:
+            impact, reencode, risk_reduction = COST[kind]
+            if spent + impact > ceiling:
+                continue
+            score = risk_reduction - impact * 0.6 - (0.25 if reencode else 0.0)
+            if best is None or score > best[0]:
+                best = (score, kind, impact)
+
+        if best is None:
+            log.append(
+                f"skipped {finding.clauseId} at {finding.startMs}ms — every "
+                f"candidate fix would exceed the {strategy} budget"
+            )
+            continue
+
+        _, chosen, impact = best
+        spent += impact
+        ops.append(_make_op(finding, chosen))
+
+        original = finding.suggestedFix
+        if chosen != original and original in COST:
+            orig_impact, _, orig_reduction = COST[original]
+            delta_reduction = COST[chosen][2] - orig_reduction
+            delta_impact = orig_impact - impact
+            comparison = (
+                "same risk reduction"
+                if abs(delta_reduction) < 0.01
+                else f"{delta_reduction:+.2f} risk reduction"
+            )
+            log.append(
+                f"chose {chosen} over {original} at {finding.startMs}ms — "
+                f"{comparison}, {delta_impact:+.2f} viewer impact"
+            )
+
+    return ops, log
 
 
 # ------------------------------------------------------------------ #
@@ -323,5 +464,6 @@ def compile_edl(
     source: str,
     duration_ms: int,
     transcript: Transcript | None = None,
+    strategy: Strategy | None = None,
 ) -> EDL:
-    return optimise(lower(findings, source, duration_ms), transcript)
+    return optimise(lower(findings, source, duration_ms, strategy), transcript)

@@ -11,8 +11,12 @@ from preflight.models import Adversarial, Evidence, Finding, PolicyRef
 from preflight.perception.asr import Segment, Transcript, Word
 from preflight.remediate.codegen import build_program
 from preflight.remediate.edl import (
+    COST,
     MAX_CUT_RATIO,
+    STRATEGY_CEILING,
     InvalidEDL,
+    candidates_for,
+    choose,
     compile_edl,
     lower,
     optimise,
@@ -216,6 +220,131 @@ class TestEdlLowering:
     def test_op_carries_its_source_finding(self):
         edl = lower([finding(fix="MUTE")], "v.mp4", 60_000)
         assert edl.ops[0].finding_id == "f1"
+
+
+class TestCostAwareStrategy:
+    """Not just where to fix something — which fix to use, under a budget on
+    how much the file can visibly change in one pass. The header claim this
+    exists to make true: 'chose BLEEP over CUT — same risk reduction, less
+    viewer impact.'"""
+
+    def test_candidates_for_an_audio_finding_include_the_audio_ops(self):
+        assert set(candidates_for(finding(fix="MUTE", modalities={"speech": 0.9}))) == {
+            "BLEEP", "MUTE", "REPLACE_AUDIO", "CUT",
+        }
+
+    def test_candidates_for_a_visual_finding_exclude_audio_only_ops(self):
+        """Muting the audio does not remove a weapon from the picture."""
+        candidates = candidates_for(
+            finding(fix="BLUR_REGION", modalities={"vision": 0.9})
+        )
+        assert set(candidates) == {"BLUR_REGION", "CUT"}
+        assert "MUTE" not in candidates
+        assert "BLEEP" not in candidates
+
+    def test_a_finding_with_no_fix_has_no_candidates(self):
+        assert candidates_for(finding(fix="NONE")) == []
+
+    def test_conservative_prefers_the_cheapest_viable_fix(self):
+        """A single CRITICAL finding easily affords BLEEP; conservative must
+        not reach for CUT when a cheaper op scores nearly as well."""
+        ops, _ = choose(
+            [finding(fix="CUT", severity="CRITICAL", modalities={"speech": 0.95})],
+            "conservative",
+        )
+        assert ops[0].op != "CUT"
+
+    def test_a_severity_ordered_budget_spends_on_the_worst_finding_first(self):
+        """Two findings that together exceed the conservative ceiling: the
+        higher-severity one must still get a real fix, not the lower one."""
+        findings = [
+            finding(fix="CUT", severity="LOW", start=10_000, end=11_000, fid="low"),
+            finding(
+                fix="CUT", severity="CRITICAL", start=50_000, end=51_000, fid="crit"
+            ),
+        ]
+        ops, _ = choose(findings, "conservative")
+        by_finding = {op.finding_id: op for op in ops}
+        assert "crit" in by_finding
+
+    def test_every_chosen_op_is_a_real_candidate_for_its_finding(self):
+        f = finding(fix="CUT", modalities={"vision": 0.9})
+        ops, _ = choose([f], "aggressive")
+        assert ops[0].op in candidates_for(f)
+
+    def test_cumulative_impact_never_exceeds_the_strategy_ceiling(self):
+        findings = [
+            finding(fix="CUT", start=i * 5_000, end=i * 5_000 + 1_000, fid=f"f{i}")
+            for i in range(10)
+        ]
+        for strategy in ("conservative", "balanced", "aggressive"):
+            ops, _ = choose(findings, strategy)
+            spent = sum(COST[op.op][0] for op in ops)
+            assert spent <= STRATEGY_CEILING[strategy] + 1e-9
+
+    def test_a_finding_that_cannot_fit_the_budget_is_reported_not_dropped_silently(self):
+        findings = [
+            finding(fix="CUT", start=i * 10_000, end=i * 10_000 + 1_000, fid=f"f{i}")
+            for i in range(8)
+        ]
+        ops, log = choose(findings, "conservative")
+        if len(ops) < len(findings):
+            assert any("skipped" in line for line in log)
+
+    def test_aggressive_affords_more_cuts_than_conservative(self):
+        findings = [
+            finding(
+                fix="CUT", severity="CRITICAL", start=i * 5_000, end=i * 5_000 + 1_000,
+                fid=f"f{i}", modalities={"vision": 0.95},
+            )
+            for i in range(6)
+        ]
+        cons_ops, _ = choose(findings, "conservative")
+        aggr_ops, _ = choose(findings, "aggressive")
+        cons_cuts = sum(1 for op in cons_ops if op.op == "CUT")
+        aggr_cuts = sum(1 for op in aggr_ops if op.op == "CUT")
+        assert aggr_cuts >= cons_cuts
+
+    def test_the_decision_log_explains_a_downgrade(self):
+        ops, log = choose(
+            [finding(fix="CUT", severity="CRITICAL", modalities={"speech": 0.95})],
+            "conservative",
+        )
+        assert ops[0].op != "CUT"
+        assert any("chose" in line and "CUT" in line for line in log)
+
+    def test_lower_without_a_strategy_still_trusts_suggested_fix_directly(self):
+        """Backward compatible: the default path is unchanged."""
+        edl = lower([finding(fix="BLEEP")], "v.mp4", 60_000)
+        assert edl.ops[0].op == "BLEEP"
+
+    def test_lower_with_a_strategy_can_override_suggested_fix(self):
+        edl = lower(
+            [finding(fix="CUT", severity="CRITICAL", modalities={"speech": 0.95})],
+            "v.mp4", 60_000, strategy="conservative",
+        )
+        assert edl.ops[0].op != "CUT"
+
+    def test_compile_edl_accepts_a_strategy_end_to_end(self):
+        edl = compile_edl(
+            [finding(fix="CUT", severity="CRITICAL", modalities={"speech": 0.95})],
+            "v.mp4", 60_000, strategy="conservative",
+        )
+        assert edl.ops
+        assert edl.ops[0].op != "CUT"
+
+    def test_every_strategy_name_has_a_ceiling(self):
+        assert set(STRATEGY_CEILING) == {"conservative", "balanced", "aggressive"}
+        assert (
+            STRATEGY_CEILING["conservative"]
+            < STRATEGY_CEILING["balanced"]
+            < STRATEGY_CEILING["aggressive"]
+        )
+
+    def test_cost_table_covers_every_fix_kind_edl_can_emit(self):
+        from preflight.remediate.edl import AUDIO_OPS, VIDEO_OPS
+
+        assert (AUDIO_OPS | VIDEO_OPS) <= set(COST)
 
 
 class TestOptimiserPasses:

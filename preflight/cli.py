@@ -420,8 +420,15 @@ def fix(
     apply: bool = typer.Option(
         False, "--apply", help="Actually render. Without this, dry-run only."
     ),
+    strategy: str = typer.Option(
+        "",
+        "--strategy",
+        help="conservative|balanced|aggressive — trade viewer impact for risk "
+        "reduction. Default trusts each finding's own suggested fix directly.",
+    ),
     out: Path = typer.Option(None, "--out", help="Output path (default <name>.safe.mp4)"),
     cache_dir: Path = typer.Option(Path(".preflight/cache"), "--cache-dir"),
+    offline: bool = typer.Option(False, "--offline", help="Never touch the network"),
 ) -> None:
     """Compile findings into an ffmpeg program and optionally run it.
 
@@ -432,9 +439,17 @@ def fix(
         console.print("[red]ffmpeg and ffprobe are required.[/red]")
         raise typer.Exit(EXIT_UPSTREAM)
 
+    if strategy and strategy not in {"conservative", "balanced", "aggressive"}:
+        console.print(
+            f"[red]--strategy must be conservative, balanced or aggressive, "
+            f"not {strategy!r}[/red]"
+        )
+        raise typer.Exit(EXIT_INPUT)
+
     store = cas.Store(cache_dir)
+    settings = Settings.load(offline=True) if offline else Settings.load()
     try:
-        result = run_perception(video, store)
+        result = run_perception(video, store, settings=settings)
     except (FileNotFoundError, UnsupportedInput, ffmpeg.FfmpegFailed) as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(EXIT_INPUT) from exc
@@ -447,6 +462,7 @@ def fix(
             str(video),
             result.ingested.meta.durationMs,
             result.transcript,
+            strategy=strategy or None,  # type: ignore[arg-type]
         )
     except InvalidEDL as exc:
         console.print(f"[red]invalid EDL: {exc}[/red]")
