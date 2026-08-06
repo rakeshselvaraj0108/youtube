@@ -649,3 +649,36 @@ class TestEveryWeightedAgentActuallyRuns:
 
     def test_coverage_is_a_real_number_between_zero_and_one(self, wired_run):
         assert 0.0 <= wired_run.coverage <= 1.0
+
+
+@pytest.mark.skipif(not ffmpeg.available(), reason="ffmpeg is not installed")
+class TestOrchestratorDrivesTheRealRun:
+    """`preflight/orchestrator.py` was fully built and unit-tested — retries,
+    a timeline, a quality checklist — and never once driven by a real
+    pipeline run. `run_perception` recorded its own hand-rolled log line
+    instead. Nothing here could have caught that: the orchestrator's own
+    tests only ever construct it directly. Only running the real pipeline
+    and inspecting what it produced can."""
+
+    def test_the_orchestrator_agent_carries_a_real_pipeline_id(self, wired_run):
+        orch_agent = wired_run.agent("orchestrator")
+        assert orch_agent is not None
+        pipeline_id = orch_agent.artifacts.get("pipeline_id", "")
+        assert pipeline_id.startswith("PF-")
+
+    def test_every_guarded_stage_left_a_timeline_entry(self, wired_run):
+        orch_agent = wired_run.agent("orchestrator")
+        timeline = orch_agent.artifacts.get("timeline", [])
+        stages = {entry["stage"] for entry in timeline}
+        # ingest and speech run unconditionally; skip_speech=True in this
+        # fixture still routes speech's SKIPPED result through the same
+        # timeline rather than leaving it unrecorded.
+        for stage in ("ingest", "speech", "audio", "access", "meta"):
+            assert stage in stages, f"{stage} never reached the orchestrator's timeline"
+
+    def test_every_timeline_entry_has_at_least_one_attempt(self, wired_run):
+        orch_agent = wired_run.agent("orchestrator")
+        timeline = orch_agent.artifacts.get("timeline", [])
+        assert timeline, "no stages were recorded at all"
+        for entry in timeline:
+            assert entry["attempts"] >= 1

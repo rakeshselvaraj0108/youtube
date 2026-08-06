@@ -24,6 +24,7 @@ from preflight.chunking import Window, build_windows
 from preflight.config import Settings
 from preflight.ingest.pipeline import Ingested, ingest
 from preflight.models import AgentResult, Finding
+from preflight.orchestrator import Orchestrator
 from preflight.perception import accessibility, audio, audio_intel, metadata, ocr, vision
 from preflight.perception import asr as asr_mod
 from preflight.perception import speech_intel
@@ -135,14 +136,22 @@ def compute_coverage(agents: list[AgentResult]) -> float:
     return accumulated / weight_sum if weight_sum else 1.0
 
 
-def _guard(agent_id: str, name: str, fn: Callable[[], AgentResult]) -> AgentResult:
-    started = time.perf_counter()
-    try:
-        return fn()
-    except Exception as exc:  # noqa: BLE001 - degrade, never fail
-        result = AgentResult.failed(agent_id, name, f"{type(exc).__name__}: {exc}")
-        result.elapsed_ms = int((time.perf_counter() - started) * 1000)
-        return result
+def _guard(
+    orch: Orchestrator, agent_id: str, name: str, fn: Callable[[], AgentResult]
+) -> AgentResult:
+    """Run one optional stage through the real orchestrator.
+
+    This used to catch-and-degrade on its own, duplicating exactly what
+    `Orchestrator.run_stage` already does — retry on a transient failure,
+    record a `StageOutcome`, degrade rather than raise — except without the
+    retry or the record. `preflight/orchestrator.py` was fully built and
+    tested but never driven by a real run; routing through it here means the
+    retry budget and the execution timeline it was designed to produce are no
+    longer decorative. `required` is left for the orchestrator to derive from
+    `REQUIRED_STAGES` itself (true only for "speech" among `_guard`'s
+    callers) — this function never overrides that.
+    """
+    return orch.run_stage(agent_id, fn, name=name)
 
 
 def run_perception(
@@ -156,6 +165,8 @@ def run_perception(
     source = Path(source)
     started_at = time.perf_counter()
     settings = settings or Settings.load()
+
+    orch = Orchestrator(max_attempts=2)
 
     orchestrator = AgentResult(
         agent_id="orchestrator",
@@ -172,30 +183,41 @@ def run_perception(
         log=list(ingested.log),
         artifacts={"keyframes": len(ingested.keyframes), "cached": ingested.cached},
     )
+    # Ingest itself stays unwrapped above — its specific exceptions
+    # (FileNotFoundError, UnsupportedInput, FfmpegFailed) are caught by name at
+    # the CLI boundary, and a retry loop swallowing them into a generic FAILED
+    # result would break that contract. It only reaches here once it has
+    # already succeeded, so this call registers the outcome in the timeline
+    # without repeating or risking any work.
+    orch.run_stage("ingest", lambda: ingest_agent, required=True, name="Video Processing")
 
     if skip_speech:
         speech_agent = AgentResult.skipped("speech", "Speech Agent", "disabled by --no-speech")
+        orch.run_stage("speech", lambda: speech_agent, required=True, name="Speech Agent")
         transcript = None
         quotation_spans: list = []
         framing_cues: list = []
     else:
         speech_agent, transcript, quotation_spans, framing_cues = _speech(
-            ingested, store, asr_model
+            orch, ingested, store, asr_model
         )
 
     audio_agent = _guard(
+        orch,
         "audio",
         "Audio Agent",
         lambda: _audio(source, ingested),
     )
 
     access_agent = _guard(
+        orch,
         "access",
         "Accessibility Agent",
         lambda: accessibility.analyse(source, ingested.meta.durationMs, transcript),
     )
 
     meta_agent = _guard(
+        orch,
         "meta",
         "Metadata Agent",
         lambda: metadata.analyse(source, ingested.meta.durationMs, transcript),
@@ -208,8 +230,8 @@ def run_perception(
     registry = _registry(settings)
     flagged = _flagged_spans(speech_agent)
 
-    vision_agent, tracks = _vision(ingested, registry, flagged)
-    ocr_agent, ocr_report = _ocr(ingested, registry, transcript)
+    vision_agent, tracks = _vision(orch, ingested, registry, flagged)
+    ocr_agent, ocr_report = _ocr(orch, ingested, registry, transcript)
 
     # Policy grounding + adversarial adjudication.
     windows = build_windows(
@@ -232,7 +254,7 @@ def run_perception(
         ),
     )
     policy_agent, corpus, backend = _policy(
-        windows, store, settings, transcript, cross_modal
+        orch, windows, store, settings, transcript, cross_modal, registry
     )
 
     agents = [
@@ -266,6 +288,12 @@ def run_perception(
     agents.append(scoring_agent)
 
     orchestrator.elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+    orchestrator.artifacts["pipeline_id"] = orch.report.pipeline_id
+    orchestrator.artifacts["timeline"] = orch.timeline_json()
+    orchestrator.log.append(
+        f"{len(orch.report.timeline)} stage(s) recorded, "
+        f"{sum(o.attempts for o in orch.report.timeline) - len(orch.report.timeline)} retried"
+    )
 
     return PipelineResult(
         source=source,
@@ -283,11 +311,13 @@ def run_perception(
 
 
 def _policy(
+    orch: Orchestrator,
     windows: list[Window],
     store: cas.Store,
     settings: Settings | None,
     transcript: Transcript | None = None,
     cross_modal: CrossModalContext | None = None,
+    registry: Registry | None = None,
 ) -> tuple[AgentResult, Corpus | None, str]:
     """Retrieval plus the triad, guarded like every other optional stage."""
     settings = settings or Settings.load()
@@ -302,7 +332,9 @@ def _policy(
         # One index per scope. The triad searches only the advertiser-friendly
         # clauses: retrieving the paid-promotion clause for a transcript window
         # can never be correct, and it occupies a slot the adjudicator needs.
-        indexes = build_scoped_indexes(corpus, settings, store, client)
+        indexes = build_scoped_indexes(
+            corpus, settings, store, client, registry=registry
+        )
         backend = indexes.backend
 
         policy_index = indexes.get("policy")
@@ -327,7 +359,7 @@ def _policy(
         agent.calls += indexes.calls
         return agent
 
-    return _guard("policy", "Policy Agent", run), corpus, backend
+    return _guard(orch, "policy", "Policy Agent", run), corpus, backend
 
 
 def _registry(settings: Settings | None) -> Registry | None:
@@ -395,6 +427,7 @@ def _audio(source: Path, ingested: Ingested) -> AgentResult:
 
 
 def _vision(
+    orch: Orchestrator,
     ingested: Ingested,
     registry: Registry | None,
     flagged: list[tuple[int, int]],
@@ -407,11 +440,12 @@ def _vision(
         return agent
 
     run.tracks = []  # type: ignore[attr-defined]
-    agent = _guard("vision", "Vision Agent", run)
+    agent = _guard(orch, "vision", "Vision Agent", run)
     return agent, list(getattr(run, "tracks", []))
 
 
 def _ocr(
+    orch: Orchestrator,
     ingested: Ingested,
     registry: Registry | None,
     transcript: Transcript | None,
@@ -427,7 +461,7 @@ def _ocr(
         return agent
 
     run.report = ocr.OcrReport()  # type: ignore[attr-defined]
-    agent = _guard("ocr", "OCR Agent", run)
+    agent = _guard(orch, "ocr", "OCR Agent", run)
     return agent, getattr(run, "report", ocr.OcrReport())
 
 
@@ -447,7 +481,7 @@ def _transcript_segments(transcript: Transcript | None) -> list[dict] | None:
 
 
 def _speech(
-    ingested: Ingested, store: cas.Store, asr_model: str
+    orch: Orchestrator, ingested: Ingested, store: cas.Store, asr_model: str
 ) -> tuple[AgentResult, Transcript | None, list, list]:
     """A02, both tiers.
 
@@ -486,7 +520,7 @@ def _speech(
     run.transcript = None  # type: ignore[attr-defined]
     run.quotation_spans = []  # type: ignore[attr-defined]
     run.framing_cues = []  # type: ignore[attr-defined]
-    agent = _guard("speech", "Speech Agent", run)
+    agent = _guard(orch, "speech", "Speech Agent", run)
     return (
         agent,
         getattr(run, "transcript", None),

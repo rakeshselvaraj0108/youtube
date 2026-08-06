@@ -122,11 +122,36 @@ def _local_embeddings(corpus: Corpus) -> tuple[np.ndarray | None, list[str]]:
     ]
 
 
+def _reranker(registry) -> Callable | None:
+    """A cross-encoder rerank callable, when something can actually serve one.
+
+    `rerank.text` was resolved by the registry, reported by `doctor` and
+    counted in the capability plan while nothing in the project ever called
+    it — a capability that existed on paper only. There is deliberately no
+    local fallback (see `NoLocalReranker`): faking a reranker by returning
+    the input order would make the ablation table meaningless, so offline
+    runs return None here and retrieval stays on raw RRF order.
+    """
+    if registry is None:
+        return None
+    from preflight.providers.registry import RERANK_TEXT
+
+    if registry.is_degraded(RERANK_TEXT):
+        return None
+
+    def rerank(query: str, passages: list[str]):
+        result = registry.invoke(RERANK_TEXT, query=query, passages=passages)
+        return result.value if result else None
+
+    return rerank
+
+
 def build_index(
     corpus: Corpus,
     settings: Settings,
     store: cas.Store,
     client: NimClient | None = None,
+    registry=None,
 ) -> IndexBuild:
     """Assemble a retriever, using the best embedding backend available."""
     log: list[str] = []
@@ -170,7 +195,10 @@ def build_index(
     if embeddings is None:
         log.append("sparse retrieval only — BM25 without dense fusion")
 
-    retriever = Retriever(corpus, embeddings=embeddings)
+    rerank = _reranker(registry)
+    retriever = Retriever(corpus, embeddings=embeddings, rerank=rerank)
+    if rerank is not None:
+        log.append("cross-encoder reranking the fused pool")
 
     def embed_query(text: str) -> np.ndarray | None:
         if embeddings is None:
@@ -208,6 +236,7 @@ def build_scoped_indexes(
     store: cas.Store,
     client: NimClient | None = None,
     scopes: list[str] | None = None,
+    registry=None,
 ) -> ScopedIndexes:
     """Build one index per scope.
 
@@ -224,7 +253,7 @@ def build_scoped_indexes(
         sub = corpus.scoped(scope)
         if not sub.chunks:
             continue
-        index = build_index(sub, settings, store, client)
+        index = build_index(sub, settings, store, client, registry)
         index.scope = scope
         built[scope] = index
         calls += index.calls

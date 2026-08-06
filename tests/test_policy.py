@@ -240,6 +240,69 @@ class TestRetriever:
         assert Retriever(corpus).scope_score(None) == 1.0
 
 
+class TestReranking:
+    """`rerank.text` was resolved by the registry, reported by `doctor` and
+    counted in the capability plan while nothing ever called it. Wiring it in
+    is only safe if a reranker that misbehaves cannot corrupt the evidence
+    the adjudicator sees — so every one of these asserts the fallback, not
+    the happy path."""
+
+    def test_no_reranker_leaves_rrf_order_untouched(self, corpus):
+        baseline = Retriever(corpus).clauses_for("firearms manufacturing", top_k=3)
+        assert not any(h.reranked for h in baseline)
+        assert "reranked" not in baseline[0].provenance
+
+    def test_a_reranker_actually_reorders_the_pool(self, corpus):
+        """Reverses whatever RRF produced, which is detectable without
+        depending on any particular clause winning."""
+        plain = Retriever(corpus).search("violence blood injury", top_k=6)
+
+        def reverse(query, passages):
+            return [(i, 1.0) for i in reversed(range(len(passages)))]
+
+        ranked = Retriever(corpus, rerank=reverse).search(
+            "violence blood injury", top_k=6
+        )
+        assert [h.chunk.id for h in ranked] != [h.chunk.id for h in plain]
+        assert all(h.reranked for h in ranked)
+        assert "reranked" in ranked[0].provenance
+
+    def test_a_reranker_that_raises_falls_back_to_rrf(self, corpus):
+        def explodes(query, passages):
+            raise RuntimeError("upstream is down")
+
+        plain = Retriever(corpus).search("firearms", top_k=3)
+        guarded = Retriever(corpus, rerank=explodes).search("firearms", top_k=3)
+        assert [h.chunk.id for h in guarded] == [h.chunk.id for h in plain]
+        assert not any(h.reranked for h in guarded)
+
+    def test_a_reranker_returning_nothing_falls_back_to_rrf(self, corpus):
+        plain = Retriever(corpus).search("firearms", top_k=3)
+        guarded = Retriever(corpus, rerank=lambda q, p: None).search("firearms", top_k=3)
+        assert [h.chunk.id for h in guarded] == [h.chunk.id for h in plain]
+
+    def test_an_out_of_range_index_is_refused_rather_than_trusted(self, corpus):
+        """The failure that would silently hand the adjudicator the wrong
+        clause entirely, rather than merely a differently-ordered one."""
+        plain = Retriever(corpus).search("firearms", top_k=3)
+        rogue = Retriever(corpus, rerank=lambda q, p: [(9999, 1.0)]).search(
+            "firearms", top_k=3
+        )
+        assert [h.chunk.id for h in rogue] == [h.chunk.id for h in plain]
+        assert not any(h.reranked for h in rogue)
+
+    def test_a_partial_ranking_keeps_the_unscored_remainder(self, corpus):
+        """A reranker that scores only its top pick must not silently drop
+        every other candidate from the pool."""
+        plain = Retriever(corpus).search("violence blood injury", top_k=6)
+        partial = Retriever(corpus, rerank=lambda q, p: [(2, 1.0)]).search(
+            "violence blood injury", top_k=6
+        )
+        assert len(partial) == len(plain)
+        assert partial[0].chunk.id == plain[2].chunk.id
+        assert {h.chunk.id for h in partial} == {h.chunk.id for h in plain}
+
+
 class TestNormalize:
     def test_rows_become_unit_length(self):
         matrix = np.array([[3.0, 4.0], [1.0, 0.0]], dtype=np.float32)

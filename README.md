@@ -299,12 +299,26 @@ one property worth testing directly.
 
 Built for the YouTube Automation Hackathon, Aug 2026, by Rakesh Selvaraj.
 
-**Working:** ingest, all four offline perception agents, hybrid retrieval, the
-adversarial triad, fusion, scoring, the remediation compiler, report emission in
-four formats, the Drift Watcher, the GitHub Action.
+**Working:** ingest, every perception agent — speech, audio, accessibility,
+metadata, vision and OCR — hybrid retrieval, the adversarial triad, fusion,
+scoring, the remediation compiler, report emission in four formats, the Drift
+Watcher, the GitHub Action.
 
-**Not built:** vision and OCR agents (the report degrades and says so), and the
-golden-corpus ablation table — that needs annotated footage, and inventing the
-numbers would be worse than not having them.
+**Hosted-only capabilities.** Three capabilities have no honest local
+fallback, so they report SKIPPED with a reason rather than degrading
+silently:
+
+| Capability | Agents | Without a key |
+|---|---|---|
+| `chat.reasoning` / `chat.extraction` | AUDITOR, ADVOCATE, ADJUDICATOR | The triad is skipped; the deterministic agents still run and score. |
+| `vision.describe` | VISION | No frame descriptions; 22% of the analysis surface reports as uncovered. |
+| `rerank.text` | RETRIEVAL | Retrieval stays on raw RRF order. Faking a local reranker by returning the input order would make the ablation table meaningless. |
+
+`ocr.image` needs `tesseract` on PATH; `asr.transcribe` and `embed.text` cache
+their models via `preflight models pull`. `preflight doctor` prints the whole
+plan and the command that fixes each gap.
+
+**Not built:** the golden-corpus ablation table — that needs annotated footage,
+and inventing the numbers would be worse than not having them.
 
 MIT.

@@ -166,7 +166,12 @@ class Orchestrator:
     # ---------------------------------------------------------------- #
 
     def run_stage(
-        self, stage: str, fn: Callable[[], AgentResult], *, required: bool | None = None
+        self,
+        stage: str,
+        fn: Callable[[], AgentResult],
+        *,
+        required: bool | None = None,
+        name: str | None = None,
     ) -> AgentResult:
         """Execute one stage exactly once, with retries on transient failure.
 
@@ -187,7 +192,7 @@ class Orchestrator:
                 result = fn()
             except Exception as exc:  # noqa: BLE001 - a stage must not take the run
                 result = AgentResult.failed(
-                    stage, stage.title(), f"{type(exc).__name__}: {exc}"
+                    stage, name or stage.title(), f"{type(exc).__name__}: {exc}"
                 )
             elapsed = int((self._clock() - began) * 1000)
             result.elapsed_ms = result.elapsed_ms or elapsed

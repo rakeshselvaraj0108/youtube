@@ -249,8 +249,13 @@ def run_triad(
     if not client.online:
         result.status = "SKIPPED"
         result.coverage = 0.0
+        reason = (
+            "--offline flag set"
+            if client.settings.offline
+            else "no API key configured"
+        )
         result.error = (
-            "no API key — policy adjudication skipped, deterministic agents only"
+            f"{reason} — policy adjudication skipped, deterministic agents only"
         )
         result.log.append(result.error)
         return result

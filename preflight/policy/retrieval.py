@@ -26,12 +26,17 @@ import math
 import re
 from collections import Counter
 from dataclasses import dataclass
+from typing import Callable
 
 import numpy as np
 
 from preflight.policy.corpus import Chunk, Corpus
 
 RRF_K = 60
+
+# Given (query, passages), returns (index_into_passages, score) best-first, or
+# None when the reranker could not answer.
+Reranker = Callable[[str, "list[str]"], "list[tuple[int, float]] | None"]
 
 # Weighted RRF. Transcript language and policy language rarely share tokens
 # ("this is fucked" vs "strong profanity"), so dense carries the semantic load
@@ -67,6 +72,7 @@ class Hit:
     score: float
     dense_rank: int | None = None
     sparse_rank: int | None = None
+    reranked: bool = False
 
     @property
     def provenance(self) -> str:
@@ -75,6 +81,8 @@ class Hit:
             parts.append(f"bm25#{self.sparse_rank + 1}")
         if self.dense_rank is not None:
             parts.append(f"dense#{self.dense_rank + 1}")
+        if self.reranked:
+            parts.append("reranked")
         return "+".join(parts) or "none"
 
 
@@ -144,10 +152,12 @@ class Retriever:
         corpus: Corpus,
         *,
         embeddings: np.ndarray | None = None,
+        rerank: Reranker | None = None,
     ) -> None:
         self.corpus = corpus
         self.bm25 = BM25(corpus.chunks)
         self.embeddings = embeddings
+        self.rerank = rerank
         if embeddings is not None and embeddings.shape[0] != len(corpus.chunks):
             raise ValueError(
                 f"embedding matrix has {embeddings.shape[0]} rows for "
@@ -157,6 +167,44 @@ class Retriever:
     @property
     def dense_available(self) -> bool:
         return self.embeddings is not None
+
+    @property
+    def rerank_available(self) -> bool:
+        return self.rerank is not None
+
+    def _reranked(self, query: str, ranked: list[tuple[int, float]]) -> list[int] | None:
+        """Reorder the fused pool with a cross-encoder, or give up quietly.
+
+        RRF fuses two rankings without ever reading a passage against the
+        query; a cross-encoder does, which is the whole reason to spend a call
+        here. Every failure path returns None and leaves RRF order untouched —
+        a reranker that returns nonsense must not be able to reorder the
+        adjudicator's evidence, and one that is simply unavailable is the
+        normal offline case rather than an error.
+        """
+        assert self.rerank is not None
+        passages = [self.corpus.chunks[index].text for index, _ in ranked]
+        try:
+            scored = self.rerank(query, passages)
+        except Exception:  # noqa: BLE001 - retrieval must survive a bad reranker
+            return None
+        if not scored:
+            return None
+
+        out: list[int] = []
+        taken: set[int] = set()
+        for position, _score in scored:
+            if not isinstance(position, int) or not 0 <= position < len(ranked):
+                return None
+            chunk_index = ranked[position][0]
+            if chunk_index in taken:
+                continue
+            taken.add(chunk_index)
+            out.append(chunk_index)
+        # A partial ranking is not an error — anything the reranker declined to
+        # score keeps its RRF position, behind everything it did score.
+        out.extend(index for index, _ in ranked if index not in taken)
+        return out
 
     def search(
         self,
@@ -185,13 +233,30 @@ class Retriever:
             fused[index] = fused.get(index, 0.0) + DENSE_WEIGHT / (RRF_K + rank)
             dense_rank[index] = rank
 
-        ordered = sorted(fused.items(), key=lambda item: -item[1])[:top_k]
+        ranked = sorted(fused.items(), key=lambda item: -item[1])
+
+        # Rerank the whole fused pool, not the truncated head: reordering the
+        # top_k the fusion already chose cannot rescue a clause RRF ranked
+        # 11th, which is the case a cross-encoder exists to catch.
+        reordered: list[int] | None = None
+        if self.rerank is not None and len(ranked) > 1:
+            reordered = self._reranked(query, ranked)
+
+        if reordered is None:
+            ordered = ranked[:top_k]
+            was_reranked = False
+        else:
+            scores = dict(ranked)
+            ordered = [(index, scores[index]) for index in reordered[:top_k]]
+            was_reranked = True
+
         return [
             Hit(
                 chunk=self.corpus.chunks[index],
                 score=round(score, 6),
                 sparse_rank=sparse_rank.get(index),
                 dense_rank=dense_rank.get(index),
+                reranked=was_reranked,
             )
             for index, score in ordered
         ]

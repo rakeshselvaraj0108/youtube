@@ -31,6 +31,7 @@ from preflight.config import Settings
 from preflight.drift import detect, write_snapshot
 from preflight.policy.corpus import load_corpus
 from preflight.providers.doctor import run_doctor
+from preflight.providers.local import _hf_cached
 from preflight.providers.registry import Registry
 from preflight.report.build import build_report, validate
 from preflight.report.html import BundleMissing, emit_html
@@ -49,6 +50,12 @@ app = typer.Typer(
     no_args_is_help=True,
     help="Static analysis and CI for video. Ship your video like you ship your code.",
 )
+models_app = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    help="Cache the local models offline analysis depends on.",
+)
+app.add_typer(models_app, name="models")
 console = Console()
 
 EXIT_OK = 0
@@ -259,7 +266,7 @@ def check(
                 else f"{_timecode(finding.startMs)} → {_timecode(finding.endMs)}"
             )
             console.print(
-                f"  [{severity_tone[finding.severity]}]â—[/] "
+                f"  [{severity_tone[finding.severity]}]●[/] "
                 f"[{severity_tone[finding.severity]}]{finding.severity:<8}[/] "
                 f"[dim]{finding.clauseId:<8}[/] {finding.title}"
             )
@@ -289,7 +296,7 @@ def check(
         value = sub[key]
         filled = int(round(value / 5))
         bar = "█" * filled + "·" * (20 - filled)
-        marker = " [dim]â† weakest[/dim]" if key == readiness.weakest else ""
+        marker = " [dim]← weakest[/dim]" if key == readiness.weakest else ""
         console.print(f"    {key:<14} {bar} {value:5.1f}{marker}")
     console.print()
     console.print(
@@ -684,6 +691,79 @@ def doctor(
     console.print("  [green]Ready.[/green]")
     console.print()
     raise typer.Exit(EXIT_OK)
+
+
+@models_app.command("pull")
+def models_pull(
+    which: str = typer.Argument(
+        "all", help="asr | embed | all — which local model(s) to cache"
+    ),
+) -> None:
+    """Download and cache local models once, so no run ever does it mid-analysis.
+
+    Nothing else in this project downloads a model on its own — `doctor` and
+    the local providers themselves both point unresolved capabilities here
+    rather than fetching on demand. Discovering a 140MB download halfway
+    through a demo is a worse outcome than a capability that reports SKIPPED
+    with this command as the documented fix.
+    """
+    if which not in {"asr", "embed", "all"}:
+        console.print(f"[red]argument must be asr, embed or all, not {which!r}[/red]")
+        raise typer.Exit(EXIT_INPUT)
+
+    targets = {"asr", "embed"} if which == "all" else {which}
+    ok = True
+    console.print()
+    if "asr" in targets:
+        ok = _pull_asr() and ok
+    if "embed" in targets:
+        ok = _pull_embed() and ok
+    console.print()
+    raise typer.Exit(EXIT_OK if ok else EXIT_UPSTREAM)
+
+
+def _pull_asr() -> bool:
+    console.print("  [bold]faster-whisper base.en[/bold]")
+    if _hf_cached("faster-whisper-base.en"):
+        console.print("    [green]already cached[/green]")
+        return True
+
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError:
+        console.print("    [red]not installed[/red] — pip install 'preflight[asr]'")
+        return False
+
+    console.print("    downloading (first run only, ~140MB)…")
+    try:
+        WhisperModel("base.en", device="cpu", compute_type="int8")
+    except Exception as exc:  # noqa: BLE001 - report, never crash the command
+        console.print(f"    [red]download failed:[/red] {exc}")
+        return False
+    console.print("    [green]cached[/green]")
+    return True
+
+
+def _pull_embed() -> bool:
+    console.print("  [bold]all-MiniLM-L6-v2[/bold]")
+    if _hf_cached("all-MiniLM-L6-v2"):
+        console.print("    [green]already cached[/green]")
+        return True
+
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError:
+        console.print("    [red]not installed[/red] — pip install 'preflight[retrieval]'")
+        return False
+
+    console.print("    downloading (first run only, ~90MB)…")
+    try:
+        SentenceTransformer("all-MiniLM-L6-v2")
+    except Exception as exc:  # noqa: BLE001 - report, never crash the command
+        console.print(f"    [red]download failed:[/red] {exc}")
+        return False
+    console.print("    [green]cached[/green]")
+    return True
 
 
 @app.command()

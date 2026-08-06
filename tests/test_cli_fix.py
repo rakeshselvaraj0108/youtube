@@ -15,12 +15,13 @@ command.
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
-from preflight import ffmpeg
+from preflight import cli, ffmpeg
 from preflight.cli import app
 
 pytestmark = pytest.mark.skipif(not ffmpeg.available(), reason="ffmpeg is not installed")
@@ -100,6 +101,50 @@ class TestQualityDelta:
         """A failed quality check must not undo a render that otherwise
         succeeded and verified correctly on duration."""
         assert ffmpeg.quality_delta(moving_clip, tmp_path / "does_not_exist.mp4") is None
+
+
+class TestModelsPull:
+    """`doctor` and both local providers point an unresolved capability at
+    `preflight models pull` in their fix hints — a command that did not
+    exist. `_hf_cached` is monkeypatched here rather than relying on either
+    package actually being installed, so this proves the command's own
+    control flow (rejection, the cached fast-path, the exit codes) without
+    depending on what happens to be downloaded on the machine running the
+    suite."""
+
+    def test_an_unknown_target_is_rejected_before_any_work_happens(self):
+        result = runner.invoke(app, ["models", "pull", "bogus"])
+        assert result.exit_code != 0
+        assert "asr, embed or all" in result.output
+
+    def test_an_already_cached_model_is_reported_without_importing_anything(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr(cli, "_hf_cached", lambda fragment: True)
+        result = runner.invoke(app, ["models", "pull", "asr"])
+        assert result.exit_code == 0, result.output
+        assert "already cached" in result.output
+
+    def test_pull_all_reports_both_models(self, monkeypatch):
+        monkeypatch.setattr(cli, "_hf_cached", lambda fragment: True)
+        result = runner.invoke(app, ["models", "pull"])
+        assert result.exit_code == 0, result.output
+        assert "faster-whisper" in result.output
+        assert "all-MiniLM-L6-v2" in result.output
+
+    def test_a_missing_optional_dependency_names_the_fix_not_a_crash(self, monkeypatch):
+        """Forces the ImportError branch regardless of what happens to be
+        installed on the machine running the suite — asserting on real
+        absence would let this test attempt a genuine network download on a
+        machine where sentence-transformers is present, which is exactly the
+        slow, flaky pattern this project's own tests elsewhere refuse to
+        risk."""
+        monkeypatch.setattr(cli, "_hf_cached", lambda fragment: False)
+        monkeypatch.setitem(sys.modules, "sentence_transformers", None)
+        result = runner.invoke(app, ["models", "pull", "embed"])
+        assert "Traceback" not in result.output
+        assert result.exit_code != 0
+        assert "pip install" in result.output
 
 
 class TestFixApply:
