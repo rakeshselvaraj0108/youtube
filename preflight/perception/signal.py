@@ -104,13 +104,16 @@ def spectral_flatness(signal: np.ndarray, sample_rate: int, window_ms: int = 100
     return geometric / np.maximum(arithmetic, 1e-12)
 
 
-def luminance_series(source: Path, fps: int = 10, width: int = 64, height: int = 36) -> np.ndarray:
-    """Mean luminance per frame, sampled at a fixed rate.
+def _grayscale_frames(
+    source: Path, fps: int, width: int, height: int
+) -> np.ndarray:
+    """Downscaled greyscale frames at a fixed rate, shape (n, width*height).
 
-    Scene-cut keyframes are far too sparse for flash analysis — a strobe lives
-    entirely between two cuts. This pipes downscaled greyscale frames straight
-    out of ffmpeg, so an 18-minute file costs about 24MB of transfer and no
-    intermediate files.
+    Scene-cut keyframes are far too sparse for this kind of analysis — a
+    strobe or a freeze lives entirely between two cuts. This pipes downscaled
+    frames straight out of ffmpeg, so an 18-minute file costs about 24MB of
+    transfer and no intermediate files. Shared by every per-frame check in
+    this module rather than each one re-decoding the file.
     """
     command = [
         "ffmpeg",
@@ -135,10 +138,39 @@ def luminance_series(source: Path, fps: int = 10, width: int = 64, height: int =
     frame_bytes = width * height
     usable = (len(result.stdout) // frame_bytes) * frame_bytes
     if usable == 0:
-        return np.array([])
+        return np.zeros((0, frame_bytes), dtype=np.float32)
 
     frames = np.frombuffer(result.stdout[:usable], dtype=np.uint8).reshape(-1, frame_bytes)
-    return frames.astype(np.float32).mean(axis=1)
+    return frames.astype(np.float32)
+
+
+def luminance_series(source: Path, fps: int = 10, width: int = 64, height: int = 36) -> np.ndarray:
+    """Mean luminance per frame, sampled at a fixed rate."""
+    frames = _grayscale_frames(source, fps, width, height)
+    if frames.shape[0] == 0:
+        return np.array([])
+    return frames.mean(axis=1)
+
+
+def frame_diff_series(source: Path, fps: int = 10, width: int = 64, height: int = 36) -> np.ndarray:
+    """Mean absolute difference between each frame and the one before it.
+
+    Matching MEAN luminance is not the same claim as matching PICTURE — two
+    different frames of a static scene can share an average brightness by
+    coincidence while genuinely changing content, and a single scalar per
+    frame cannot tell the difference. This compares the full downscaled
+    frame to its predecessor, so a real freeze (near-zero difference,
+    sustained) is distinguishable from a static-average scene that is
+    actually still changing (low mean-luminance variance, but real
+    frame-to-frame difference from motion, grain, or a slow pan).
+
+    Length is one shorter than the frame count — there is no predecessor for
+    the first frame — and the caller's timestamps should account for that.
+    """
+    frames = _grayscale_frames(source, fps, width, height)
+    if frames.shape[0] < 2:
+        return np.array([])
+    return np.abs(np.diff(frames, axis=0)).mean(axis=1)
 
 
 def spans_where(mask: np.ndarray, step_ms: float, min_ms: int) -> list[tuple[int, int]]:

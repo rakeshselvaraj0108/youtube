@@ -35,6 +35,16 @@ MUSIC_MIN_MS = 8_000
 
 WINDOW_MS = 100
 
+# Phase correlation. Measured on constructed signals: identical L/R (mono-
+# safe) gives +1.0, fully inverted (collapses to silence when summed) gives
+# -1.0, and independent stereo content — two different microphones, an
+# ordinary stereo mix — sits within a few thousandths of 0.0. The thresholds
+# sit with real margin either side of that zero, not at it.
+PHASE_FRAME = 2048
+PHASE_HOP = 1024
+PHASE_RED = -0.10
+PHASE_YELLOW = 0.20
+
 
 def _clause(clause_id: str, title: str, section: str, text: str) -> PolicyRef:
     return PolicyRef(clauseId=clause_id, title=title, section=section, text=text)
@@ -66,6 +76,7 @@ def analyse(
     findings.extend(_clipping_findings(audio, duration_ms, log))
     findings.extend(_dead_air_findings(mono, audio.sample_rate, duration_ms, log))
     findings.extend(_channel_findings(audio, duration_ms, log))
+    findings.extend(_phase_findings(audio, duration_ms, log))
     findings.extend(_music_bed_findings(mono, audio.sample_rate, log))
 
     if not findings:
@@ -293,6 +304,89 @@ def _channel_findings(audio: sig.Audio, duration_ms: int, log: list[str]) -> lis
                 f"Per-channel RMS differs by {delta:.1f} dB across the whole programme.",
                 "Measured across the full duration, so this is not a transient pan.",
                 0.92,
+            ),
+        )
+    ]
+
+
+def phase_correlation(audio: sig.Audio) -> float | None:
+    """Mean windowed correlation between the left and right channels.
+
+    +1.0 is identical channels — perfectly safe collapsed to mono. -1.0 is
+    fully inverted — cancels toward silence on any playback that sums to
+    mono, which is most of a video platform's audience: a phone speaker, a
+    laptop, a single earbud. Windowed rather than one correlation over the
+    whole file, because a real phase meter reports what is happening now,
+    and averaging a badly-out-of-phase intro against a clean rest-of-file
+    would hide the intro entirely.
+    """
+    if audio.channels < 2:
+        return None
+
+    left = audio.samples[0].astype(np.float64)
+    right = audio.samples[1].astype(np.float64)
+    n = min(len(left), len(right))
+    if n < PHASE_FRAME:
+        return None
+
+    correlations = []
+    for start in range(0, n - PHASE_FRAME, PHASE_HOP):
+        l_frame = left[start : start + PHASE_FRAME]
+        r_frame = right[start : start + PHASE_FRAME]
+        denom = np.sqrt(np.sum(l_frame**2) * np.sum(r_frame**2))
+        if denom < 1e-9:
+            continue  # silence in this window carries no phase information
+        correlations.append(float(np.sum(l_frame * r_frame) / denom))
+
+    return float(np.mean(correlations)) if correlations else None
+
+
+def _phase_findings(audio: sig.Audio, duration_ms: int, log: list[str]) -> list[Finding]:
+    correlation = phase_correlation(audio)
+    if correlation is None:
+        return []
+
+    log.append(f"phase correlation: {correlation:+.2f}")
+    if correlation >= PHASE_YELLOW:
+        return []
+
+    out_of_phase = correlation < PHASE_RED
+    return [
+        Finding(
+            id="a_phase",
+            clauseId="AUD-05",
+            category="Audio Delivery",
+            title=(
+                "Channels are out of phase"
+                if out_of_phase
+                else "Weak stereo correlation"
+            ),
+            description=(
+                "Collapses toward silence on any mono-summing playback — a phone "
+                "speaker, a laptop, most of the audience most of the time."
+                if out_of_phase
+                else "No consistent phase relationship between channels."
+            ),
+            startMs=0,
+            endMs=max(duration_ms, 1),
+            severity="HIGH" if out_of_phase else "MEDIUM",
+            confidence=0.88,
+            modalities={"audio": 0.88},
+            evidence=Evidence(
+                transcript=f"[stereo phase correlation: {correlation:+.2f}]"
+            ),
+            policy=_clause(
+                "AUD-05",
+                "Mono compatibility",
+                "PREFLIGHT audio ruleset § 3.5",
+                "Content recorded or mixed out of phase collapses toward silence "
+                "when the two channels are summed to mono.",
+            ),
+            adversarial=_measured(
+                f"Stereo phase correlation measured at {correlation:+.2f} across "
+                "the programme.",
+                "Windowed correlation between the left and right channels.",
+                0.88,
             ),
         )
     ]

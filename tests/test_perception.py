@@ -15,7 +15,9 @@ from preflight.models import AgentResult, Evidence
 from preflight.perception import metadata, signal as sig
 from preflight.perception.accessibility import (
     FLASH_DELTA,
+    FROZEN_MIN_MS,
     SAMPLE_FPS,
+    analyse,
     flash_risk,
 )
 from preflight.perception.asr import Segment, Transcript, Word, speech_rate_wpm
@@ -136,6 +138,196 @@ class TestFlashRisk:
     def test_degenerate_input_does_not_crash(self):
         assert flash_risk(np.array([]), SAMPLE_FPS)["risk"] == "LOW"
         assert flash_risk(np.array([1.0]), SAMPLE_FPS)["risk"] == "LOW"
+
+
+class TestBlackAndFrozenFrameFindings:
+    """The finding constructors, given spans directly — fast, no ffmpeg. The
+    detection PIPELINE that produces those spans from a real file is
+    covered separately in TestBlackAndFrozenFrameDetection below, because a
+    span-construction test cannot catch a real extraction bug and a real
+    extraction test is too slow to carry every edge case."""
+
+    def test_black_finding_severity_scales_with_duration(self):
+        from preflight.perception.accessibility import _black_frame_findings
+
+        short = _black_frame_findings([(0, 2000)])[0]
+        long = _black_frame_findings([(0, 8000)])[0]
+        assert short.severity == "LOW"
+        assert long.severity == "MEDIUM"
+
+    def test_frozen_finding_severity_scales_with_duration(self):
+        from preflight.perception.accessibility import _frozen_frame_findings
+
+        short = _frozen_frame_findings([(0, 8000)])[0]
+        long = _frozen_frame_findings([(0, 20_000)])[0]
+        assert short.severity == "LOW"
+        assert long.severity == "MEDIUM"
+
+    def test_no_spans_produces_no_findings(self):
+        from preflight.perception.accessibility import (
+            _black_frame_findings,
+            _frozen_frame_findings,
+        )
+
+        assert _black_frame_findings([]) == []
+        assert _frozen_frame_findings([]) == []
+
+    def test_at_most_five_findings_regardless_of_span_count(self):
+        from preflight.perception.accessibility import _black_frame_findings
+
+        spans = [(i * 10_000, i * 10_000 + 2000) for i in range(12)]
+        assert len(_black_frame_findings(spans)) == 5
+
+    def test_findings_carry_the_real_span(self):
+        from preflight.perception.accessibility import _black_frame_findings
+
+        finding = _black_frame_findings([(4000, 9000)])[0]
+        assert finding.startMs == 4000
+        assert finding.endMs == 9000
+
+    def test_frozen_finding_documents_its_own_limitation(self):
+        """A long static shot reads identically to a real freeze at this
+        resolution, and the finding says so rather than implying certainty
+        duration alone cannot provide."""
+        from preflight.perception.accessibility import _frozen_frame_findings
+
+        finding = _frozen_frame_findings([(0, 8000)])[0]
+        assert finding.adversarial.defense is not None
+        assert "static" in finding.description.lower() or "static" in finding.adversarial.defense.lower()
+
+    def test_never_emits_a_verdict(self):
+        from preflight.perception.accessibility import (
+            _black_frame_findings,
+            _frozen_frame_findings,
+        )
+
+        blob = str([f.to_json() for f in _black_frame_findings([(0, 5000)])])
+        blob += str([f.to_json() for f in _frozen_frame_findings([(0, 8000)])])
+        for forbidden in ("VIOLATION", "UNSAFE", "DEMONETIZ", "LIMITED ADS"):
+            assert forbidden not in blob.upper()
+
+
+@pytest.mark.skipif(not ffmpeg.available(), reason="ffmpeg is not installed")
+class TestBlackAndFrozenFrameDetection:
+    """The real pipeline: extract frames from an actual file, measure, find
+    spans. Thresholds here were calibrated by measuring constructed signals
+    directly, the same discipline the rest of this project's DSP modules
+    use — a black gap reads as luminance 0.0 against ~123 for ordinary
+    picture, and a real held frame reads as frame-diff 0.03-0.19 against
+    5.3-6.8 for ordinary motion. Both numbers came from running the actual
+    detector against a real file before any threshold was chosen."""
+
+    @pytest.fixture(scope="class")
+    def moving_clip(self, tmp_path_factory) -> Path:
+        out = tmp_path_factory.mktemp("frames") / "moving.mp4"
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30:duration=2",
+                str(out),
+            ],
+            check=True, capture_output=True,
+        )
+        return out
+
+    @pytest.fixture(scope="class")
+    def black_gap_clip(self, tmp_path_factory, moving_clip) -> Path:
+        """2s motion, 3s true black, 2s motion."""
+        media = tmp_path_factory.mktemp("black")
+        out = media / "black_gap.mp4"
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30:duration=2",
+                "-f", "lavfi", "-i", "color=c=black:size=320x180:rate=30:duration=3",
+                "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30:duration=2",
+                "-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]",
+                "-map", "[v]", "-c:v", "libx264", "-preset", "ultrafast",
+                "-pix_fmt", "yuv420p", str(out),
+            ],
+            check=True, capture_output=True,
+        )
+        return out
+
+    @pytest.fixture(scope="class")
+    def frozen_clip(self, tmp_path_factory, moving_clip) -> Path:
+        """2s motion held on a genuine frame of itself for 7s, then 2s motion.
+
+        Not a solid-colour source — a solid colour is also flat by
+        construction and would not prove the detector distinguishes a real
+        freeze from a black gap. This holds an actual frame of the moving
+        pattern, so both signals (luminance stays normal, frame-diff
+        collapses) are the real thing being measured, not a proxy for it.
+        """
+        media = tmp_path_factory.mktemp("frozen")
+        still = media / "still.png"
+        held = media / "held.mp4"
+        out = media / "frozen.mp4"
+        subprocess.run(
+            ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+             "-sseof", "-0.1", "-i", str(moving_clip), "-frames:v", "1", str(still)],
+            check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+             "-loop", "1", "-i", str(still), "-t", "7", "-r", "30",
+             "-pix_fmt", "yuv420p", str(held)],
+            check=True, capture_output=True,
+        )
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-i", str(moving_clip), "-i", str(held), "-i", str(moving_clip),
+                "-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]",
+                "-map", "[v]", "-c:v", "libx264", "-preset", "ultrafast",
+                "-pix_fmt", "yuv420p", str(out),
+            ],
+            check=True, capture_output=True,
+        )
+        return out
+
+    def test_a_real_black_gap_is_detected(self, black_gap_clip):
+        from preflight.perception.accessibility import _black_frame_spans
+
+        spans, _ = _black_frame_spans(black_gap_clip)
+        assert spans
+        start, end = spans[0]
+        assert 1500 <= start <= 2500
+        assert 4500 <= end <= 5500
+
+    def test_ordinary_motion_has_no_black_spans(self, moving_clip):
+        from preflight.perception.accessibility import _black_frame_spans
+
+        assert _black_frame_spans(moving_clip)[0] == []
+
+    def test_a_real_freeze_is_detected(self, frozen_clip):
+        from preflight.perception.accessibility import _frozen_frame_spans
+
+        spans, _ = _frozen_frame_spans(frozen_clip)
+        assert spans
+        start, end = spans[0]
+        assert end - start >= FROZEN_MIN_MS
+
+    def test_ordinary_motion_has_no_frozen_spans(self, moving_clip):
+        from preflight.perception.accessibility import _frozen_frame_spans
+
+        assert _frozen_frame_spans(moving_clip)[0] == []
+
+    def test_a_black_gap_is_not_also_reported_as_frozen(self, black_gap_clip):
+        """A black gap technically has zero frame-to-frame difference too —
+        both signals collapse together — but VID-01 is the right clause for
+        it, not a redundant VID-02 alongside it. The duration floors differ
+        enough (1.5s vs 6s) that a 3s black gap should clear VID-01's bar
+        without also clearing VID-02's."""
+        from preflight.perception.accessibility import _frozen_frame_spans
+
+        spans, _ = _frozen_frame_spans(black_gap_clip)
+        assert spans == []
+
+    def test_end_to_end_through_the_agent(self, black_gap_clip):
+        result = analyse(black_gap_clip, 7000, None)
+        assert any(f.clauseId == "VID-01" for f in result.findings)
+        assert result.status in {"OK", "DEGRADED"}
 
 
 class TestSpeechRate:

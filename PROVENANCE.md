@@ -49,20 +49,24 @@ so explicitly and that its `source_url` resolves to one of the four domains
 above — a restatement that drifted onto an unreviewed domain, or lost its
 disclaimer, fails the build rather than shipping quietly.
 
-**11 `house_rule` clauses** (ACC-02…ACC-04, AUD-01…AUD-04, META-02…META-05)
-are PREFLIGHT's own engineering thresholds — a caption-availability check, a
--14 LUFS loudness target, tag-stuffing detection — and are explicitly **not**
-platform policy. Their `source` is the literal string `PREFLIGHT engineering
-ruleset` and their `derivation` says, verbatim, "not a restatement of any
-platform policy." `verify_data.py` asserts a house rule never carries a
-`support.google.com` or `w3.org` URL, which is the specific failure mode this
-distinction exists to prevent: a loudness target that looks like it was
-handed down by YouTube.
+**14 `house_rule` clauses** (ACC-02…ACC-04, AUD-01…AUD-05, VID-01…VID-02,
+META-02…META-05) are PREFLIGHT's own engineering thresholds — a
+caption-availability check, a -14 LUFS loudness target, tag-stuffing
+detection — and are explicitly **not** platform policy. Their `source` is the
+literal string `PREFLIGHT engineering ruleset` and their `derivation` says,
+verbatim, "not a restatement of any platform policy." `verify_data.py`
+asserts a house rule never carries a `support.google.com` or `w3.org` URL,
+which is the specific failure mode this distinction exists to prevent: a
+loudness target that looks like it was handed down by YouTube.
 
-These eleven were added after the fact, and the reason is worth recording.
-Every deterministic agent (`accessibility.py`, `audio.py`, `metadata.py`) was
-emitting a `clauseId` for its findings — ACC-02 through ACC-04, AUD-01 through
-AUD-04, META-02 through META-05 — that referred to nothing in the manifest.
+The first eleven were added after the fact, and the reason is worth
+recording. Every deterministic agent (`accessibility.py`, `audio.py`,
+`metadata.py`) was emitting a `clauseId` for its findings — ACC-02 through
+ACC-04, AUD-01 through AUD-04, META-02 through META-05 — that referred to
+nothing in the manifest. AUD-05 (mono/phase compatibility) and VID-01/VID-02
+(black and frozen frames) were added later as genuinely new detectors, not
+retrofits for an existing gap, and follow the same house-rule discipline from
+the start.
 Eleven of fourteen cited clause ids resolved to no text at all, and the one
 accessibility id that *did* exist, ACC-01, was on the wrong finding: the
 manifest defined it as photosensitive content, but the caption-availability

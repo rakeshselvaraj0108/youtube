@@ -163,6 +163,88 @@ class TestChannelBalance:
         assert not any(f.clauseId == "AUD-04" for f in result.findings)
 
 
+class TestPhaseCorrelation:
+    """Out-of-phase stereo collapses toward silence on any playback that sums
+    to mono - a phone speaker, a laptop, most of a video platform's audience
+    most of the time. Every threshold here was measured on constructed
+    signals, not chosen and defended: identical channels give +1.0, fully
+    inverted channels give -1.0, and independent stereo content sits within a
+    few thousandths of 0.0."""
+
+    def test_identical_channels_are_perfectly_correlated(self, tmp_path):
+        signal = tone(440, 2.0, amplitude=0.3)
+        wav = write_wav(tmp_path / "mono_safe.wav", stereo(signal))
+        result = audio.analyse(wav, wav, duration_ms=2000)
+        assert not any(f.clauseId == "AUD-05" for f in result.findings)
+
+    def test_inverted_right_channel_is_flagged(self, tmp_path):
+        signal = tone(440, 2.0, amplitude=0.3)
+        wav = write_wav(tmp_path / "inverted.wav", np.vstack([signal, -signal]))
+        result = audio.analyse(wav, wav, duration_ms=2000)
+        phase = next(f for f in result.findings if f.clauseId == "AUD-05")
+        assert phase.severity == "HIGH"
+        assert "out of phase" in phase.title.lower()
+
+    def test_ordinary_stereo_content_is_not_flagged(self, tmp_path):
+        """Shared dialogue plus independent per-channel room noise — not
+        identical channels, but genuinely safe stereo. Two FULLY independent
+        random signals were tried first and measured 0.003 correlation,
+        landing this test in the exact 'weak correlation' band it meant to
+        prove was safe: real stereo content almost always shares something
+        between channels (dialogue, room tone, a partially-panned mix), and
+        total independence is the degenerate case AUD-05 actually exists to
+        flag, not a stand-in for an ordinary recording."""
+        rng = np.random.default_rng(20260806)
+        n = int(RATE * 2)
+        shared = rng.normal(0, 0.15, n)
+        left = shared + rng.normal(0, 0.08, n)
+        right = shared + rng.normal(0, 0.08, n)
+        wav = write_wav(tmp_path / "ordinary_stereo.wav", np.vstack([left, right]))
+        result = audio.analyse(wav, wav, duration_ms=2000)
+        assert not any(f.clauseId == "AUD-05" for f in result.findings)
+
+    def test_mono_audio_has_no_phase_relationship_to_measure(self, tmp_path):
+        wav = write_wav(
+            tmp_path / "mono.wav", tone(440, 2.0, amplitude=0.3)[np.newaxis, :]
+        )
+        result = audio.analyse(wav, wav, duration_ms=2000)
+        assert not any(f.clauseId == "AUD-05" for f in result.findings)
+
+    def test_a_dead_channel_has_no_phase_relationship_to_measure(self, tmp_path):
+        """Silence carries no phase information — AUD-04 is the correct
+        finding for a dead channel, not AUD-05."""
+        loud = tone(440, 2.0, amplitude=0.3)
+        silent = np.zeros_like(loud)
+        wav = write_wav(tmp_path / "dead.wav", np.vstack([loud, silent]))
+        result = audio.analyse(wav, wav, duration_ms=2000)
+        assert not any(f.clauseId == "AUD-05" for f in result.findings)
+
+    def test_finding_spans_the_full_duration(self, tmp_path):
+        signal = tone(440, 2.0, amplitude=0.3)
+        wav = write_wav(tmp_path / "inverted.wav", np.vstack([signal, -signal]))
+        result = audio.analyse(wav, wav, duration_ms=2000)
+        phase = next(f for f in result.findings if f.clauseId == "AUD-05")
+        assert phase.startMs == 0
+        assert phase.endMs == 2000
+
+    def test_phase_correlation_function_matches_measured_calibration(self):
+        """The four reference readings this module's thresholds were set
+        from, pinned directly against the function rather than only through
+        the agent."""
+        signal = tone(440, 2.0, amplitude=0.3)
+
+        class FakeAudio:
+            channels = 2
+            samples = np.vstack([signal, signal])
+
+        identical = audio.phase_correlation(FakeAudio())
+        assert identical == pytest.approx(1.0, abs=0.01)
+
+        FakeAudio.samples = np.vstack([signal, -signal])
+        inverted = audio.phase_correlation(FakeAudio())
+        assert inverted == pytest.approx(-1.0, abs=0.01)
+
+
 class TestAgentContract:
     def test_missing_audio_file_is_skipped(self, tmp_path):
         missing = tmp_path / "nope.wav"

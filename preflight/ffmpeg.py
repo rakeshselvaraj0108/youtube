@@ -8,6 +8,7 @@ catch when they are missing.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -82,6 +83,46 @@ def probe(path: Path) -> dict[str, Any]:
     if result.returncode != 0:
         raise FfmpegFailed(command, result.returncode, result.stderr)
     return json.loads(result.stdout)
+
+
+_SSIM_ALL = re.compile(r"All:\s*([\d.]+)")
+
+
+def quality_delta(original: Path, fixed: Path, *, timeout: int = 900) -> float | None:
+    """Mean SSIM between two videos — how much a re-encode actually changed.
+
+    "The remediation changed 0.4% of frames, SSIM 0.998" answers the question
+    a creator actually has about an automated fix: will this wreck my video?
+    None when the comparison itself fails (mismatched resolution, a source
+    that no longer exists) rather than raising — a failed quality check
+    should not undo a render that otherwise succeeded and verified correctly
+    on duration.
+
+    Only worth computing when the video stream was actually re-encoded. An
+    audio-only edit stream-copies the video (`-c:v copy`), which makes it
+    byte-identical, and SSIM would trivially read 1.0 for real work spent
+    decoding two copies of the same frames.
+    """
+    command = [
+        _resolve("ffmpeg"),
+        "-hide_banner",
+        "-nostdin",
+        "-i",
+        str(fixed),
+        "-i",
+        str(original),
+        "-lavfi",
+        "[0:v][1:v]ssim",
+        "-f",
+        "null",
+        "-",
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return None
+    match = _SSIM_ALL.search(result.stderr)
+    return float(match.group(1)) if match else None
 
 
 def parse_fraction(value: str | None, default: float = 0.0) -> float:

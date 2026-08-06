@@ -610,6 +610,14 @@ def fix(
         console.print(f"[red]could not verify the render: {exc}[/red]")
         raise typer.Exit(EXIT_INPUT) from exc
 
+    # SSIM only where it means something. A stream-copied video is byte-
+    # identical to the source, so comparing it would just spend real decode
+    # time to confirm 1.0 — a video that was actually re-encoded is the case
+    # where "did this change anything it shouldn't have" is a real question.
+    quality = None
+    if not program.video_stream_copied:
+        quality = ffmpeg.quality_delta(video, tmp_destination)
+
     tmp_destination.replace(destination)
 
     console.print()
@@ -617,6 +625,8 @@ def fix(
         f"  [green]rendered[/green] {destination}  "
         f"({elapsed_ms} ms, video {'copied' if program.video_stream_copied else 're-encoded'})"
     )
+    if quality is not None:
+        console.print(f"  [dim]SSIM {quality:.4f} against the source[/dim]")
 
     # Not every finding is fixed by a filter graph. Captions are repaired by
     # writing a file, and the word-level timings are already in hand.

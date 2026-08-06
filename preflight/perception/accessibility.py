@@ -36,6 +36,30 @@ WPM_LIMIT = 180.0
 CHAPTERS_REQUIRED_ABOVE_MS = 8 * 60 * 1000
 LONG_RUN_MS = 5 * 60 * 1000
 
+# Black and frozen frames share a sample rate with flash detection but need
+# neither its speed nor its 30fps resolution — a black gap or a stall lasts
+# whole seconds, not milliseconds, so 10fps is plenty and a quarter of the
+# transfer cost.
+FRAME_SAMPLE_FPS = 10
+
+# Measured on a constructed black gap: luminance drops to exactly 0.0 for
+# the duration of it, against ~123 for ordinary picture content on the same
+# 0-255 scale. 8.0 absorbs compression noise around true black with wide
+# margin either side.
+BLACK_LUMINANCE = 8.0
+BLACK_MIN_MS = 1_500
+
+# Measured on a real held frame (a moving pattern, frozen on its last frame):
+# frame-to-frame difference collapsed to 0.03-0.19 during the freeze against
+# 5.3-6.8 during ordinary motion — more than an order of magnitude apart, so
+# 1.0 sits with wide margin on both sides. The duration floor is generous
+# rather than tight: a static slide held for a few seconds is normal
+# presentation content, not a technical fault, and this detector cannot tell
+# the two apart from luminance alone — only duration buys real separation,
+# and even a long floor does not fully solve it. Said plainly in the finding.
+FROZEN_FRAME_DIFF = 1.0
+FROZEN_MIN_MS = 6_000
+
 
 def _clause(clause_id: str, title: str, section: str, text: str) -> PolicyRef:
     return PolicyRef(clauseId=clause_id, title=title, section=section, text=text)
@@ -83,6 +107,14 @@ def analyse(
         coverage -= 0.4
     elif flash["risk"] != "LOW":
         findings.append(_flash_finding(flash))
+
+    black_spans, black_log = _black_frame_spans(source)
+    log.extend(black_log)
+    findings.extend(_black_frame_findings(black_spans))
+
+    frozen_spans, frozen_log = _frozen_frame_spans(source)
+    log.extend(frozen_log)
+    findings.extend(_frozen_frame_findings(frozen_spans))
 
     if not has_captions:
         findings.append(_caption_finding(duration_ms, transcript))
@@ -159,6 +191,134 @@ def _flash_analysis(source: Path) -> tuple[dict[str, object] | None, list[str]]:
         f"photosensitivity: peak {result['max_flashes_per_second']} flashes/s "
         f"({result['risk']}) over {luminance.size} samples at {SAMPLE_FPS}fps"
     ]
+
+
+def _black_frame_spans(source: Path) -> tuple[list[tuple[int, int]], list[str]]:
+    try:
+        luminance = sig.luminance_series(source, fps=FRAME_SAMPLE_FPS)
+    except Exception as exc:  # noqa: BLE001 - degrade, never fail
+        return [], [f"black-frame analysis unavailable: {exc}"]
+    if luminance.size == 0:
+        return [], ["black-frame analysis produced no frames"]
+
+    spans = sig.spans_where(luminance < BLACK_LUMINANCE, 1000 / FRAME_SAMPLE_FPS, BLACK_MIN_MS)
+    return spans, [
+        f"black frames: {len(spans)} span(s) over {BLACK_MIN_MS / 1000:.1f}s"
+        if spans
+        else "no sustained black frames"
+    ]
+
+
+def _frozen_frame_spans(source: Path) -> tuple[list[tuple[int, int]], list[str]]:
+    try:
+        diff = sig.frame_diff_series(source, fps=FRAME_SAMPLE_FPS)
+    except Exception as exc:  # noqa: BLE001 - degrade, never fail
+        return [], [f"frozen-frame analysis unavailable: {exc}"]
+    if diff.size == 0:
+        return [], ["frozen-frame analysis produced no frames"]
+
+    # frame_diff_series is one shorter than luminance_series — diff[i] is the
+    # transition INTO frame i+1, so a run of near-zero diffs starting at
+    # index i is a freeze that set in at frame i+1, not frame i.
+    spans = sig.spans_where(
+        diff < FROZEN_FRAME_DIFF, 1000 / FRAME_SAMPLE_FPS, FROZEN_MIN_MS
+    )
+    spans = [(start + int(1000 / FRAME_SAMPLE_FPS), end + int(1000 / FRAME_SAMPLE_FPS))
+             for start, end in spans]
+    return spans, [
+        f"frozen frames: {len(spans)} span(s) over {FROZEN_MIN_MS / 1000:.0f}s"
+        if spans
+        else "no sustained frozen frames"
+    ]
+
+
+def _black_frame_findings(spans: list[tuple[int, int]]) -> list[Finding]:
+    findings: list[Finding] = []
+    for index, (start, end) in enumerate(spans[:5]):
+        seconds = (end - start) / 1000
+        findings.append(
+            Finding(
+                id=f"x_black_{index}",
+                clauseId="VID-01",
+                category="Accessibility",
+                title=f"{seconds:.1f}s of black frames",
+                description="Sustained black picture mid-programme — usually a bad "
+                "edit, a missing clip, or a render that failed to composite.",
+                startMs=start,
+                endMs=end,
+                severity="LOW" if seconds < 5 else "MEDIUM",
+                confidence=0.9,
+                modalities={"vision": 0.9},
+                evidence=Evidence(
+                    transcript=f"[mean luminance below {BLACK_LUMINANCE:.0f}/255 for "
+                    f"{seconds:.1f}s]"
+                ),
+                policy=_clause(
+                    "VID-01",
+                    "Black frames",
+                    "PREFLIGHT video ruleset § 4.1",
+                    "A sustained span with no picture — a black gap from a bad edit, a "
+                    "missing clip, or a render that failed to composite.",
+                ),
+                adversarial=Adversarial(
+                    charge=f"Mean luminance below {BLACK_LUMINANCE:.0f}/255 "
+                    f"continuously for {seconds:.1f}s.",
+                    rationale="10fps luminance series, the same measurement flash "
+                    "detection uses, at a threshold and duration tuned for a "
+                    "sustained gap rather than a transition.",
+                    confidence=0.9,
+                ),
+            )
+        )
+    return findings
+
+
+def _frozen_frame_findings(spans: list[tuple[int, int]]) -> list[Finding]:
+    findings: list[Finding] = []
+    for index, (start, end) in enumerate(spans[:5]):
+        seconds = (end - start) / 1000
+        findings.append(
+            Finding(
+                id=f"x_frozen_{index}",
+                clauseId="VID-02",
+                category="Accessibility",
+                title=f"{seconds:.1f}s of frozen video",
+                description="No frame-to-frame change for a sustained span — a "
+                "stalled screen recording or a capture that disconnected while "
+                "audio kept rolling. Can also be a legitimate static shot; "
+                "duration alone cannot fully tell the two apart.",
+                startMs=start,
+                endMs=end,
+                severity="LOW" if seconds < 15 else "MEDIUM",
+                confidence=0.75,
+                modalities={"vision": 0.75},
+                evidence=Evidence(
+                    transcript=f"[frame-to-frame difference below "
+                    f"{FROZEN_FRAME_DIFF:.1f} for {seconds:.1f}s]"
+                ),
+                policy=_clause(
+                    "VID-02",
+                    "Frozen frames",
+                    "PREFLIGHT video ruleset § 4.2",
+                    "A sustained span with no motion between frames — a stalled "
+                    "screen recording, a render that silently dropped frames, or a "
+                    "capture device that disconnected mid-record.",
+                ),
+                adversarial=Adversarial(
+                    charge=f"Mean frame-to-frame difference below "
+                    f"{FROZEN_FRAME_DIFF:.1f} continuously for {seconds:.1f}s.",
+                    rationale="Full downscaled frame compared to its predecessor, "
+                    "not just matching luminance averages — a static-average scene "
+                    "that is genuinely still moving reads differently from a real "
+                    "freeze at this resolution.",
+                    confidence=0.75,
+                    defense="A long static shot — a title card, a held slide — "
+                    "produces the same reading and is not itself a defect.",
+                    defense_strength=0.3,
+                ),
+            )
+        )
+    return findings
 
 
 def _flash_finding(flash: dict[str, object]) -> Finding:

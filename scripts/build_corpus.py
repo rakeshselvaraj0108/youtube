@@ -261,6 +261,71 @@ HOUSE_RULES: list[dict] = [
         span_note="File-scoped — measured across the whole track.",
     ),
     house(
+        file="AUD-05_phase.md",
+        clause_id="AUD-05",
+        title="Mono compatibility",
+        severity="LIMITING",
+        scope=(
+            "Correlation between the left and right channels. Content recorded "
+            "or mixed out of phase collapses toward silence when the two "
+            "channels are summed — which happens on a phone speaker, a laptop, "
+            "a single earbud, or any playback system that is not true stereo, "
+            "which is most of a video platform's audience most of the time."
+        ),
+        green=["Channels positively correlated — safe when summed to mono"],
+        yellow=["Correlation near zero — no consistent phase relationship"],
+        red=["Channels negatively correlated — audibly hollow or silent in mono"],
+        signals=[
+            "vs AUD-04 (channel balance): balance is a LEVEL difference between "
+            "channels; phase is a TIMING/POLARITY relationship. A file can fail "
+            "either independently of the other — balanced channels can still be "
+            "out of phase, and a dead channel has no phase relationship to measure.",
+        ],
+        fix="NONE",
+        span_note="File-scoped — measured across the whole track.",
+    ),
+    house(
+        file="VID-01_black_frames.md",
+        clause_id="VID-01",
+        title="Black frames",
+        severity="ADVISORY",
+        scope=(
+            "A sustained span with no picture — a black gap from a bad edit, a "
+            "missing clip, or a render that failed to composite."
+        ),
+        green=["No sustained black span outside a deliberate transition"],
+        yellow=["A black span long enough to read as a mistake"],
+        red=["Extended black where content was clearly intended"],
+        signals=[
+            "vs AUD-03 (dead air): this is the visual sibling of the same class "
+            "of editing accident, measured on the picture rather than the sound.",
+        ],
+        fix="NONE",
+        span_note="The black span itself.",
+    ),
+    house(
+        file="VID-02_frozen_frames.md",
+        clause_id="VID-02",
+        title="Frozen frames",
+        severity="LIMITING",
+        scope=(
+            "A sustained span with no motion between frames — a stalled screen "
+            "recording, a render that silently dropped frames, or a capture "
+            "device that disconnected mid-record while audio kept rolling."
+        ),
+        green=["No sustained freeze outside a deliberate still frame"],
+        yellow=["A freeze long enough to read as a technical fault"],
+        red=["Extended freeze — the upload is functionally broken for its "
+             "duration"],
+        signals=[
+            "A deliberate still frame under narration is short and usually "
+            "intentional; this clause is scoped to freezes long enough that a "
+            "viewer checks whether playback stalled.",
+        ],
+        fix="NONE",
+        span_note="The frozen span itself.",
+    ),
+    house(
         file="META-02_description.md",
         clause_id="META-02",
         title="Description depth",

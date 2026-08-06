@@ -140,9 +140,19 @@ class TestSubScores:
         assert dimension_for("META-01") == "metadata"
         assert dimension_for("ACC-01") == "accessibility"
         assert dimension_for("AUD-03") == "audio"
+        assert dimension_for("VID-02") == "accessibility"
 
     def test_unknown_clause_family_falls_back_to_policy(self):
         assert dimension_for("XX-99") == "policy"
+
+    def test_a_black_or_frozen_frame_finding_does_not_touch_policy(self):
+        """VID-* clauses share the retrieval SCOPES bug's exact failure mode:
+        an unregistered prefix silently defaults to "policy". A VID-02 finding
+        must dent "accessibility", the dimension its own findings.category
+        already claims it belongs to, and leave "policy" untouched."""
+        scores = sub_scores([finding(clause="VID-02", severity="LOW", confidence=0.75)])
+        assert scores["policy"] == 100.0
+        assert scores["accessibility"] < 100.0
 
     def test_no_findings_is_a_clean_sheet(self):
         assert all(v == 100.0 for v in sub_scores([]).values())

@@ -1,7 +1,7 @@
 {
   "version": "2026-08",
-  "corpus_hash": "45ce324c02c2baac8140c9dd8bde3837",
-  "clause_count": 28,
+  "corpus_hash": "574de32a43731085e1b35096a6384b95",
+  "clause_count": 31,
   "fetched_at": "2026-08-05",
   "sources": [
     "PREFLIGHT engineering ruleset",
@@ -11,7 +11,7 @@
     "https://www.w3.org/WAI/WCAG22/Understanding/three-flashes-or-below-threshold.html"
   ],
   "policy_clauses": 17,
-  "house_rules": 11,
+  "house_rules": 14,
   "note": "Two kinds of clause, distinguished by `kind`. `policy_restatement` entries are structured restatements in our own words of publicly published guidance \u2014 not authoritative, not verbatim, not affiliated with YouTube. `house_rule` entries are PREFLIGHT's own production thresholds \u2014 loudness targets, caption availability, tag hygiene \u2014 and are NOT platform policy. A finding cites the clause it was judged under, and the citation is worthless if a reader cannot tell whose rule it is.",
   "clauses": [
     {
@@ -273,6 +273,39 @@
       "title": "Channel balance",
       "severity_default": "LIMITING",
       "sha256": "31a69bff987a0484e613a5009fad02b7153c2d2e9cf5878be4073a26e6891eab",
+      "source_url": "PREFLIGHT engineering ruleset",
+      "fetched_at": "2026-08-05",
+      "derivation": "PREFLIGHT's own production rule, not a restatement of any platform policy",
+      "kind": "house_rule"
+    },
+    {
+      "clause_id": "AUD-05",
+      "file": "AUD-05_phase.md",
+      "title": "Mono compatibility",
+      "severity_default": "LIMITING",
+      "sha256": "b24228c484652b140931f4864ae57734a16940963b75defab8b3d04e3135c85d",
+      "source_url": "PREFLIGHT engineering ruleset",
+      "fetched_at": "2026-08-05",
+      "derivation": "PREFLIGHT's own production rule, not a restatement of any platform policy",
+      "kind": "house_rule"
+    },
+    {
+      "clause_id": "VID-01",
+      "file": "VID-01_black_frames.md",
+      "title": "Black frames",
+      "severity_default": "ADVISORY",
+      "sha256": "5d0d67bffc63b3438775d81ea8feb446ee1d0f43254da5eafab3d34846912f31",
+      "source_url": "PREFLIGHT engineering ruleset",
+      "fetched_at": "2026-08-05",
+      "derivation": "PREFLIGHT's own production rule, not a restatement of any platform policy",
+      "kind": "house_rule"
+    },
+    {
+      "clause_id": "VID-02",
+      "file": "VID-02_frozen_frames.md",
+      "title": "Frozen frames",
+      "severity_default": "LIMITING",
+      "sha256": "b1c202140875888712ab854d926b38eef767e14693c290d44c940278ab35f95a",
       "source_url": "PREFLIGHT engineering ruleset",
       "fetched_at": "2026-08-05",
       "derivation": "PREFLIGHT's own production rule, not a restatement of any platform policy",

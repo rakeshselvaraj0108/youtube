@@ -56,6 +56,52 @@ def dead_air_clip(tmp_path_factory) -> Path:
     return out
 
 
+class TestQualityDelta:
+    """SSIM between the source and the rendered output — 'the remediation
+    changed 0.4% of frames, SSIM 0.998' is the answer to the question a
+    creator actually has about an automated fix: will this wreck my video?"""
+
+    @pytest.fixture(scope="class")
+    def moving_clip(self, tmp_path_factory) -> Path:
+        out = tmp_path_factory.mktemp("ssim") / "moving.mp4"
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30:duration=1",
+                str(out),
+            ],
+            check=True, capture_output=True,
+        )
+        return out
+
+    @pytest.fixture(scope="class")
+    def blurred_clip(self, tmp_path_factory, moving_clip) -> Path:
+        out = tmp_path_factory.mktemp("ssim2") / "blurred.mp4"
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-i", str(moving_clip), "-vf", "boxblur=5",
+                "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+                str(out),
+            ],
+            check=True, capture_output=True,
+        )
+        return out
+
+    def test_a_file_compared_to_itself_is_perfect(self, moving_clip):
+        assert ffmpeg.quality_delta(moving_clip, moving_clip) == pytest.approx(1.0, abs=0.001)
+
+    def test_a_visibly_altered_file_scores_below_one(self, moving_clip, blurred_clip):
+        score = ffmpeg.quality_delta(moving_clip, blurred_clip)
+        assert score is not None
+        assert score < 0.95
+
+    def test_a_nonexistent_file_returns_none_rather_than_raising(self, moving_clip, tmp_path):
+        """A failed quality check must not undo a render that otherwise
+        succeeded and verified correctly on duration."""
+        assert ffmpeg.quality_delta(moving_clip, tmp_path / "does_not_exist.mp4") is None
+
+
 class TestFixApply:
     def test_apply_writes_the_real_destination(self, dead_air_clip, tmp_path):
         destination = tmp_path / "dead_air.safe.mp4"

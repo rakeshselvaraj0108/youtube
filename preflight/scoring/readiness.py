@@ -63,6 +63,14 @@ CLAUSE_DIMENSION: dict[str, str] = {
     "META": "metadata",
     "ACC": "accessibility",
     "AUD": "audio",
+    # Black/frozen frames are findings.category="Accessibility" and belong in
+    # the same sub-score for the same reason ACC-* does — no distinct "video"
+    # dimension exists in the report's five-way split, and inventing a sixth
+    # would mean touching W_DIM's weight redistribution, the TS SubScoreKey
+    # type, the schema and the UI's readiness bars for two clauses. Folding
+    # them into the dimension they already conceptually belong to is the
+    # complete, correct-scope fix.
+    "VID": "accessibility",
 }
 
 
