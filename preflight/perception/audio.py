@@ -62,10 +62,10 @@ def analyse(
         return AgentResult.failed(AGENT_ID, AGENT_NAME, f"could not decode audio: {exc}")
 
     mono = audio.mono
-    findings.extend(_loudness_findings(source, log))
-    findings.extend(_clipping_findings(audio, log))
+    findings.extend(_loudness_findings(source, duration_ms, log))
+    findings.extend(_clipping_findings(audio, duration_ms, log))
     findings.extend(_dead_air_findings(mono, audio.sample_rate, duration_ms, log))
-    findings.extend(_channel_findings(audio, log))
+    findings.extend(_channel_findings(audio, duration_ms, log))
     findings.extend(_music_bed_findings(mono, audio.sample_rate, log))
 
     if not findings:
@@ -82,7 +82,7 @@ def analyse(
     )
 
 
-def _loudness_findings(source: Path, log: list[str]) -> list[Finding]:
+def _loudness_findings(source: Path, duration_ms: int, log: list[str]) -> list[Finding]:
     measured = audio_io.loudness(source)
     if not measured:
         log.append("loudness measurement unavailable")
@@ -114,11 +114,26 @@ def _loudness_findings(source: Path, log: list[str]) -> list[Finding]:
                 )
             ),
             startMs=0,
-            endMs=0,
+            # File-scoped, like the caption finding — a proper span rather
+            # than the (0, 0) point this measured before, which made this
+            # finding invisible to `_is_file_scoped` (divides by a zero-width
+            # span) and to every band in `build_risk_bands` (a (0, 0) span
+            # overlaps nothing, including band 0, whose exclusion test is
+            # `endMs <= start`).
+            endMs=max(duration_ms, 1),
             severity="LOW" if abs(delta) < 6 else "MEDIUM",
             confidence=0.95,
             modalities={"audio": 0.95},
             evidence=Evidence(transcript="[file-scoped measurement · EBU R128]"),
+            # No suggestedFix. The mechanical repair is a full-file loudnorm
+            # pass, and none of the five remediation op kinds (MUTE, BLEEP,
+            # BLUR_REGION, REPLACE_AUDIO, CUT) express "adjust the overall
+            # level" — REPLACE_AUDIO swaps in a different track entirely,
+            # which would delete the narration this finding is measuring.
+            # A sixth op kind is a real, separately-scoped feature spanning
+            # this file, edl.py, codegen.py, the TS types, the JSON schema
+            # and the UI's op maps — not something to bolt on as a side
+            # effect of fixing this finding's span.
             policy=_clause(
                 "AUD-01",
                 "Loudness normalisation",
@@ -137,7 +152,7 @@ def _loudness_findings(source: Path, log: list[str]) -> list[Finding]:
     ]
 
 
-def _clipping_findings(audio: sig.Audio, log: list[str]) -> list[Finding]:
+def _clipping_findings(audio: sig.Audio, duration_ms: int, log: list[str]) -> list[Finding]:
     clipped = int(np.count_nonzero(np.abs(audio.samples) >= CLIP_THRESHOLD))
     total = int(audio.samples.size)
     if total == 0:
@@ -161,7 +176,7 @@ def _clipping_findings(audio: sig.Audio, log: list[str]) -> list[Finding]:
                 "that cannot be repaired after the fact."
             ),
             startMs=0,
-            endMs=0,
+            endMs=max(duration_ms, 1),
             severity="MEDIUM" if ratio > 1e-4 else "LOW",
             confidence=0.97,
             modalities={"audio": 0.97},
@@ -231,7 +246,7 @@ def _dead_air_findings(
     return findings
 
 
-def _channel_findings(audio: sig.Audio, log: list[str]) -> list[Finding]:
+def _channel_findings(audio: sig.Audio, duration_ms: int, log: list[str]) -> list[Finding]:
     """Dead-mic detection.
 
     One channel far quieter than the other means a microphone that was not
@@ -260,7 +275,7 @@ def _channel_findings(audio: sig.Audio, log: list[str]) -> list[Finding]:
             description="Consistent with a microphone that was not recording. Half the "
             "audience hears silence.",
             startMs=0,
-            endMs=0,
+            endMs=max(duration_ms, 1),
             severity="HIGH",
             confidence=0.92,
             modalities={"audio": 0.92},
