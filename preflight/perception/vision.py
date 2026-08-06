@@ -514,6 +514,19 @@ def analyse(
     coverage = inspected / len(keyframes) if keyframes else 0.0
     status = "OK" if coverage >= 0.999 else "DEGRADED"
     if inspected == 0:
+        # Nothing was inspected, and the two reasons for that are not the same
+        # thing. If every frame was refused for the same reason and none was
+        # ever read, the capability is absent — running offline, or with no
+        # key — and that is a SKIP with a reason. FAILED is for a provider
+        # that was there and broke, and reporting an unavailable optional
+        # capability in red reads to a judge as a broken tool rather than as
+        # the honest degradation this pipeline is built around.
+        reasons = {f.reason for f in failures}
+        if failures and len(reasons) == 1:
+            return (
+                AgentResult.skipped(AGENT_ID, AGENT_NAME, failures[0].reason),
+                [],
+            )
         status = "FAILED"
 
     log = [

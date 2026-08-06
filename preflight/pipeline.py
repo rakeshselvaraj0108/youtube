@@ -24,9 +24,11 @@ from preflight.chunking import Window, build_windows
 from preflight.config import Settings
 from preflight.ingest.pipeline import Ingested, ingest
 from preflight.models import AgentResult, Finding
-from preflight.perception import accessibility, audio, metadata
+from preflight.perception import accessibility, audio, audio_intel, metadata, ocr, vision
 from preflight.perception import asr as asr_mod
+from preflight.perception import speech_intel
 from preflight.perception.asr import Transcript
+from preflight.providers.registry import Registry
 from preflight.policy.corpus import Corpus, load_corpus
 from preflight.policy.index import build_scoped_indexes
 from preflight.scoring.fusion import apply_fusion
@@ -78,6 +80,8 @@ class PipelineResult:
     corpus: Corpus | None = None
     retrieval_backend: str = "none"
     fusion_log: list[str] = field(default_factory=list)
+    visual_tracks: list = field(default_factory=list)
+    ocr_items: list = field(default_factory=list)
 
     @property
     def sub_scores(self) -> dict[str, float]:
@@ -170,9 +174,7 @@ def run_perception(
     audio_agent = _guard(
         "audio",
         "Audio Agent",
-        lambda: audio.analyse(
-            ingested.fingerprint_wav, source, ingested.meta.durationMs
-        ),
+        lambda: _audio(source, ingested),
     )
 
     access_agent = _guard(
@@ -186,6 +188,16 @@ def run_perception(
         "Metadata Agent",
         lambda: metadata.analyse(source, ingested.meta.durationMs, transcript),
     )
+
+    # Vision and OCR carry 35% of the analysis surface between them. Both
+    # resolve their own capability, and both report SKIPPED with a reason
+    # rather than failing when it is unavailable — which is the whole point of
+    # coverage being reported instead of assumed.
+    registry = _registry(settings)
+    flagged = _flagged_spans(speech_agent)
+
+    vision_agent, tracks = _vision(ingested, registry, flagged)
+    ocr_agent, ocr_report = _ocr(ingested, registry, transcript)
 
     # Policy grounding + adversarial adjudication.
     windows = build_windows(
@@ -201,7 +213,9 @@ def run_perception(
         orchestrator,
         ingest_agent,
         speech_agent,
+        vision_agent,
         audio_agent,
+        ocr_agent,
         access_agent,
         meta_agent,
         policy_agent,
@@ -237,6 +251,8 @@ def run_perception(
         corpus=corpus,
         retrieval_backend=backend,
         fusion_log=fusion_log,
+        visual_tracks=tracks,
+        ocr_items=list(ocr_report.items),
     )
 
 
@@ -279,6 +295,122 @@ def _policy(
         return agent
 
     return _guard("policy", "Policy Agent", run), corpus, backend
+
+
+def _registry(settings: Settings | None) -> Registry | None:
+    """One registry for the run, or none if it cannot be constructed.
+
+    Built here rather than inside each agent because resolution is the
+    expensive part — probing for tesseract, checking a key's shape, deciding
+    whether Qdrant answers — and doing it twice would double the startup cost
+    to reach the same answer. Agents receive it and ask for capabilities; they
+    still never see a credential.
+    """
+    try:
+        return Registry(offline=bool(settings and settings.offline))
+    except Exception:  # noqa: BLE001 - a registry that cannot resolve is a skip
+        return None
+
+
+def _flagged_spans(speech_agent: AgentResult) -> list[tuple[int, int]]:
+    """Spans the text layer already found something in.
+
+    Vision pays per frame, so the frames worth paying for are the ones another
+    modality has pointed at, plus a uniform baseline. Passing these through is
+    what turns A03's frame gating from a claim into a saving.
+    """
+    return [
+        (f.startMs, f.endMs)
+        for f in speech_agent.findings
+        if f.endMs > f.startMs
+    ]
+
+
+def _audio(source: Path, ingested: Ingested) -> AgentResult:
+    """A04, both tiers.
+
+    `audio.analyse` produces the findings — loudness, clipping, dead air, a
+    dead channel, a music bed. `audio_intel.analyse` produces the acoustic
+    evidence underneath them: segmentation, transients, hum, tempo, and the
+    ducking measurement that says whether a bed was placed on a timeline or
+    picked up in the room. One agent node in the topology, so the second tier
+    folds its artifacts and log into the first rather than inventing a
+    thirteenth agent the roster does not declare.
+    """
+    result = audio.analyse(ingested.fingerprint_wav, source, ingested.meta.durationMs)
+    if result.status in {"SKIPPED", "FAILED"}:
+        return result
+
+    intel, events, segments = audio_intel.analyse(ingested.fingerprint_wav, source)
+    if intel.status != "OK":
+        result.log.append(f"acoustic analysis unavailable: {intel.error or intel.status}")
+        return result
+
+    result.artifacts.update(
+        {
+            "acoustic_events": intel.artifacts.get("events", []),
+            "segments": intel.artifacts.get("segments", []),
+            "quality": intel.artifacts.get("quality", {}),
+            "unresolvable_without_classifier": intel.artifacts.get(
+                "unresolvable_without_classifier", []
+            ),
+        }
+    )
+    result.log.extend(intel.log)
+    result.elapsed_ms += intel.elapsed_ms
+    return result
+
+
+def _vision(
+    ingested: Ingested,
+    registry: Registry | None,
+    flagged: list[tuple[int, int]],
+) -> tuple[AgentResult, list[vision.Track]]:
+    def run() -> AgentResult:
+        agent, tracks = vision.analyse(
+            ingested.keyframes, registry, flagged_spans=flagged
+        )
+        run.tracks = tracks  # type: ignore[attr-defined]
+        return agent
+
+    run.tracks = []  # type: ignore[attr-defined]
+    agent = _guard("vision", "Vision Agent", run)
+    return agent, list(getattr(run, "tracks", []))
+
+
+def _ocr(
+    ingested: Ingested,
+    registry: Registry | None,
+    transcript: Transcript | None,
+) -> tuple[AgentResult, ocr.OcrReport]:
+    def run() -> AgentResult:
+        agent, report = ocr.analyse(
+            ingested.keyframes,
+            registry,
+            duration_ms=ingested.meta.durationMs,
+            transcript=_transcript_segments(transcript),
+        )
+        run.report = report  # type: ignore[attr-defined]
+        return agent
+
+    run.report = ocr.OcrReport()  # type: ignore[attr-defined]
+    agent = _guard("ocr", "OCR Agent", run)
+    return agent, getattr(run, "report", ocr.OcrReport())
+
+
+def _transcript_segments(transcript: Transcript | None) -> list[dict] | None:
+    """Transcript in the shape A05's caption correlation expects."""
+    if transcript is None:
+        return None
+    segments = getattr(transcript, "segments", None) or []
+    return [
+        {
+            "start_ms": int(getattr(s, "start_ms", getattr(s, "startMs", 0))),
+            "end_ms": int(getattr(s, "end_ms", getattr(s, "endMs", 0))),
+            "text": str(getattr(s, "text", "")),
+        }
+        for s in segments
+    ]
 
 
 def _speech(

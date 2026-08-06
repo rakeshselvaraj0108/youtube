@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import wave
 from pathlib import Path
 
 import numpy as np
 import pytest
 
+from preflight import ffmpeg
 from preflight.models import AgentResult, Evidence
 from preflight.perception import metadata, signal as sig
 from preflight.perception.accessibility import (
@@ -314,3 +316,87 @@ class TestCoverage:
 
     def test_no_agents_at_all_is_zero(self):
         assert compute_coverage([]) == pytest.approx(0.0)
+
+
+# Stages the pipeline composes from other agents' output rather than
+# invoking as a stage of their own.
+COMPOSED_STAGES = {"orchestrator", "score", "remedy", "report"}
+
+
+@pytest.fixture(scope="module")
+def wired_run(tmp_path_factory):
+    """One real end-to-end run of the perception pipeline.
+
+    Offline, always. A suite that reaches a hosted model is slow,
+    non-deterministic and spends the user's quota to assert something about
+    wiring — and it hangs on a rate limit, which is how this was found.
+    """
+    from preflight import cas
+    from preflight.config import Settings
+    from preflight.pipeline import run_perception
+
+    media = tmp_path_factory.mktemp("media")
+    clip = media / "wired.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30:duration=3",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=3",
+            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-shortest", str(clip),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return run_perception(
+        clip,
+        cas.Store(media / "cas"),
+        skip_speech=True,
+        settings=Settings.load(offline=True),
+    )
+
+
+@pytest.mark.skipif(not ffmpeg.available(), reason="ffmpeg is not installed")
+class TestEveryWeightedAgentActuallyRuns:
+    """A weight in SURFACE_WEIGHT is a promise that the agent runs.
+
+    Vision and OCR carried 35% of the analysis surface between them while
+    `run_perception` called neither. Coverage reported that honestly — the
+    pipeline was not lying about what it saw — but a third of the surface was
+    dark on every run, and nothing in the suite noticed, because both modules
+    had their own passing tests and no caller.
+
+    A unit test cannot catch that shape of bug. Only running the thing can.
+    """
+
+    def test_every_weighted_agent_appears_in_the_result(self, wired_run):
+        result = wired_run
+        ran = {agent.agent_id for agent in result.agents}
+        for agent_id, weight in SURFACE_WEIGHT.items():
+            if weight == 0.0 or agent_id in COMPOSED_STAGES:
+                continue
+            assert agent_id in ran, (
+                f"{agent_id} carries {weight:.0%} of the analysis surface "
+                "but the pipeline never ran it"
+            )
+
+    def test_no_agent_reports_an_uncaught_crash(self, wired_run):
+        for agent in wired_run.agents:
+            assert "Traceback" not in (agent.error or "")
+
+    def test_the_acoustic_tier_reaches_the_audio_agent(self, wired_run):
+        """A04's second tier folds into the same node rather than inventing a
+        thirteenth agent the roster does not declare."""
+        audio_agent = wired_run.agent("audio")
+        assert audio_agent is not None
+        if audio_agent.status == "OK":
+            assert "segments" in audio_agent.artifacts
+
+    def test_an_absent_optional_provider_skips_rather_than_failing(self, wired_run):
+        """Offline with no key is the default experience for anyone cloning
+        this repo. Nothing in that run should read as broken."""
+        for agent in wired_run.agents:
+            assert agent.status != "FAILED", f"{agent.agent_id}: {agent.error}"
+
+    def test_coverage_is_a_real_number_between_zero_and_one(self, wired_run):
+        assert 0.0 <= wired_run.coverage <= 1.0

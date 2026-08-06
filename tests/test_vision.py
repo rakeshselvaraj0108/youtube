@@ -37,6 +37,32 @@ def obs(label: str, ts_ms: int, confidence: float = 0.9, category: str = "weapon
     return Observation(label=label, category=category, confidence=confidence, ts_ms=ts_ms)
 
 
+class _Refused:
+    """A provider result that says no, with a reason."""
+
+    ok = False
+    value = None
+    calls = 0
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+
+    def __bool__(self) -> bool:
+        return False
+
+
+@pytest.fixture
+def readable_frames(tmp_path) -> list[Keyframe]:
+    """Frames backed by real bytes, so encoding succeeds and the provider is
+    genuinely the thing being tested."""
+    out = []
+    for index, ts_ms in enumerate((1000, 2000)):
+        path = tmp_path / f"f{index:05d}.jpg"
+        path.write_bytes(b"\xff\xd8\xff\xe0not-a-real-jpeg-but-readable")
+        out.append(Keyframe(index=index, ts_ms=ts_ms, path=path))
+    return out
+
+
 class TestVocabularyContainment:
     """The closed vocabulary is what stops a verdict entering as an observation."""
 
@@ -316,6 +342,42 @@ class TestAgentContract:
         assert result.status == "SKIPPED"
         assert "vision.describe" in (result.error or "")
         assert tracks == []
+
+    def test_a_unanimously_unavailable_provider_skips_rather_than_fails(
+        self, readable_frames
+    ):
+        """Running offline or without a key is not a broken tool.
+
+        Every frame refused for the same reason means the capability was never
+        there. Reporting that as FAILED puts a red row in front of a judge for
+        an optional provider that was simply absent, which is the opposite of
+        the honest degradation this pipeline is built around.
+        """
+
+        class Refusing:
+            def invoke(self, capability, **kwargs):
+                return _Refused("nvidia: skipped (offline)")
+
+        result, tracks = analyse(readable_frames, Refusing())
+        assert result.status == "SKIPPED"
+        assert "offline" in (result.error or "")
+        assert tracks == []
+
+    def test_a_provider_that_breaks_differently_each_time_still_fails(
+        self, readable_frames
+    ):
+        """Distinct reasons mean a provider that was there and misbehaved."""
+
+        class Flaky:
+            def __init__(self):
+                self.n = 0
+
+            def invoke(self, capability, **kwargs):
+                self.n += 1
+                return _Refused(f"transport error {self.n}")
+
+        result, _ = analyse(readable_frames, Flaky())
+        assert result.status == "FAILED"
 
     def test_output_is_json_only(self):
         payload = to_json(build_tracks([obs("knife", 1000)]))

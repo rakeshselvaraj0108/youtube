@@ -96,9 +96,24 @@ def ingest(
 
     frames_mod.extract_poster(source, poster, meta.durationMs)
     keyframes = frames_mod.extract_keyframes(
-        source, frame_dir, threshold=scene_threshold, max_frames=max_frames
+        source,
+        frame_dir,
+        threshold=scene_threshold,
+        max_frames=max_frames,
+        duration_ms=meta.durationMs,
     )
-    log.append(f"scene detection: {len(keyframes)} keyframes at threshold {scene_threshold}")
+    if frames_mod.sampled_uniformly(keyframes):
+        # Worth saying out loud. A single-take talking head has no cuts to
+        # detect, and a reader should know the frames came from a clock rather
+        # than from the picture changing.
+        log.append(
+            f"no scene cuts above {scene_threshold} — "
+            f"sampled {len(keyframes)} keyframes uniformly"
+        )
+    else:
+        log.append(
+            f"scene detection: {len(keyframes)} keyframes at threshold {scene_threshold}"
+        )
 
     entry.write_json("meta.json", meta.to_json())
     entry.write_json(

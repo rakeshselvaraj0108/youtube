@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from preflight import cas, ffmpeg
+from preflight.ingest import frames as frames_mod
 from preflight.ingest.frames import frames_in_span, nearest_frame
 from preflight.ingest.pipeline import ingest
 from preflight.ingest.probe import UnsupportedInput, probe_video
@@ -145,6 +146,73 @@ class TestIngest:
     def test_frame_cap_is_respected(self, clip, tmp_path):
         result = ingest(clip, cas.Store(tmp_path), max_frames=1, scene_threshold=0.05)
         assert len(result.keyframes) <= 1
+
+
+@pytest.fixture(scope="module")
+def cutless_clip(tmp_path_factory) -> Path:
+    """8s of a single locked-off shot — no cuts anywhere in it.
+
+    A single-take talking head, a screencast and a static-camera piece all
+    look like this to a scene detector, and all three are ordinary YouTube
+    formats. This fixture exists because that case took the whole run down.
+    """
+    out = tmp_path_factory.mktemp("media") / "cutless.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "color=c=steelblue:size=320x180:rate=30:duration=8",
+            "-f", "lavfi", "-i", "sine=frequency=330:duration=8",
+            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-shortest", str(out),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return out
+
+
+class TestCutlessVideo:
+    """A video with no scene cuts must still be analysable.
+
+    ffmpeg 9 fails the extraction command outright when the filter chain
+    passes zero frames to the encoder — "Could not open encoder before EOF" —
+    rather than writing nothing and exiting clean. That turned an ordinary
+    format into a crash, and even without the crash, zero keyframes leaves
+    vision and OCR with nothing to look at: 35% of the analysis surface dark
+    for exactly the videos least likely to have a problem visible at a cut.
+    """
+
+    def test_a_cutless_video_still_yields_keyframes(self, cutless_clip, tmp_path):
+        frames = frames_mod.extract_keyframes(
+            cutless_clip, tmp_path / "frames", duration_ms=8000
+        )
+        assert frames
+
+    def test_those_frames_are_declared_as_uniformly_sampled(self, cutless_clip, tmp_path):
+        """A frame at a cut and a frame at a clock tick are not equally
+        informative, and the report says which it has."""
+        frames = frames_mod.extract_keyframes(
+            cutless_clip, tmp_path / "frames", duration_ms=8000
+        )
+        assert frames_mod.sampled_uniformly(frames) is True
+
+    def test_they_spread_across_the_runtime(self, cutless_clip, tmp_path):
+        frames = frames_mod.extract_keyframes(
+            cutless_clip, tmp_path / "frames", duration_ms=8000
+        )
+        assert frames[0].ts_ms < 2000
+        assert frames[-1].ts_ms > 5000
+
+    def test_a_cut_bearing_video_still_uses_scene_detection(self, clip, tmp_path):
+        frames = frames_mod.extract_keyframes(
+            clip, tmp_path / "frames", duration_ms=12_000
+        )
+        assert frames_mod.sampled_uniformly(frames) is False
+
+    def test_the_full_ingest_of_a_cutless_video_succeeds(self, cutless_clip, tmp_path):
+        result = ingest(cutless_clip, cas.Store(tmp_path))
+        assert result.keyframes
+        assert any("uniformly" in line for line in result.log)
 
 
 class TestFrameLookup:
