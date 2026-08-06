@@ -160,16 +160,30 @@ def check(
         None, "--emit-fixture", help="Write this run as the UI's demo fixture"
     ),
     offline: bool = typer.Option(False, "--offline", help="Never touch the network"),
+    strategy: str = typer.Option(
+        "",
+        "--strategy",
+        help="conservative|balanced|aggressive — the remediation preview in the "
+        "report trades viewer impact for risk reduction. Default trusts each "
+        "finding's own suggested fix directly.",
+    ),
 ) -> None:
-    """Analyse a video and print findings.
+    """Analyse a video, print findings, and score it against the full triad.
 
-    Phase 2 runs ingest plus the offline perception agents. Retrieval, the
-    adversarial triad and scoring arrive in later phases; the exit code is not
-    yet a monetization verdict.
+    Ingest, every perception agent, retrieval, the adversarial triad and
+    scoring all run in this one pass — the exit code is the readiness
+    verdict: 0 when the video is ready to publish, 1 otherwise.
     """
     if not ffmpeg.available():
         console.print("[red]ffmpeg and ffprobe are required.[/red]")
         raise typer.Exit(EXIT_UPSTREAM)
+
+    if strategy and strategy not in {"conservative", "balanced", "aggressive"}:
+        console.print(
+            f"[red]--strategy must be conservative, balanced or aggressive, "
+            f"not {strategy!r}[/red]"
+        )
+        raise typer.Exit(EXIT_INPUT)
 
     store = cas.Store(cache_dir)
     settings = Settings.load(offline=True) if offline else Settings.load()
@@ -330,14 +344,20 @@ def check(
         formats.add("json")
 
     if formats or emit_fixture is not None:
-        _emit(result, formats, out, emit_fixture, settings)
+        _emit(result, formats, out, emit_fixture, settings, strategy=strategy or None)
 
     console.print()
     raise typer.Exit(EXIT_OK if readiness.verdict in PASSING else EXIT_FINDINGS)
 
 
 def _emit(
-    result, formats: set[str], out: Path, fixture: Path | None, settings: Settings
+    result,
+    formats: set[str],
+    out: Path,
+    fixture: Path | None,
+    settings: Settings,
+    *,
+    strategy: str | None = None,
 ) -> None:
     """Write the requested artifacts. Validates before writing anything.
 
@@ -349,6 +369,7 @@ def _emit(
         result,
         policy_version=result.corpus.version if result.corpus else "unknown",
         embed_media="html" in formats or fixture is not None,
+        strategy=strategy,
     )
 
     schema_path = Path("schema/analysis-report.schema.json")

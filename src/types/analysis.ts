@@ -167,6 +167,13 @@ export interface Remediation {
   ffmpegCommand: string;
   renderMs: number;
   videoStreamCopied: boolean;
+  /** Strategy applied, if any — conservative|balanced|aggressive. Absent means
+   * each finding's own suggested fix was trusted directly. */
+  strategy?: string;
+  /** Human-readable compiler decisions, in order — snap-to-word, coalesce,
+   * cut-budget demotions, and (when a strategy is set) "chose BLEEP over CUT —
+   * same risk reduction, 0.65 less viewer impact" style overrides. */
+  log: string[];
 }
 
 export interface AnalysisReport {

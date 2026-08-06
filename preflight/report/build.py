@@ -131,6 +131,7 @@ def build_report(
     policy_version: str = "unknown",
     embed_media: bool = True,
     render_ms: int = 0,
+    strategy: str | None = None,
 ) -> ReportBundle:
     meta = result.ingested.meta
     findings = result.findings
@@ -140,7 +141,7 @@ def build_report(
         attach_evidence_frames(findings, result.ingested.keyframes, duration_ms)
 
     edl = compile_edl(
-        findings, str(result.source), duration_ms, result.transcript
+        findings, str(result.source), duration_ms, result.transcript, strategy=strategy
     )
     safe_name = f"{Path(result.source).stem}.safe.mp4"
     program = build_program(edl, result.source, safe_name)
@@ -196,6 +197,8 @@ def build_report(
             "ffmpegCommand": program.pretty(),
             "renderMs": int(render_ms),
             "videoStreamCopied": program.video_stream_copied,
+            **({"strategy": strategy} if strategy else {}),
+            "log": list(edl.log),
         },
         "agents": agents,
     }

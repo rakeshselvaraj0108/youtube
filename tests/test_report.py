@@ -93,6 +93,7 @@ def report() -> dict:
             "ffmpegCommand": "ffmpeg -y -i demo.mp4 -c copy out.mp4",
             "renderMs": 4200,
             "videoStreamCopied": True,
+            "log": [],
         },
         "agents": [
             {

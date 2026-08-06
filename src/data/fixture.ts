@@ -825,6 +825,7 @@ export const beforeReport: AnalysisReport = {
     ffmpegCommand: compiled.command,
     renderMs: 4_200,
     videoStreamCopied: compiled.videoStreamCopied,
+    log: [],
   },
   agents,
 };
@@ -848,7 +849,7 @@ export const afterReport: AnalysisReport = {
   findings: afterFindings,
   breakdown: buildBreakdown(afterFindings),
   // The safe render carries no outstanding ops — the plan has already been applied.
-  remediation: { ops: [], ffmpegCommand: '', renderMs: 0, videoStreamCopied: false },
+  remediation: { ops: [], ffmpegCommand: '', renderMs: 0, videoStreamCopied: false, log: [] },
 };
 
 export const DEMO_DURATION_MS = DURATION_MS;

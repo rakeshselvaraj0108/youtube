@@ -422,5 +422,38 @@ class TestEveryWeightedAgentActuallyRuns:
         for agent in wired_run.agents:
             assert agent.status != "FAILED", f"{agent.agent_id}: {agent.error}"
 
+    def test_the_report_carries_a_strategy_when_one_was_requested(self, wired_run):
+        """`--strategy` reached `preflight fix` when it was built; it did not
+        reach `preflight check`, the command someone actually runs to see a
+        report, until the two were wired together. This builds the same
+        report `check --format json` writes and validates it against the
+        real schema — the same contract the UI reads."""
+        import json as json_mod
+        from pathlib import Path as PathAlias
+
+        from preflight.report.build import build_report
+
+        bundle = build_report(wired_run, strategy="conservative")
+        assert bundle.report["remediation"]["strategy"] == "conservative"
+        assert isinstance(bundle.report["remediation"]["log"], list)
+
+        schema_path = PathAlias("schema/analysis-report.schema.json")
+        if schema_path.is_file():
+            import jsonschema
+
+            jsonschema.validate(
+                bundle.report, json_mod.loads(schema_path.read_text(encoding="utf-8"))
+            )
+
+    def test_the_report_omits_strategy_when_none_was_requested(self, wired_run):
+        """Backward compatible: no strategy means the field is simply absent,
+        not present-and-null — every existing consumer of this report shape
+        that never heard of strategies keeps working unchanged."""
+        from preflight.report.build import build_report
+
+        bundle = build_report(wired_run)
+        assert "strategy" not in bundle.report["remediation"]
+        assert "log" in bundle.report["remediation"]
+
     def test_coverage_is_a_real_number_between_zero_and_one(self, wired_run):
         assert 0.0 <= wired_run.coverage <= 1.0
