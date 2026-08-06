@@ -295,13 +295,20 @@ def check(
         f"elapsed [bold]{sum(a.elapsed_ms for a in result.agents)} ms[/bold]"
     )
     if coverage < 0.95:
-        # Distinguish an agent that ran badly from one that does not exist yet.
-        # Reporting both as "degraded" would misstate why coverage is short.
+        # Distinguish an agent that ran badly from one that never ran at all.
+        # Every agent SURFACE_WEIGHT carries is unconditionally invoked by
+        # run_perception (asserted by
+        # TestEveryWeightedAgentActuallyRuns), so "missing" here is a wiring
+        # regression, not a feature that is legitimately still pending — the
+        # message says so rather than the misleading "not yet implemented"
+        # this used to print for A12 and the report writer, both of which
+        # were fully built and simply run from different commands than
+        # `check`.
         impaired = [
             a.name for a in result.agents if a.status in {"SKIPPED", "FAILED", "DEGRADED"}
         ]
         ran = {a.agent_id for a in result.agents}
-        unbuilt = [
+        missing = [
             agent_id
             for agent_id, weight in SURFACE_WEIGHT.items()
             if weight > 0 and agent_id not in ran
@@ -309,8 +316,10 @@ def check(
         console.print(f"  [yellow]PARTIAL ANALYSIS[/yellow] — {coverage * 100:.0f}% coverage")
         if impaired:
             console.print(f"    impaired: {', '.join(impaired)}")
-        if unbuilt:
-            console.print(f"    not yet implemented: {', '.join(sorted(unbuilt))}")
+        if missing:
+            console.print(
+                f"    [red]did not run (wiring bug):[/red] {', '.join(sorted(missing))}"
+            )
     # Emission.
     formats = {f.strip().lower() for f in fmt.split(",") if f.strip()}
     if html:

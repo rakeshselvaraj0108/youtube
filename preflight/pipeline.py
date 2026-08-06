@@ -53,6 +53,16 @@ TOPOLOGY: dict[str, tuple[int, list[str]]] = {
 # Share of the analysis surface each agent is responsible for. Coverage is a
 # weighted mean over these, so a degraded vision agent costs far more than a
 # degraded report writer.
+#
+# Deliberately does NOT include "remedy" or "report", even though both are
+# real TOPOLOGY stages a judge sees in the agent-flow diagram. `run_perception`
+# — everything `compute_coverage` is measuring — never populates either: A12
+# runs from `preflight fix`, and the report is written by `_emit` after this
+# score is already computed. Carrying them here with non-zero weight meant
+# `check` could never structurally report 100% coverage, even for a video
+# where every applicable agent succeeded — 3% of the denominator was
+# permanently unreachable. Their weight folds into "score", the actual
+# synthesis stage of what `check` produces.
 SURFACE_WEIGHT: dict[str, float] = {
     "orchestrator": 0.0,
     "ingest": 0.05,
@@ -63,9 +73,7 @@ SURFACE_WEIGHT: dict[str, float] = {
     "access": 0.06,
     "meta": 0.04,
     "policy": 0.10,
-    "score": 0.02,
-    "remedy": 0.02,
-    "report": 0.01,
+    "score": 0.05,
 }
 
 

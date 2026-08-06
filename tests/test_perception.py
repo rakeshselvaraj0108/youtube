@@ -317,6 +317,30 @@ class TestCoverage:
     def test_no_agents_at_all_is_zero(self):
         assert compute_coverage([]) == pytest.approx(0.0)
 
+    def test_weight_table_holds_no_agent_run_perception_cannot_produce(self):
+        """`test_all_agents_at_full_coverage_is_one` above is arithmetic on a
+        SYNTHETIC agent list built directly from SURFACE_WEIGHT's own keys —
+        it would pass even if SURFACE_WEIGHT listed an agent id nothing ever
+        produces, because it never asks whether that id is real. That is
+        exactly what happened: "remedy" and "report" carried weight while
+        `run_perception` never populated either, so real coverage was capped
+        at 97% forever, on every run, regardless of what actually succeeded.
+
+        The real ids come from `TOPOLOGY`, which lists every stage across the
+        full pipeline including the two that run from other commands
+        (`preflight fix` for remedy, `_emit` for report). Excluding those two
+        explicitly, this asserts SURFACE_WEIGHT's keys are exactly the
+        run_perception-producible ones — no more, no less.
+        """
+        from preflight.pipeline import TOPOLOGY
+
+        outside_run_perception = {"remedy", "report"}
+        producible = set(TOPOLOGY) - outside_run_perception
+        assert set(SURFACE_WEIGHT) == producible
+
+    def test_coverage_weights_sum_to_exactly_one(self):
+        assert sum(SURFACE_WEIGHT.values()) == pytest.approx(1.0, abs=1e-9)
+
 
 # Stages the pipeline composes from other agents' output rather than
 # invoking as a stage of their own.

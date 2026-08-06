@@ -180,11 +180,28 @@ class TestImplementationConformance:
             assert agent_id in roster.agents
             assert pipeline_id in TOPOLOGY, f"{agent_id} -> {pipeline_id}"
 
+    # TOPOLOGY models all eight conceptual pipeline stages, for the UI's
+    # agent-flow diagram and the report builder's tier lookup. SURFACE_WEIGHT
+    # is narrower on purpose: it is the denominator of `compute_coverage`,
+    # which measures what `run_perception` itself produced. "remedy" runs
+    # from `preflight fix`, not `check`, and "report" is written by `_emit`
+    # after the score this weight table feeds into is already computed —
+    # neither is ever in `result.agents`. Carrying them in SURFACE_WEIGHT
+    # anyway made 100% coverage structurally unreachable from `check`, even
+    # for a video where every applicable agent succeeded.
+    OUTSIDE_RUN_PERCEPTION = {"remedy", "report"}
+
     def test_pipeline_agents_carry_a_coverage_weight(self):
-        """An agent with no weight contributes nothing to coverage, which means
-        it could fail silently without the report noticing."""
+        """An agent `run_perception` can actually populate must carry a
+        coverage weight, or it could fail silently without the report
+        noticing. Stages outside `run_perception` are the declared exception —
+        they cannot go missing from a `check` run because they were never
+        going to be there."""
         for pipeline_id in TOPOLOGY:
-            assert pipeline_id in SURFACE_WEIGHT, pipeline_id
+            if pipeline_id in self.OUTSIDE_RUN_PERCEPTION:
+                assert pipeline_id not in SURFACE_WEIGHT, pipeline_id
+            else:
+                assert pipeline_id in SURFACE_WEIGHT, pipeline_id
 
     def test_coverage_weights_sum_to_one(self):
         assert sum(SURFACE_WEIGHT.values()) == pytest.approx(1.0)
