@@ -55,6 +55,31 @@ def run(args: list[str]) -> None:
         raise RuntimeError(f"ffmpeg failed:\n{result.stderr[-800:]}")
 
 
+def measure_lufs(path: Path) -> float | None:
+    """Integrated loudness of a rendered file, via the same measurement the
+    detector itself uses — so the correction pass and the thing it is
+    correcting for agree on what 'measured' means."""
+    import json
+    import re
+
+    result = subprocess.run(
+        [
+            FFMPEG, "-hide_banner", "-nostats", "-i", str(path),
+            "-af", "loudnorm=I=-14:TP=-1.0:LRA=11:print_format=json",
+            "-f", "null", "-",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    match = re.search(r"\{[^{}]*\"input_i\"[^{}]*\}", result.stderr, re.DOTALL)
+    if not match:
+        return None
+    try:
+        return float(json.loads(match.group(0))["input_i"])
+    except (ValueError, KeyError, json.JSONDecodeError):
+        return None
+
+
 def tts(text: str, out: Path) -> bool:
     """Platform text-to-speech. Windows SAPI, macOS say, espeak-ng elsewhere."""
     system = platform.system()
@@ -232,7 +257,13 @@ def build_audio(spec: dict, voice: Path, out: Path) -> None:
                else "stereo|c0=0*c1|c1=c1")
         fc += f";[a]aformat=channel_layouts=stereo,pan={pan}[d]"
     elif kind == "hot":
-        fc += f";[a]volume={defect.get('gain_db', 12)}dB,alimiter=limit=0.999[d]"
+        # A limiter caps peaks, not integrated loudness, so the boost that
+        # actually reaches the detector is well below the nominal gain — real
+        # TTS narration sits near -20 LUFS baseline, and +12dB measured -12.4
+        # against a -14+-2 target, INSIDE tolerance. The clip built to be the
+        # violation didn't violate. +24dB reliably lands a few LUFS clear of
+        # the -12 boundary rather than a fraction of a dB inside it.
+        fc += f";[a]volume={defect.get('gain_db', 24)}dB,alimiter=limit=0.999[d]"
     elif kind == "normalize":
         fc += ";[a]loudnorm=I=-14:TP=-1.0:LRA=11[d]"
     else:
@@ -247,6 +278,38 @@ def build_audio(spec: dict, voice: Path, out: Path) -> None:
 
     run([*inputs, "-filter_complex", fc, "-map", "[out]",
          "-t", str(duration), "-ar", "44100", "-ac", "2", str(out)])
+
+    if kind == "normalize":
+        _correct_loudness(out, target=-14.0)
+
+
+def _correct_loudness(path: Path, *, target: float, tolerance: float = 0.3) -> None:
+    """Measure-then-correct for the one defect kind whose whole job is
+    landing close to a number.
+
+    Single-pass loudnorm's accuracy is genuinely content-dependent — measured
+    -15.05 LUFS on one clip's narration and -16.31 on another's against the
+    identical I=-14 filter, the second one OUTSIDE the detector's own +-2
+    tolerance. That made the clip built to be the CLEAN twin of a loudness
+    violation itself register as a violation. No fixed I= bias reliably
+    compensates, because the undershoot varies by content, not by a constant.
+
+    So this measures what actually got rendered and applies a second,
+    ordinary linear gain to close the remaining gap — the two-pass technique
+    ffmpeg's own documentation recommends for accuracy, done here as a
+    correction rather than restructuring every call site into two passes.
+    """
+    measured = measure_lufs(path)
+    if measured is None or abs(measured - target) <= tolerance:
+        return
+
+    correction_db = target - measured
+    corrected = path.with_suffix(".corrected.wav")
+    run([
+        "-i", str(path), "-af", f"volume={correction_db:.2f}dB",
+        "-ar", "44100", "-ac", "2", str(corrected),
+    ])
+    corrected.replace(path)
 
 
 def build() -> int:

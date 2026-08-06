@@ -94,7 +94,19 @@ def check_channels() -> list[str]:
 
 
 def check_loudness() -> list[str]:
-    print("\nLOUDNESS — hot master vs normalised")
+    """Relative AND absolute.
+
+    A relative-only check ("hot louder than clean") passed while the actual
+    production detector fired on neither clip: g052 measured -12.4 LUFS
+    against a -14+-2 target, 0.4 LUFS inside tolerance, and the VIOLATION
+    clip did not violate. The relative comparison was blind to that, because
+    it never asks the question the detector actually asks. Both are checked
+    now, and the absolute one uses the real target and tolerance from the
+    module that ships, not a duplicate copied here to drift out of sync.
+    """
+    from preflight.perception.audio import LUFS_TOLERANCE, TARGET_LUFS
+
+    print("\nLOUDNESS — hot master vs normalised, against the real detector")
     failures = []
     measured: dict[str, float] = {}
     for clip, described in [("g052", "hot master"), ("g053", "normalised")]:
@@ -108,12 +120,26 @@ def check_loudness() -> list[str]:
             continue
         lufs = result["integrated_lufs"]
         measured[clip] = lufs
-        print(f"  {clip}  {described:<14} {lufs:7.1f} LUFS")
+        fires = abs(lufs - TARGET_LUFS) > LUFS_TOLERANCE
+        print(f"  {clip}  {described:<14} {lufs:7.1f} LUFS  fires={fires}")
 
     if len(measured) == 2 and measured["g052"] <= measured["g053"]:
         failures.append(
             f"hot master ({measured['g052']:.1f}) is not louder than "
             f"normalised ({measured['g053']:.1f})"
+        )
+
+    if "g052" in measured and abs(measured["g052"] - TARGET_LUFS) <= LUFS_TOLERANCE:
+        failures.append(
+            f"g052 (VIOLATION) measures {measured['g052']:.1f} LUFS, inside "
+            f"the real {TARGET_LUFS}+-{LUFS_TOLERANCE} tolerance — the "
+            "detector would not fire on the clip built to trigger it"
+        )
+    if "g053" in measured and abs(measured["g053"] - TARGET_LUFS) > LUFS_TOLERANCE:
+        failures.append(
+            f"g053 (CLEAN) measures {measured['g053']:.1f} LUFS, outside "
+            f"the real {TARGET_LUFS}+-{LUFS_TOLERANCE} tolerance — the "
+            "detector would fire on the clip built to stay clean"
         )
     return failures
 

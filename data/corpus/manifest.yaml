@@ -233,7 +233,7 @@ clips:
   - id: g052
     label: VIOLATION
     clause: AUD-01
-    audio_defect: {kind: hot, gain_db: 12}
+    audio_defect: {kind: hot, gain_db: 24}
     script: >
       This one was mastered far too loud and the meters were pinned the whole
       way through the session.
