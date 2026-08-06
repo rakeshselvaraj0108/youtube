@@ -15,7 +15,7 @@ VIDEO   ?= samples/demo.mp4
 OUT     ?= preflight-out
 
 .DEFAULT_GOAL := help
-.PHONY: help setup corpus assets sample demo check fix drift test test-py test-ui \
+.PHONY: help setup corpus verify-data bench assets sample demo check fix drift test test-py test-ui \
         lint build clean docker docker-demo verify
 
 help: ## Show this help
@@ -31,6 +31,12 @@ setup: ## Create the venv, install Python and Node dependencies
 
 corpus: ## Author the policy corpus from its source script
 	$(PYTHON) scripts/build_corpus.py
+
+verify-data: corpus ## Check the data layer keeps its provenance promises (see PROVENANCE.md)
+	$(PYTHON) scripts/verify_data.py
+
+bench: ## Score the pipeline against the golden corpus (add ABLATION=1 for every layer)
+	$(PYTHON) -m preflight.cli bench $(if $(ABLATION),--ablation,) --out $(OUT)/bench.json
 
 assets: ## Generate the CC0 replacement audio bed
 	$(PYTHON) scripts/make_assets.py
