@@ -295,6 +295,50 @@ class TestChunking:
         windows[0].ocr = ["WARNING"]
         assert "WARNING" in windows[0].query()
 
+    @staticmethod
+    def _ocr_item(text: str, start_ms: int, end_ms: int):
+        from dataclasses import dataclass
+
+        @dataclass
+        class Stub:
+            text: str
+            start_ms: int
+            end_ms: int
+
+        return Stub(text=text, start_ms=start_ms, end_ms=end_ms)
+
+    def test_ocr_items_are_attached_to_the_windows_they_overlap(self):
+        """`Window.ocr` existed, and `query()`/`for_prompt()` already read it,
+        but `build_windows` never populated it — on-screen text never reached
+        retrieval or the AUDITOR at all until this parameter existed."""
+        item = self._ocr_item("meme text on screen", 40_000, 44_000)
+        windows = build_windows(None, 60_000, [], chunk_ms=30_000, overlap_ms=5_000,
+                                 ocr_items=[item])
+        hit = [w for w in windows if "meme text on screen" in w.ocr]
+        assert hit
+        for window in hit:
+            assert window.start_ms < 44_000 and window.end_ms >= 40_000
+
+    def test_an_ocr_item_makes_an_otherwise_silent_window_in_scope(self):
+        """A meme with a slur burned into the frame and no audio must still
+        reach the auditor — has_content is exactly the gate that decides
+        whether a window is worth a call."""
+        item = self._ocr_item("on-screen only", 10_000, 12_000)
+        windows = build_windows(None, 30_000, [], chunk_ms=30_000, overlap_ms=5_000,
+                                 ocr_items=[item])
+        target = next(w for w in windows if "on-screen only" in w.ocr)
+        assert target.has_content is True
+
+    def test_an_ocr_item_outside_a_window_does_not_attach(self):
+        item = self._ocr_item("elsewhere", 100_000, 102_000)
+        windows = build_windows(None, 60_000, [], chunk_ms=30_000, overlap_ms=5_000,
+                                 ocr_items=[item])
+        assert all("elsewhere" not in w.ocr for w in windows)
+
+    def test_no_ocr_items_behaves_exactly_as_before(self):
+        assert build_windows(None, 60_000, [], ocr_items=None) == \
+            build_windows(None, 60_000, [], ocr_items=[])
+
 
 class TestIoU:
     def test_identical_spans_are_one(self):

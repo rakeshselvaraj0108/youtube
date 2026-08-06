@@ -206,6 +206,7 @@ def run_perception(
         ingested.keyframes,
         chunk_ms=settings.chunk_ms if settings else 30_000,
         overlap_ms=settings.overlap_ms if settings else 5_000,
+        ocr_items=ocr_report.items,
     )
     policy_agent, corpus, backend = _policy(windows, store, settings, transcript)
 

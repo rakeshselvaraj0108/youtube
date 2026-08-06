@@ -62,12 +62,25 @@ def build_windows(
     *,
     chunk_ms: int = 30_000,
     overlap_ms: int = 5_000,
+    ocr_items: list | None = None,
 ) -> list[Window]:
+    """Windows over the timeline, carrying whatever each modality knows.
+
+    `ocr_items` is anything with `start_ms`, `end_ms` and `text` — A05's
+    `TextItem`, deliberately duck-typed so chunking does not import the OCR
+    module. A meme-text overlay that never says a word out loud is invisible
+    to `has_content` and to retrieval without this: `window.query()` and
+    `for_prompt()` already read `Window.ocr`, but until this populated it, on-
+    screen text a video's only in-scope content in a given window never
+    reached the AUDITOR at all — a silent window with a slur burned into the
+    frame produced no candidate, because nothing was ever attached here.
+    """
     if duration_ms <= 0:
         return []
 
     step = max(1, chunk_ms - overlap_ms)
     keyframes = keyframes or []
+    ocr_items = ocr_items or []
     windows: list[Window] = []
 
     index = 0
@@ -76,6 +89,11 @@ def build_windows(
         end = min(start + chunk_ms, duration_ms)
         text = transcript.text_between(start, end) if transcript else ""
         frames = [f for f in keyframes if start <= f.ts_ms < end]
+        on_screen = [
+            item.text
+            for item in ocr_items
+            if item.start_ms < end and item.end_ms >= start
+        ]
         windows.append(
             Window(
                 index=index,
@@ -83,6 +101,7 @@ def build_windows(
                 end_ms=end,
                 transcript=text,
                 frames=frames,
+                ocr=on_screen,
             )
         )
         index += 1
