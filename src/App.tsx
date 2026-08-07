@@ -10,6 +10,7 @@ import { HeaderBar } from '@/components/HeaderBar';
 import { PolicyBreakdown } from '@/components/PolicyBreakdown';
 import { RemediationPlan } from '@/components/RemediationPlan';
 import { RiskTimeline } from '@/components/RiskTimeline';
+import { RunBar } from '@/components/RunBar';
 import { ScoreGauge } from '@/components/ScoreGauge';
 import { SubScorePanel } from '@/components/SubScorePanel';
 import { TerminalColumn } from '@/components/TerminalColumn';
@@ -44,6 +45,7 @@ export default function App() {
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <HeaderBar />
+        <RunBar />
 
         <main className="flex min-h-0 flex-1 flex-col gap-gutter overflow-y-auto p-gutter">
           {/* Row 1 — file, gauge, dimensions */}

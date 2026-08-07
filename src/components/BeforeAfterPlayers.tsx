@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Film, Pause, Play, SkipForward, Volume2 } from 'lucide-react';
 import { Panel } from '@/components/ui';
 import { useAnalysis } from '@/store/analysis';
-import { afterReport, beforeReport } from '@/data/fixture';
 import { readinessHex, SIGNAL_HEX, VERDICT_META } from '@/lib/scoring';
 import { formatTimecode } from '@/lib/time';
 import type { AnalysisReport } from '@/types/analysis';
@@ -33,7 +32,10 @@ function PlayerFrame({
   const scrubRef = useRef<HTMLDivElement>(null);
   const duration = report.video.durationMs;
   const isAfter = variant === 'AFTER';
-  const ops = beforeReport.remediation.ops;
+  // From the live store, so the counts describe the run on screen rather
+  // than the demo fixture this component used to read regardless.
+  const ops = useAnalysis((s) => s.before.remediation.ops);
+  const findingCount = useAnalysis((s) => s.before.findings.length);
 
   /* Both scrub bars write to one shared position, and both <video> elements
      read from it. Dragging either one moves both — that is what demonstrates
@@ -153,7 +155,7 @@ function PlayerFrame({
         <SkipForward className="h-3.5 w-3.5" />
         <Volume2 className="h-3.5 w-3.5" />
         <span className="ml-auto num text-[9px] uppercase tracking-[0.08em]">
-          {isAfter ? `${ops.length} spans remediated` : `${beforeReport.findings.length} findings`}
+          {isAfter ? `${ops.length} spans remediated` : `${findingCount} findings`}
         </span>
       </div>
     </Panel>
@@ -164,10 +166,10 @@ function FixBridge() {
   const applied = useAnalysis((s) => s.applied);
   const setApplied = useAnalysis((s) => s.setApplied);
 
-  const before = beforeReport.scores;
-  const after = afterReport.scores;
+  const before = useAnalysis((s) => s.before.scores);
+  const after = useAnalysis((s) => s.after.scores);
   const delta = after.overall - before.overall;
-  const ops = beforeReport.remediation.ops.length;
+  const ops = useAnalysis((s) => s.before.remediation.ops.length);
 
   return (
     <div className="flex min-w-0 flex-col items-center justify-center gap-3 px-2">
@@ -230,18 +232,20 @@ function FixBridge() {
 export function BeforeAfterPlayers() {
   // One position, two players. Dragging either scrub bar moves both.
   const [positionT, setPositionT] = useState(DEMO_POSITION);
+  const before = useAnalysis((s) => s.before);
+  const after = useAnalysis((s) => s.after);
 
   return (
     <>
       <PlayerFrame
-        report={beforeReport}
+        report={before}
         variant="BEFORE"
         positionT={positionT}
         onSeek={setPositionT}
       />
       <FixBridge />
       <PlayerFrame
-        report={afterReport}
+        report={after}
         variant="AFTER"
         positionT={positionT}
         onSeek={setPositionT}
