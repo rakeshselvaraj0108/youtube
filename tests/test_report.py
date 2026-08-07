@@ -97,6 +97,18 @@ def report() -> dict:
         },
         "incidents": [],
         "reasoning": [],
+        "simulation": {
+            "baseline": {
+                "name": "current", "edits": [], "overall": 45,
+                "verdict": "DO_NOT_PUBLISH",
+                "sub": {"policy": 31.0, "copyright": 19.0, "metadata": 78.0,
+                        "accessibility": 62.0, "audio": 88.0},
+                "delta": 0, "impact": 0.0, "value": 0.0, "gatedBy": None,
+                "survivingFindings": 0, "removedFindingIds": [],
+                "weakenedFindingIds": [],
+            },
+            "scenarios": [], "best": "current", "highestScore": "current",
+        },
         "cost": {
             "estimatedCalls": 5,
             "actualCalls": 3,

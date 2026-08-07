@@ -832,6 +832,14 @@ export const beforeReport: AnalysisReport = {
   cost: { estimatedCalls: 17, actualCalls: 14, ceiling: null, shed: [] },
   incidents: [],
   reasoning: [],
+  simulation: {
+    baseline: {
+      name: 'current', edits: [], overall: 45, verdict: 'DO_NOT_PUBLISH',
+      sub: beforeSub, delta: 0, impact: 0, value: 0, gatedBy: null,
+      survivingFindings: 0, removedFindingIds: [], weakenedFindingIds: [],
+    },
+    scenarios: [], best: 'current', highestScore: 'current',
+  },
   agents,
 };
 

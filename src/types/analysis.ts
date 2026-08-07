@@ -295,6 +295,52 @@ export interface ReasoningChain {
   clausesCited: string[];
 }
 
+/** One change a creator could make, and what it destroys. */
+export interface SimEdit {
+  kind: string;
+  startMs: number;
+  endMs: number;
+  label: string;
+  wholeFile: boolean;
+  /** Modalities this edit removes — the physical claim the simulation rests on. */
+  removes: string[];
+}
+
+/**
+ * One hypothetical version of the video, scored by the real scorer.
+ *
+ * `impact` is viewer cost on the remediation compiler's own scale, and
+ * `value` is score gained per unit of it. Ranking on `overall` alone
+ * recommends the most destructive edit available, which scores best
+ * precisely because it removes the most.
+ */
+export interface Scenario {
+  name: string;
+  edits: SimEdit[];
+  overall: number;
+  verdict: Verdict;
+  sub: SubScores;
+  delta: number;
+  impact: number;
+  value: number;
+  /** Set when an edit repaired something real but the clamp held the score
+   * at a different, weaker dimension — "+0" without this reads as
+   * "worthless", which is the opposite of the truth. */
+  gatedBy: string | null;
+  survivingFindings: number;
+  removedFindingIds: string[];
+  weakenedFindingIds: string[];
+}
+
+export interface Simulation {
+  baseline: Scenario;
+  scenarios: Scenario[];
+  /** Most worth making, among edits the compiler would actually render. */
+  best: string;
+  /** Highest achievable score, whatever it costs the video. */
+  highestScore: string;
+}
+
 export interface AnalysisReport {
   video: VideoMeta;
   meta: RunMeta;
@@ -303,6 +349,7 @@ export interface AnalysisReport {
   findings: Finding[];
   incidents: Incident[];
   reasoning: ReasoningChain[];
+  simulation: Simulation;
   breakdown: BreakdownRow[];
   remediation: Remediation;
   agents: AgentRun[];

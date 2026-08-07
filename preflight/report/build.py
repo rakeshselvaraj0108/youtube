@@ -27,6 +27,7 @@ from preflight.remediate.edl import EDL, compile_edl
 from preflight.plan import HIERARCHICAL_ABOVE_MS, SEGMENT_MS, build_plan
 from preflight.scoring.incidents import build_graph
 from preflight.scoring.reasoning import explain_all
+from preflight.scoring.simulation import explore
 from preflight.scoring.readiness import SUB_SCORE_ORDER, compute_readiness, sub_scores
 from preflight.scoring.rollup import rollup
 
@@ -218,6 +219,10 @@ def build_report(
                 known_agents=[a.agent_id for a in result.agents],
             )
         ],
+        # What happens if the creator changes the video. Computed from the
+        # findings already produced — no perception rerun, no ffmpeg — and
+        # scored by the same scorer that produced the headline number.
+        "simulation": explore(findings, duration_ms).to_json(),
         "riskBands": build_risk_bands(findings, duration_ms),
         "findings": [f.to_json() for f in findings],
         "breakdown": build_breakdown(findings),
