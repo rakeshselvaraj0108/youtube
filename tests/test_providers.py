@@ -26,6 +26,7 @@ from preflight.providers.registry import (
     ASR_TRANSCRIBE,
     CHAT_REASONING,
     VECTOR_SEARCH,
+    VISION_DESCRIBE,
     Registry,
 )
 from preflight.providers.secrets import (
@@ -281,6 +282,65 @@ class TestNullProvider:
     def test_never_fabricates_a_result(self):
         result = NullProvider("chat.reasoning").invoke(system="s", user="u")
         assert not hasattr(result, "value")
+
+
+class TestRetryableIsHonoured:
+    """`retryable` was set in three places and read in none.
+
+    Vision-language models intermittently answer a JSON request with prose.
+    `nvidia.py` labels that unparseable-but-retryable, correctly — and
+    nothing retried. On a live run seven of eight frames were lost that way
+    and the vision agent finished at 1% coverage against its 22% share of
+    the analysis surface. It reported DEGRADED with an honest reason, which
+    is precisely why it read as a slow day rather than a bug.
+    """
+
+    class Flaky:
+        """Fails retryably once, then succeeds."""
+
+        id = "stub"
+
+        def __init__(self, fail_times: int = 1, retryable: bool = True) -> None:
+            self.calls = 0
+            self.fail_times = fail_times
+            self.retryable = retryable
+
+        def invoke(self, **kwargs):
+            self.calls += 1
+            if self.calls <= self.fail_times:
+                return Unavailable("prose instead of JSON", "stub", self.retryable)
+            return Served(value={"ok": True}, provider="stub", tier=0, calls=1)
+
+    def _registry_with(self, monkeypatch, provider):
+        registry = Registry(load_secrets())
+        monkeypatch.setattr(registry, "get", lambda capability: provider)
+        return registry
+
+    def test_a_retryable_failure_is_retried_once_and_recovers(self, no_env, monkeypatch):
+        provider = self.Flaky(fail_times=1)
+        result = self._registry_with(monkeypatch, provider).invoke(VISION_DESCRIBE)
+        assert provider.calls == 2
+        assert result.ok
+
+    def test_a_non_retryable_failure_is_not_retried(self, no_env, monkeypatch):
+        """A missing binary will not become present on a second try."""
+        provider = self.Flaky(fail_times=1, retryable=False)
+        result = self._registry_with(monkeypatch, provider).invoke(VISION_DESCRIBE)
+        assert provider.calls == 1
+        assert not result.ok
+
+    def test_retrying_is_bounded(self, no_env, monkeypatch):
+        """A second prose answer means the model will not produce JSON for
+        this frame; a third call at ~80s buys nothing."""
+        provider = self.Flaky(fail_times=99)
+        result = self._registry_with(monkeypatch, provider).invoke(VISION_DESCRIBE)
+        assert provider.calls == 2
+        assert not result.ok
+
+    def test_a_first_time_success_makes_no_second_call(self, no_env, monkeypatch):
+        provider = self.Flaky(fail_times=0)
+        self._registry_with(monkeypatch, provider).invoke(VISION_DESCRIBE)
+        assert provider.calls == 1
 
 
 class TestRegistry:

@@ -258,7 +258,9 @@ class NimClient:
             self.usage.waited_s += self.bucket.take()
             request = urllib.request.Request(url, data=body, headers=headers, method="POST")
             try:
-                with urllib.request.urlopen(request, timeout=120) as response:
+                with urllib.request.urlopen(
+                    request, timeout=self.settings.http_timeout_s
+                ) as response:
                     self.usage.calls += 1
                     return json.loads(response.read().decode("utf-8"))
             except urllib.error.HTTPError as exc:

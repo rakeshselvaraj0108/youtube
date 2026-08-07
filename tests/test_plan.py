@@ -76,7 +76,31 @@ class TestCallEstimateIsAnUpperBound:
             + plan.est_advocate_calls
             + plan.est_adjudicator_calls
             + plan.est_embed_calls
+            + plan.est_vision_calls
         )
+
+    def test_vision_is_counted_because_it_spends_calls(self):
+        """A05 issues one hosted call per selected keyframe. Omitting it made
+        the plan promise "at most 5 calls" for a run whose vision layer alone
+        can make 24 — a false upper bound rather than a loose one, and the
+        report asserts estimatedCalls >= actualCalls. Offline runs spend
+        nothing, so nothing ever contradicted it."""
+        plan = build_plan(600_000)
+        assert plan.est_vision_calls >= plan.keyframe_budget
+        assert plan.est_total_llm_calls > plan.keyframe_budget
+
+    def test_every_layer_that_spends_calls_is_represented(self):
+        """Guards the omission itself: a new hosted layer must appear in the
+        estimate, not just in the run."""
+        plan = build_plan(600_000)
+        for field in (
+            "est_auditor_calls",
+            "est_advocate_calls",
+            "est_adjudicator_calls",
+            "est_embed_calls",
+            "est_vision_calls",
+        ):
+            assert getattr(plan, field) > 0, f"{field} contributes nothing"
 
     def test_a_longer_video_never_costs_less(self):
         durations = [60_000, 300_000, 900_000, 2_400_000, 5_400_000]

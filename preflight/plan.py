@@ -60,6 +60,7 @@ class DecompositionPlan:
     est_advocate_calls: int
     est_adjudicator_calls: int
     est_embed_calls: int
+    est_vision_calls: int
     est_total_llm_calls: int
     hierarchical: bool
     segment_ms: int | None
@@ -77,7 +78,8 @@ class DecompositionPlan:
             f"visual     up to {self.keyframe_budget} keyframes",
             f"cost       at most {self.est_total_llm_calls} LLM calls "
             f"({self.est_auditor_calls} auditor · {self.est_advocate_calls} advocate · "
-            f"{self.est_adjudicator_calls} adjudicator · {self.est_embed_calls} embed)",
+            f"{self.est_adjudicator_calls} adjudicator · {self.est_embed_calls} embed · "
+            f"{self.est_vision_calls} vision)",
         ]
         if self.hierarchical:
             lines.append(
@@ -117,6 +119,17 @@ def build_plan(
     adjudicator = _ceil_div(windows, ADJUDICATOR_BATCH)
     embed = EMBED_CALLS if windows else 0
 
+    # A05 issues one call per selected keyframe — it is gated, not batched,
+    # whatever the module comment says. Leaving it out made the plan claim
+    # "at most 5 calls" for a run whose vision layer alone can make 24, which
+    # is not a loose estimate but a false upper bound: the report asserts
+    # estimatedCalls >= actualCalls, and offline runs made 0 calls so nothing
+    # ever contradicted it. The ceiling is the keyframe budget, because the
+    # worst case is every extracted frame surviving the gate.
+    # Gated on there being a timeline at all: a zero-length video yields no
+    # frames, so budgeting frame calls for one is as wrong as omitting them.
+    vision = keyframes if windows else 0
+
     return DecompositionPlan(
         duration_ms=duration_ms,
         tier=tier,
@@ -128,7 +141,8 @@ def build_plan(
         est_advocate_calls=advocate,
         est_adjudicator_calls=adjudicator,
         est_embed_calls=embed,
-        est_total_llm_calls=auditor + advocate + adjudicator + embed,
+        est_vision_calls=vision,
+        est_total_llm_calls=auditor + advocate + adjudicator + embed + vision,
         hierarchical=duration_ms > HIERARCHICAL_ABOVE_MS,
         segment_ms=SEGMENT_MS if duration_ms > HIERARCHICAL_ABOVE_MS else None,
     )

@@ -198,12 +198,30 @@ class Registry:
 
     def invoke(self, capability: str, **kwargs: Any) -> Result:
         """Call a capability. Never raises — an unavailable tier returns
-        Unavailable and the agent reports SKIPPED with the reason."""
+        Unavailable and the agent reports SKIPPED with the reason.
+
+        A result marked `retryable` gets one more attempt. That flag was set
+        in three places and read in none, which cost more than it looks:
+        vision-language models intermittently answer a JSON request with
+        prose, `nvidia.py` correctly labels that unparseable-but-retryable,
+        and nothing retried. On a live run seven of eight frames were lost
+        that way and the vision agent finished at 1% coverage instead of its
+        22% share of the analysis surface — reported honestly as DEGRADED,
+        which is exactly why it never looked like a bug.
+
+        One retry, not a loop: a second prose answer means the model is not
+        going to produce JSON for this frame, and spending a third call at
+        ~80s each buys nothing.
+        """
         provider = self.get(capability)
-        try:
-            return provider.invoke(**kwargs)
-        except Exception as exc:  # noqa: BLE001
-            return Unavailable(f"{type(exc).__name__}: {exc}", provider.id)
+        for attempt in range(2):
+            try:
+                result = provider.invoke(**kwargs)
+            except Exception as exc:  # noqa: BLE001
+                return Unavailable(f"{type(exc).__name__}: {exc}", provider.id)
+            if getattr(result, "ok", False) or not getattr(result, "retryable", False):
+                return result
+        return result
 
     def is_degraded(self, capability: str) -> bool:
         resolution = self.plan.get(capability)

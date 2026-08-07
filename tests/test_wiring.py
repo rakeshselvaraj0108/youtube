@@ -147,6 +147,42 @@ class TestCapabilitiesHaveConsumers:
         assert missing == [], f"resolved but never invoked: {missing}"
 
 
+class TestHttpTimeoutHasRealHeadroom:
+    """The timeout was 120s, set before anything had measured the service.
+
+    A single 64-token request against the free tier was then timed at 108s.
+    Twelve seconds of headroom, on the smallest call the system can make —
+    and a real AUDITOR batch carries eight windows plus their clause text.
+    The original value would have timed out, retried, and timed out again on
+    exactly the calls that matter, while a trivial request passed and made
+    the setting look fine.
+    """
+
+    MEASURED_SMALL_CALL_S = 108
+
+    def test_the_default_clears_the_measured_latency_with_margin(self):
+        from preflight.config import Settings
+
+        assert Settings().http_timeout_s >= self.MEASURED_SMALL_CALL_S * 2
+
+    def test_the_client_uses_the_configured_timeout_not_a_literal(self):
+        """The value was hardcoded at the call site, so configuring it did
+        nothing. This asserts the wiring, not just the number."""
+        import inspect
+
+        from preflight.agents import nim
+
+        source = inspect.getsource(nim.NimClient._post_with_retries)
+        assert "self.settings.http_timeout_s" in source
+        assert "timeout=120" not in source
+
+    def test_the_environment_can_override_it(self, monkeypatch):
+        from preflight.config import Settings
+
+        monkeypatch.setenv("PREFLIGHT_HTTP_TIMEOUT", "45")
+        assert Settings.load().http_timeout_s == 45
+
+
 class TestScoringAgreesWithItself:
     """The two places that decide "is this video long enough to roll up"
     must be one place. They were briefly two."""

@@ -80,6 +80,17 @@ class Settings:
     chunk_ms: int = 30_000
     overlap_ms: int = 5_000
 
+    # How long to wait on one hosted call before giving up and retrying.
+    #
+    # This was 120s, chosen when nothing had measured the service. A single
+    # 64-token request against the free tier was then timed at 108s — twelve
+    # seconds of headroom, on the smallest call the system can make. A real
+    # AUDITOR batch carries eight windows plus their clause text and is far
+    # larger, so the original value would time out, retry, and time out again
+    # on exactly the calls that matter, while a trivial request passed and
+    # made the configuration look sound.
+    http_timeout_s: int = 300
+
     @property
     def online(self) -> bool:
         """True when a hosted model may actually be called."""
@@ -97,6 +108,7 @@ class Settings:
             cache_dir=Path(os.getenv("PREFLIGHT_CACHE_DIR", ".preflight/cache")),
             policy_dir=Path(os.getenv("PREFLIGHT_POLICY_DIR", "data/policy")),
             models=Models.from_env(),
+            http_timeout_s=int(os.getenv("PREFLIGHT_HTTP_TIMEOUT", "300")),
         )
 
     def describe_mode(self) -> str:
