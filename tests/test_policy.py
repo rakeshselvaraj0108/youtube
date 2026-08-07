@@ -30,7 +30,7 @@ EXPECTED_POLICY_CLAUSES = 17
 # Ten PREFLIGHT house rules were added so that every clause id an agent
 # cites resolves to real text. They are marked `kind: house_rule` and are
 # not platform policy.
-EXPECTED_HOUSE_RULES = 14
+EXPECTED_HOUSE_RULES = 16
 EXPECTED_CLAUSES = EXPECTED_POLICY_CLAUSES + EXPECTED_HOUSE_RULES
 
 

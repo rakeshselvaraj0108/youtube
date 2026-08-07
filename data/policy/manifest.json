@@ -1,7 +1,7 @@
 {
   "version": "2026-08",
-  "corpus_hash": "574de32a43731085e1b35096a6384b95",
-  "clause_count": 31,
+  "corpus_hash": "4dbc352d65185451cc6c57449ab3466c",
+  "clause_count": 33,
   "fetched_at": "2026-08-05",
   "sources": [
     "PREFLIGHT engineering ruleset",
@@ -11,7 +11,7 @@
     "https://www.w3.org/WAI/WCAG22/Understanding/three-flashes-or-below-threshold.html"
   ],
   "policy_clauses": 17,
-  "house_rules": 14,
+  "house_rules": 16,
   "note": "Two kinds of clause, distinguished by `kind`. `policy_restatement` entries are structured restatements in our own words of publicly published guidance \u2014 not authoritative, not verbatim, not affiliated with YouTube. `house_rule` entries are PREFLIGHT's own production thresholds \u2014 loudness targets, caption availability, tag hygiene \u2014 and are NOT platform policy. A finding cites the clause it was judged under, and the citation is worthless if a reader cannot tell whose rule it is.",
   "clauses": [
     {
@@ -295,6 +295,28 @@
       "title": "Black frames",
       "severity_default": "ADVISORY",
       "sha256": "5d0d67bffc63b3438775d81ea8feb446ee1d0f43254da5eafab3d34846912f31",
+      "source_url": "PREFLIGHT engineering ruleset",
+      "fetched_at": "2026-08-05",
+      "derivation": "PREFLIGHT's own production rule, not a restatement of any platform policy",
+      "kind": "house_rule"
+    },
+    {
+      "clause_id": "DISC-01",
+      "file": "DISC-01_credential_on_screen.md",
+      "title": "Credential visible on screen",
+      "severity_default": "LIMITING",
+      "sha256": "7a02dac922d3e462158af173637fa3158a92aa68f04fed770c2a0459bd3bfe41",
+      "source_url": "PREFLIGHT engineering ruleset",
+      "fetched_at": "2026-08-05",
+      "derivation": "PREFLIGHT's own production rule, not a restatement of any platform policy",
+      "kind": "house_rule"
+    },
+    {
+      "clause_id": "DISC-02",
+      "file": "DISC-02_personal_data_on_screen.md",
+      "title": "Personal data visible on screen",
+      "severity_default": "ADVISORY",
+      "sha256": "e3539393c3c4a5ebf59a269194a124c25e2d1ee9d60b29795f9ce731b2b00ab2",
       "source_url": "PREFLIGHT engineering ruleset",
       "fetched_at": "2026-08-05",
       "derivation": "PREFLIGHT's own production rule, not a restatement of any platform policy",

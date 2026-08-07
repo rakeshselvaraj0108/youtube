@@ -304,6 +304,54 @@ HOUSE_RULES: list[dict] = [
         span_note="The black span itself.",
     ),
     house(
+        file="DISC-01_credential_on_screen.md",
+        clause_id="DISC-01",
+        title="Credential visible on screen",
+        severity="LIMITING",
+        scope=(
+            "An API key, access token, private key or labelled password "
+            "legible in the picture — a terminal left open behind a demo, an "
+            "editor tab, a .env file scrolled past during a screen recording."
+        ),
+        green=["No credential-shaped text anywhere on screen"],
+        yellow=["A labelled secret whose value is partly obscured"],
+        red=["A complete vendor-issued key or private key block legible"],
+        signals=[
+            "Matched on published vendor prefixes with a length floor rather "
+            "than on entropy: entropy flags base64 thumbnails and minified "
+            "JavaScript, and a detector that cries wolf is muted before it "
+            "ever catches the real one.",
+            "The consequence is not a policy one. A leaked key is charged to "
+            "the creator's account within hours of the upload going public, "
+            "and unlike a policy strike there is no appeal.",
+        ],
+        fix="BLUR_REGION",
+        span_note="The span the text was legible for, merged across frames.",
+    ),
+    house(
+        file="DISC-02_personal_data_on_screen.md",
+        clause_id="DISC-02",
+        title="Personal data visible on screen",
+        severity="ADVISORY",
+        scope=(
+            "A phone number, email address or payment card legible in the "
+            "picture — a notification banner, a browser autofill, a document "
+            "left open in shot."
+        ),
+        green=["No personal data legible on screen"],
+        yellow=["An email or phone number visible briefly"],
+        red=["A payment card number legible, checksum-valid"],
+        signals=[
+            "Card numbers are Luhn-checked. Sixteen digits that fail the "
+            "checksum are an order number, not a card, and reporting them as "
+            "one teaches a creator to ignore this finding.",
+            "Phone numbers require a separator or a country code: a bare run "
+            "of ten digits is far more often a timestamp or a score.",
+        ],
+        fix="BLUR_REGION",
+        span_note="The span the text was legible for, merged across frames.",
+    ),
+    house(
         file="VID-02_frozen_frames.md",
         clause_id="VID-02",
         title="Frozen frames",

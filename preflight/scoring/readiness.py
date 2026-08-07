@@ -71,6 +71,14 @@ CLAUSE_DIMENSION: dict[str, str] = {
     # them into the dimension they already conceptually belong to is the
     # complete, correct-scope fix.
     "VID": "accessibility",
+    # A key or a card on screen is a metadata-hygiene failure in the same
+    # sense META-* is: something the creator published about themselves
+    # without meaning to. It is emphatically not a policy judgement — no
+    # clause of YouTube's says anything about it — so scoring it under
+    # "policy" would attribute the tool's own engineering rule to the
+    # platform, which is the one thing the house-rule split exists to
+    # prevent.
+    "DISC": "metadata",
 }
 
 

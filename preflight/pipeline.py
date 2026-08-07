@@ -26,7 +26,15 @@ from preflight.config import Settings
 from preflight.ingest.pipeline import Ingested, ingest
 from preflight.models import AgentResult, Finding
 from preflight.orchestrator import Orchestrator
-from preflight.perception import accessibility, audio, audio_intel, metadata, ocr, vision
+from preflight.perception import (
+    accessibility,
+    audio,
+    audio_intel,
+    disclosure,
+    metadata,
+    ocr,
+    vision,
+)
 from preflight.perception import asr as asr_mod
 from preflight.perception import speech_intel
 from preflight.perception.asr import Transcript
@@ -526,7 +534,24 @@ def _ocr(
 
     run.report = ocr.OcrReport()  # type: ignore[attr-defined]
     agent = _guard(orch, "ocr", "OCR Agent", run)
-    return agent, getattr(run, "report", ocr.OcrReport())
+    report = getattr(run, "report", ocr.OcrReport())
+
+    # A05 reads the text; nothing looked at what the text *was*. A creator's
+    # API key legible in a terminal behind a demo is invisible to every other
+    # agent — speech never hears it, vision has no vocabulary term for it —
+    # and it is the one finding here whose consequence lands within hours of
+    # upload rather than at review time.
+    if agent.status not in {"FAILED"} and report.items:
+        found = disclosure.analyse(report.items)
+        if found:
+            agent.findings.extend(disclosure.to_findings(found))
+            agent.artifacts["disclosures"] = [d.to_json() for d in found]
+            agent.log.append(
+                f"{len(found)} sensitive string(s) on screen: "
+                + ", ".join(sorted({d.kind for d in found}))
+            )
+
+    return agent, report
 
 
 def _transcript_segments(transcript: Transcript | None) -> list[dict] | None:

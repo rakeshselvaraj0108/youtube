@@ -38,6 +38,7 @@ SCOPES: dict[str, str] = {
     "ACC": "accessibility",
     "AUD": "audio",
     "VID": "video",
+    "DISC": "disclosure",
 }
 DEFAULT_SCOPE = "policy"
 
