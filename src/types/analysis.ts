@@ -249,6 +249,52 @@ export interface Incident {
   corroborated: boolean;
 }
 
+/** What entitles a claim to be made. Every claim carries one. */
+export interface ClaimSource {
+  kind: 'finding' | 'clause' | 'agent' | 'measurement';
+  ref: string;
+  detail: string;
+}
+
+/**
+ * One sentence of reasoning, and the thing it cites.
+ *
+ * A claim cannot exist without a source — that is enforced where these are
+ * constructed, so "never invent evidence" is a property of the shape rather
+ * than a rule someone has to remember.
+ */
+export interface Claim {
+  step:
+    | 'observation'
+    | 'evidence'
+    | 'policy'
+    | 'risk_argument'
+    | 'counter_argument'
+    | 'decision'
+    | 'uncertainty';
+  text: string;
+  source: ClaimSource;
+}
+
+/**
+ * Why one incident was concluded, in reading order.
+ *
+ * `unresolved` is the section a reviewer reads first: what would have
+ * changed this, which agents never looked, and where the confidence is
+ * thin. `dismissed` answers the second question — which charges were
+ * considered and rejected, and on what grounds.
+ */
+export interface ReasoningChain {
+  incidentId: string;
+  decision: string;
+  confidence: number;
+  claims: Claim[];
+  dismissed: Claim[];
+  unresolved: Claim[];
+  agentsCited: string[];
+  clausesCited: string[];
+}
+
 export interface AnalysisReport {
   video: VideoMeta;
   meta: RunMeta;
@@ -256,6 +302,7 @@ export interface AnalysisReport {
   riskBands: RiskBand[];
   findings: Finding[];
   incidents: Incident[];
+  reasoning: ReasoningChain[];
   breakdown: BreakdownRow[];
   remediation: Remediation;
   agents: AgentRun[];

@@ -831,6 +831,7 @@ export const beforeReport: AnalysisReport = {
   // bound, so actual coming in under it is the expected shape.
   cost: { estimatedCalls: 17, actualCalls: 14, ceiling: null, shed: [] },
   incidents: [],
+  reasoning: [],
   agents,
 };
 

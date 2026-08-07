@@ -185,6 +185,12 @@
         "meta": {
           "$ref": "#/definitions/RunMeta"
         },
+        "reasoning": {
+          "items": {
+            "$ref": "#/definitions/ReasoningChain"
+          },
+          "type": "array"
+        },
         "remediation": {
           "$ref": "#/definitions/Remediation"
         },
@@ -215,6 +221,7 @@
         "riskBands",
         "findings",
         "incidents",
+        "reasoning",
         "breakdown",
         "remediation",
         "agents",
@@ -239,6 +246,63 @@
         "category",
         "count",
         "severity"
+      ],
+      "type": "object"
+    },
+    "Claim": {
+      "additionalProperties": false,
+      "description": "One sentence of reasoning, and the thing it cites.\n\nA claim cannot exist without a source — that is enforced where these are constructed, so \"never invent evidence\" is a property of the shape rather than a rule someone has to remember.",
+      "properties": {
+        "source": {
+          "$ref": "#/definitions/ClaimSource"
+        },
+        "step": {
+          "enum": [
+            "observation",
+            "evidence",
+            "policy",
+            "risk_argument",
+            "counter_argument",
+            "decision",
+            "uncertainty"
+          ],
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "step",
+        "text",
+        "source"
+      ],
+      "type": "object"
+    },
+    "ClaimSource": {
+      "additionalProperties": false,
+      "description": "What entitles a claim to be made. Every claim carries one.",
+      "properties": {
+        "detail": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "finding",
+            "clause",
+            "agent",
+            "measurement"
+          ],
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ref",
+        "detail"
       ],
       "type": "object"
     },
@@ -479,6 +543,62 @@
         "CUT"
       ],
       "type": "string"
+    },
+    "ReasoningChain": {
+      "additionalProperties": false,
+      "description": "Why one incident was concluded, in reading order.\n\n`unresolved` is the section a reviewer reads first: what would have changed this, which agents never looked, and where the confidence is thin. `dismissed` answers the second question — which charges were considered and rejected, and on what grounds.",
+      "properties": {
+        "agentsCited": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "claims": {
+          "items": {
+            "$ref": "#/definitions/Claim"
+          },
+          "type": "array"
+        },
+        "clausesCited": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "confidence": {
+          "type": "number"
+        },
+        "decision": {
+          "type": "string"
+        },
+        "dismissed": {
+          "items": {
+            "$ref": "#/definitions/Claim"
+          },
+          "type": "array"
+        },
+        "incidentId": {
+          "type": "string"
+        },
+        "unresolved": {
+          "items": {
+            "$ref": "#/definitions/Claim"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "incidentId",
+        "decision",
+        "confidence",
+        "claims",
+        "dismissed",
+        "unresolved",
+        "agentsCited",
+        "clausesCited"
+      ],
+      "type": "object"
     },
     "Remediation": {
       "additionalProperties": false,

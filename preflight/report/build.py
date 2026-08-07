@@ -26,6 +26,7 @@ from preflight.remediate.codegen import Program, build_program
 from preflight.remediate.edl import EDL, compile_edl
 from preflight.plan import HIERARCHICAL_ABOVE_MS, SEGMENT_MS, build_plan
 from preflight.scoring.incidents import build_graph
+from preflight.scoring.reasoning import explain_all
 from preflight.scoring.readiness import SUB_SCORE_ORDER, compute_readiness, sub_scores
 from preflight.scoring.rollup import rollup
 
@@ -151,6 +152,12 @@ def build_report(
     safe_name = f"{Path(result.source).stem}.safe.mp4"
     program = build_program(edl, result.source, safe_name)
 
+    # Correlated once and reused: the reasoning chains must explain the same
+    # incidents the report lists, and building the graph twice would let the
+    # two drift into citing ids that do not appear.
+    _graph = build_graph(findings, duration_ms)
+    _incidents = _graph.to_json()["incidents"]
+
     sub = sub_scores(findings)
     readiness = compute_readiness(sub)
 
@@ -197,7 +204,20 @@ def build_report(
         # Findings are what each agent reported; incidents are what actually
         # happened. Four agents noticing the same moment is one problem seen
         # four times, and a reader acting on the count needs the second view.
-        "incidents": build_graph(findings, duration_ms).to_json()["incidents"],
+        "incidents": _incidents,
+        # Why each incident was concluded, as a chain of cited claims. Built
+        # from material the run already produced — no model is called here,
+        # because generating fresh reasoning at report time would be a fifth
+        # opinion nobody adjudicated.
+        "reasoning": [
+            chain.to_json()
+            for chain in explain_all(
+                _graph.incidents,
+                findings,
+                coverage={a.agent_id: a.coverage for a in result.agents},
+                known_agents=[a.agent_id for a in result.agents],
+            )
+        ],
         "riskBands": build_risk_bands(findings, duration_ms),
         "findings": [f.to_json() for f in findings],
         "breakdown": build_breakdown(findings),

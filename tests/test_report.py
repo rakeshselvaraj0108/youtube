@@ -96,6 +96,7 @@ def report() -> dict:
             "log": [],
         },
         "incidents": [],
+        "reasoning": [],
         "cost": {
             "estimatedCalls": 5,
             "actualCalls": 3,
