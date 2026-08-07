@@ -430,6 +430,44 @@ class TestAgentContract:
         result, _ = analyse(readable_frames, HalfBroken())
         assert result.status == "DEGRADED"
 
+    def test_concurrent_frames_stay_in_timeline_order(self, tmp_path):
+        """Vision runs its frames concurrently — 220s of a 228s run was one
+        agent waiting on sockets. Concurrency must not make the run
+        non-deterministic, so results are reassembled in input order however
+        they arrive. This provider answers in deliberately reversed timing
+        to make an ordering bug show up rather than hide behind luck."""
+        import time as _time
+
+        frames = []
+        for index, ts_ms in enumerate((1000, 2000, 3000, 4000)):
+            path = tmp_path / f"f{index:05d}.jpg"
+            path.write_bytes(b"\xff\xd8\xff\xe0readable")
+            frames.append(Keyframe(index=index, ts_ms=ts_ms, path=path))
+
+        class SlowestFirst:
+            def invoke(self, capability, *, image_b64, **kwargs):
+                # Later frames answer sooner; a naive as-completed collector
+                # would emit them out of order.
+                _time.sleep(0.02 * (4 - len(image_b64) % 4))
+                return _Served({"observations": []})
+
+        first, _ = analyse(frames, SlowestFirst())
+        second, _ = analyse(frames, SlowestFirst())
+        assert first.status == second.status
+        assert first.coverage == second.coverage
+        assert first.calls == second.calls == 4
+
+    def test_a_single_frame_does_not_spin_up_a_pool(self, readable_frames):
+        """One frame is the common case for a short clip, and a thread pool
+        for one call is pure overhead."""
+        class Describing:
+            def invoke(self, capability, **kwargs):
+                return _Served({"observations": []})
+
+        result, _ = analyse(readable_frames[:1], Describing())
+        assert result.calls == 1
+        assert result.status == "OK"
+
     def test_output_is_json_only(self):
         payload = to_json(build_tracks([obs("knife", 1000)]))
         assert set(payload) == {"visual_evidence"}

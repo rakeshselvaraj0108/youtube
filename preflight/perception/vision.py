@@ -33,6 +33,7 @@ from __future__ import annotations
 import base64
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
@@ -43,6 +44,11 @@ from preflight.models import AgentResult
 AGENT_ID = "vision"
 AGENT_NAME = "Vision Agent"
 VOCAB_DIR = Path("data/vision")
+
+# Concurrent frame descriptions. Four is latency hiding, not throughput —
+# the vendor governor's token bucket is the real ceiling and it is enforced
+# across threads, so raising this buys queueing rather than speed.
+VISION_WORKERS = 4
 
 # Confidence bands, per the specification.
 BAND_VERY_HIGH = 0.95
@@ -486,18 +492,44 @@ def analyse(
     rejected: list[str] = []
     calls = 0
 
+    # Encode first: reading a JPEG off disk is microseconds and must not be
+    # done inside a worker where its failure would look like a provider one.
+    encoded: list[tuple[Keyframe, str]] = []
     for frame in selected:
         try:
-            encoded = encode_frame(frame)
+            encoded.append((frame, encode_frame(frame)))
         except OSError as exc:
             failures.append(FrameFailure(f"S{frame.index:03d}", frame.ts_ms, str(exc)))
-            continue
 
-        result = registry.invoke(
-            VISION_DESCRIBE, prompt=prompt, image_b64=encoded, max_tokens=512
+    # Frames are independent, and each hosted call spends about half a minute
+    # waiting on a socket. Run sequentially they dominated everything else:
+    # 220s of a 228s run, one agent, 96% of the wall clock while nine others
+    # finished in eight seconds between them.
+    #
+    # Safe to overlap because the vendor governor holds a real lock around
+    # its token bucket, so the rate limit is enforced across threads rather
+    # than per-thread — concurrency changes how long the run waits, never how
+    # fast it calls. Kept deliberately small: the ceiling here is latency
+    # hiding, not throughput, and the bucket is the actual limit.
+    workers = min(VISION_WORKERS, max(1, len(encoded)))
+
+    def describe(item: tuple[Keyframe, str]):
+        frame, image_b64 = item
+        return frame, registry.invoke(
+            VISION_DESCRIBE, prompt=prompt, image_b64=image_b64, max_tokens=512
         )
-        calls += 1
 
+    if workers == 1:
+        results = [describe(item) for item in encoded]
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            # `map` preserves input order, so observations are assembled in
+            # timeline order regardless of which frame answered first — the
+            # run stays deterministic even though the calls do not.
+            results = list(pool.map(describe, encoded))
+
+    for frame, result in results:
+        calls += 1
         if not result:
             failures.append(
                 FrameFailure(f"S{frame.index:03d}", frame.ts_ms, result.reason)
