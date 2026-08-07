@@ -114,6 +114,40 @@ class TestHealthAndAgents:
         assert payload["problems"] == []
 
 
+class TestUploadNames:
+    """A filename arrives from whoever posted it. `Path(name).name` alone
+    still admits "..", and a browser is not the only thing that can post."""
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "../../../etc/passwd",
+            "..\\..\\windows\\win.ini",
+            "/absolute/evil.mp4",
+            "....//....//x.mp4",
+            "",
+            None,
+        ],
+    )
+    def test_a_hostile_filename_cannot_escape(self, raw):
+        from preflight.server import safe_name
+
+        cleaned = safe_name(raw)
+        assert "/" not in cleaned and "\\" not in cleaned
+        assert not cleaned.startswith(".")
+        assert cleaned
+
+    def test_an_ordinary_name_survives_recognisably(self):
+        from preflight.server import safe_name
+
+        assert safe_name("My Holiday Video.mp4") == "My_Holiday_Video.mp4"
+
+    def test_a_very_long_name_is_bounded(self):
+        from preflight.server import safe_name
+
+        assert len(safe_name("x" * 5000 + ".mp4")) <= 120
+
+
 class TestLiveServer:
     """Through a real socket — the handler's error paths only exist there."""
 
@@ -175,6 +209,55 @@ class TestLiveServer:
         except error.HTTPError as exc:
             status = exc.code
         assert status == 404
+
+    def post(self, url: str, body: bytes, headers: dict | None = None):
+        req = request.Request(
+            url, data=body, method="POST",
+            headers={"Content-Type": "application/json", **(headers or {})},
+        )
+        try:
+            with request.urlopen(req, timeout=30) as response:
+                return response.status, json.loads(response.read().decode("utf-8"))
+        except error.HTTPError as exc:
+            return exc.code, json.loads(exc.read().decode("utf-8"))
+
+    def test_a_job_for_a_missing_file_is_refused_before_it_starts(self, base_url):
+        """This returned 202 with a job id, and the failure arrived seconds
+        later over the event stream — so the deck sat on "analysing…" for a
+        file that was never going to open."""
+        status, body = self.post(
+            f"{base_url}/api/jobs", json.dumps({"video": "nope.mp4"}).encode()
+        )
+        assert status == 404
+        assert "no such file" in body["error"]
+
+    def test_a_job_with_no_path_is_refused(self, base_url):
+        status, _ = self.post(f"{base_url}/api/jobs", b"{}")
+        assert status == 400
+
+    def test_an_upload_lands_on_disk_and_can_then_be_analysed(self, base_url, tmp_path):
+        """The capability that was missing entirely: a creator with a video
+        on their desktop had no way to submit it, because the only input was
+        a server-side path typed by hand."""
+        payload = b"\x00\x01" * 4096
+        status, body = self.post(
+            f"{base_url}/api/upload",
+            payload,
+            {"Content-Type": "application/octet-stream", "X-Filename": "holiday clip.mp4"},
+        )
+        assert status == 201
+        assert body["bytes"] == len(payload)
+        saved = Path(body["path"])
+        assert saved.is_file() and saved.read_bytes() == payload
+        assert "holiday" in saved.name and " " not in saved.name
+        saved.unlink(missing_ok=True)
+
+    def test_an_empty_upload_is_refused(self, base_url):
+        status, _ = self.post(
+            f"{base_url}/api/upload", b"",
+            {"Content-Type": "application/octet-stream", "X-Filename": "x.mp4"},
+        )
+        assert status == 400
 
     def test_analyze_rejects_a_body_without_a_video(self, base_url):
         req = request.Request(

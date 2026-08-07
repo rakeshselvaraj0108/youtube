@@ -93,6 +93,40 @@ export async function fetchLatestRun(): Promise<AnalysisReport | null> {
   return runs.length > 0 ? fetchRun(runs[0].id) : null;
 }
 
+/**
+ * Send a video to the engine and get back the path it landed on.
+ *
+ * The body is the raw file, not multipart: the engine needs the bytes on
+ * disk and nothing else, and a multipart envelope would mean parsing a
+ * boundary-delimited stream server-side to recover exactly what the browser
+ * already has. The filename travels in a header instead.
+ */
+export async function uploadVideo(
+  file: File,
+  timeoutMs = 30 * 60 * 1000,
+): Promise<{ path: string; name: string; bytes: number }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${BASE}/api/upload`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'X-Filename': file.name,
+      },
+      body: file,
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const detail = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(detail.error ?? `upload failed (${response.status})`);
+    }
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export interface StageEvent {
   seq: number;
   type: 'run.start' | 'stage.start' | 'stage.end' | 'run.complete' | 'run.error';

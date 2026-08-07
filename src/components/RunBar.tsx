@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { fetchHealth, fetchRun, fetchRuns, startJob, type Health, type RunSummary } from '@/lib/api';
+import {
+  fetchHealth,
+  fetchRun,
+  fetchRuns,
+  startJob,
+  uploadVideo,
+  type Health,
+  type RunSummary,
+} from '@/lib/api';
 import { useAnalysis } from '@/store/analysis';
 
 /**
@@ -22,6 +30,7 @@ export function RunBar() {
   const [offline, setOffline] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
 
   const setReport = useAnalysis((s) => s.setReport);
@@ -49,9 +58,27 @@ export function RunBar() {
     };
   }, [busy]);
 
+  async function pick(file: File | undefined) {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    setStatus(`uploading ${file.name}…`);
+    try {
+      const saved = await uploadVideo(file);
+      setVideo(saved.path);
+      setStatus(`${file.name} ready`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setStatus(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function run() {
     setBusy(true);
     setError(null);
+    setStatus(null);
     useAnalysis.getState().resetLive();
     try {
       await startJob(video.trim(), { offline }, (event) => {
@@ -116,6 +143,19 @@ export function RunBar() {
         </span>
       ) : (
         <>
+          <label
+            className="num shrink-0 cursor-pointer rounded border border-edge px-2 py-1 uppercase tracking-[0.08em] text-inkDim hover:border-inkFaint"
+            title="Choose a video from this machine"
+          >
+            choose file
+            <input
+              type="file"
+              accept="video/*"
+              className="hidden"
+              onChange={(e) => void pick(e.target.files?.[0])}
+            />
+          </label>
+
           <input
             value={video}
             onChange={(e) => setVideo(e.target.value)}
@@ -166,6 +206,7 @@ export function RunBar() {
         </>
       )}
 
+      {status && !error && <span className="text-inkFaint">{status}</span>}
       {error && <span className="text-red-400">{error}</span>}
     </div>
   );

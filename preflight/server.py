@@ -218,6 +218,71 @@ def read_run(run_id: str) -> dict[str, Any]:
     return json.loads(resolved.read_text(encoding="utf-8"))
 
 
+# Uploads land here. Separate from RUNS_DIR because these are inputs, not
+# results, and a creator clearing old reports should not delete the video
+# they are still working on.
+UPLOAD_DIR = Path(".preflight/uploads")
+
+# Matches the CLI's own ceiling. A cap enforced while streaming rather than
+# after is the difference between refusing a 20GB upload and dying on it.
+MAX_UPLOAD_BYTES = 8 * 1024**3
+UPLOAD_CHUNK = 1 << 20
+
+
+def safe_name(raw: str) -> str:
+    """A filename that cannot escape the upload directory.
+
+    `Path(name).name` alone still admits "..", and a browser is not the only
+    thing that can post here. Anything that is not a plain component of a
+    name is replaced rather than trusted.
+    """
+    stem = Path(str(raw or "upload")).name
+    cleaned = re.sub(r"[^A-Za-z0-9._-]", "_", stem).strip("._") or "upload"
+    return cleaned[:120]
+
+
+def receive_upload(handler: Any) -> dict[str, Any]:
+    """Stream an uploaded video to disk.
+
+    Never buffered in memory. A two-hour 4K file read into RAM before being
+    written is how a laptop running this locally dies, and the request that
+    kills it looks identical to a working one until it does.
+    """
+    length = int(handler.headers.get("Content-Length") or 0)
+    if length <= 0:
+        raise ApiError(400, "upload has no body")
+    if length > MAX_UPLOAD_BYTES:
+        raise ApiError(413, f"upload exceeds {MAX_UPLOAD_BYTES // 1024**3} GB")
+
+    name = safe_name(handler.headers.get("X-Filename") or "upload.mp4")
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    destination = UPLOAD_DIR / f"{int(datetime.now().timestamp())}_{name}"
+
+    written = 0
+    try:
+        with destination.open("wb") as out:
+            while written < length:
+                chunk = handler.rfile.read(min(UPLOAD_CHUNK, length - written))
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > MAX_UPLOAD_BYTES:
+                    raise ApiError(413, "upload exceeded the size limit mid-stream")
+                out.write(chunk)
+    except ApiError:
+        destination.unlink(missing_ok=True)
+        raise
+    except OSError as exc:
+        destination.unlink(missing_ok=True)
+        raise ApiError(500, f"could not write upload: {exc}") from exc
+
+    if written < length:
+        destination.unlink(missing_ok=True)
+        raise ApiError(400, "upload ended early")
+
+    return {"path": str(destination), "name": name, "bytes": written}
+
+
 def start_job(payload: dict[str, Any]) -> Job:
     job_id = f"job-{int(datetime.now().timestamp() * 1000)}"
     job = Job(job_id, payload)
@@ -448,11 +513,24 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200, analyze(payload))
                 finally:
                     self._analysis_lock.release()
+            elif path == "/api/upload":
+                self._send(201, receive_upload(self))
             elif path == "/api/jobs":
                 # Asynchronous, for the deck: returns immediately with an id
                 # to stream, so twelve agents can be watched rather than
                 # waited on.
-                job = start_job(self._body())
+                payload = self._body()
+                # Validated here, before a job exists. Deferring this to the
+                # worker meant a typo'd path returned 202 and a job id, and
+                # the failure arrived seconds later over the event stream —
+                # so the deck showed "analysing…" for a file that was never
+                # going to open.
+                candidate = str(payload.get("video", "")).strip()
+                if not candidate:
+                    raise ApiError(400, "body must carry a 'video' path")
+                if not Path(candidate).is_file():
+                    raise ApiError(404, f"no such file: {candidate}")
+                job = start_job(payload)
                 self._send(202, {"id": job.id, "events": f"/api/events/{job.id}"})
             else:
                 self._send(404, {"error": f"no route {path}"})
