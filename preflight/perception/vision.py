@@ -512,7 +512,25 @@ def analyse(
 
     inspected = len(selected) - len(failures)
     coverage = inspected / len(keyframes) if keyframes else 0.0
-    status = "OK" if coverage >= 0.999 else "DEGRADED"
+
+    # Coverage and status answer different questions, and deriving one from
+    # the other conflated them for every run this agent has ever done.
+    #
+    # Coverage is "how much of the video did vision actually see", and
+    # gating means that is deliberately less than all of it — fusion scales
+    # a vision claim by exactly this number, which is the honest thing to do
+    # for a modality that sampled.
+    #
+    # Status is "did this agent do what it set out to do". Skipping a frame
+    # no other modality pointed at is the cost optimisation working, not a
+    # failure, and reporting it as DEGRADED meant a perfectly healthy vision
+    # agent showed amber on every single run — which trains a reader to
+    # ignore the one signal that is supposed to mean something is wrong.
+    #
+    # So: degraded when frames were *attempted and lost*, not when they were
+    # never attempted by design.
+    attempted = len(selected)
+    status = "OK" if not failures else "DEGRADED"
     if inspected == 0:
         # Nothing was inspected, and the two reasons for that are not the same
         # thing. If every frame was refused for the same reason and none was
@@ -538,7 +556,7 @@ def analyse(
     if rejected:
         log.append(f"rejected {len(rejected)} label(s): {', '.join(rejected[:4])}")
     if failures:
-        log.append(f"{len(failures)} frame(s) unreadable or refused")
+        log.append(f"{len(failures)}/{attempted} frame(s) unreadable or refused")
 
     return (
         AgentResult(

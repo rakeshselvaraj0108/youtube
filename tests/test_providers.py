@@ -284,6 +284,107 @@ class TestNullProvider:
         assert not hasattr(result, "value")
 
 
+class TestVisionRepairsProseIntoJson:
+    """The measured failure: seven of eight frames lost because the model
+    answered a JSON request with a paragraph, leaving vision at 1% coverage
+    against its 22% share of the analysis surface.
+
+    The subtle part is why a plain retry is not the fix. Temperature is 0,
+    so re-sending the identical request returns the identical paragraph. The
+    second attempt has to say something the first did not — these tests pin
+    that it does, because a repair that quietly degenerates into a retry
+    would look identical in every log and recover nothing.
+    """
+
+    def _provider(self, monkeypatch, replies: list[str]):
+        from preflight.providers.nvidia import NvidiaVision
+        from preflight.providers.secrets import Secret
+
+        provider = NvidiaVision(
+            "vision.describe",
+            "test/vision-model",
+            Secret(
+                name="NVIDIA_API_KEY",
+                value="nvapi-TESTONLY0123456789abcdef",  # pragma: allowlist secret
+                source="env",
+                shape_ok=True,
+            ),
+        )
+        sent: list[list[dict]] = []
+
+        def fake_call(path, payload):
+            sent.append(payload["messages"])
+            content = replies[min(len(sent) - 1, len(replies) - 1)]
+            return Served(
+                value={"choices": [{"message": {"content": content}}]},
+                provider="nvidia",
+                tier=0,
+                calls=1,
+            )
+
+        monkeypatch.setattr(provider, "_call", fake_call)
+        return provider, sent
+
+    def test_json_on_the_first_try_makes_one_call(self, monkeypatch):
+        provider, sent = self._provider(monkeypatch, ['{"observations": []}'])
+        result = provider.invoke(prompt="p", image_b64="x")
+        assert result.ok
+        assert len(sent) == 1
+
+    def test_prose_then_json_recovers_the_frame(self, monkeypatch):
+        provider, sent = self._provider(
+            monkeypatch,
+            ["The image presents a gradient background that transitions from",
+             '{"observations": [{"label": "person"}]}'],
+        )
+        result = provider.invoke(prompt="p", image_b64="x")
+        assert result.ok, "a recoverable frame was still lost"
+        assert result.value["observations"][0]["label"] == "person"
+        assert len(sent) == 2
+
+    def test_the_repair_turn_is_not_a_repeat_of_the_first_request(self, monkeypatch):
+        """The assertion that separates a repair from a retry."""
+        provider, sent = self._provider(
+            monkeypatch, ["prose about a gradient", '{"observations": []}']
+        )
+        provider.invoke(prompt="p", image_b64="x")
+        first, second = sent
+        assert second != first
+        assert len(second) > len(first)
+        assert second[-1]["role"] == "user"
+        assert "JSON" in second[-1]["content"]
+
+    def test_the_model_is_shown_its_own_answer(self, monkeypatch):
+        """"Return JSON" alone is the instruction it already ignored, so the
+        correction names what actually went wrong."""
+        provider, sent = self._provider(
+            monkeypatch, ["a paragraph about colour", '{"observations": []}']
+        )
+        provider.invoke(prompt="p", image_b64="x")
+        echoed = [m for m in sent[1] if m["role"] == "assistant"]
+        assert echoed and "paragraph about colour" in echoed[0]["content"]
+
+    def test_two_paragraphs_give_up_rather_than_looping(self, monkeypatch):
+        provider, sent = self._provider(monkeypatch, ["prose one", "prose two"])
+        result = provider.invoke(prompt="p", image_b64="x")
+        assert not result.ok
+        assert "after repair" in result.reason
+        assert len(sent) == 2, "repair must not loop"
+
+    def test_a_failed_repair_stays_retryable_for_a_transient_cause(self, monkeypatch):
+        provider, _ = self._provider(monkeypatch, ["prose", "prose"])
+        assert provider.invoke(prompt="p", image_b64="x").retryable
+
+    def test_a_fenced_json_reply_needs_no_repair(self, monkeypatch):
+        """`extract_json` already strips fences — repairing that would spend
+        a second call to reach the answer it already had."""
+        provider, sent = self._provider(
+            monkeypatch, ['```json\n{"observations": []}\n```']
+        )
+        assert provider.invoke(prompt="p", image_b64="x").ok
+        assert len(sent) == 1
+
+
 class TestRetryableIsHonoured:
     """`retryable` was set in three places and read in none.
 

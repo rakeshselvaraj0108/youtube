@@ -51,6 +51,20 @@ class _Refused:
         return False
 
 
+class _Served:
+    """A provider result that carries a parsed payload."""
+
+    ok = True
+    reason = ""
+    calls = 1
+
+    def __init__(self, value: dict) -> None:
+        self.value = value
+
+    def __bool__(self) -> bool:
+        return True
+
+
 @pytest.fixture
 def readable_frames(tmp_path) -> list[Keyframe]:
     """Frames backed by real bytes, so encoding succeeds and the provider is
@@ -378,6 +392,43 @@ class TestAgentContract:
 
         result, _ = analyse(readable_frames, Flaky())
         assert result.status == "FAILED"
+
+    def test_gating_is_not_degradation(self, readable_frames):
+        """Status and coverage answer different questions.
+
+        Vision deliberately inspects only the frames another modality
+        pointed at — that is the cost optimisation working. Deriving status
+        from coverage meant a healthy agent reported DEGRADED on every run
+        it ever did, which trains a reader to ignore the one signal that is
+        supposed to mean something is wrong. Measured live: 8 of 90 frames
+        inspected, zero refused, amber.
+        """
+
+        class Describing:
+            def invoke(self, capability, **kwargs):
+                return _Served({"observations": []})
+
+        many = readable_frames * 4
+        result, _ = analyse(many, Describing(), budget=2)
+        assert result.status == "OK", "gated frames reported as degradation"
+        assert result.coverage < 1.0, "coverage must still state what was sampled"
+
+    def test_a_lost_frame_is_degradation(self, readable_frames):
+        """The other half: frames attempted and lost still degrade, so the
+        amber state keeps meaning something."""
+
+        class HalfBroken:
+            def __init__(self):
+                self.n = 0
+
+            def invoke(self, capability, **kwargs):
+                self.n += 1
+                if self.n == 1:
+                    return _Refused("transport reset")
+                return _Served({"observations": []})
+
+        result, _ = analyse(readable_frames, HalfBroken())
+        assert result.status == "DEGRADED"
 
     def test_output_is_json_only(self):
         payload = to_json(build_tracks([obs("knife", 1000)]))
