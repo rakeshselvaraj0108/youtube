@@ -237,7 +237,12 @@ def run_perception(
     intel = _guard(
         orch,
         "ingest_quality",
-        "Video Processing",
+        # Distinct from "Video Processing" on purpose. Both fold into the
+        # ingest node, but the live event stream lists them separately, and
+        # two stages sharing a display name reads as the same agent running
+        # twice — which is exactly the duplicate-decode bug this project
+        # already had, so it should not be simulated by a label.
+        "Picture Quality",
         lambda: _quality(source, ingested.meta.durationMs),
     )
     if intel.artifacts.get("intelligence"):
@@ -463,7 +468,9 @@ def _quality(source: Path, duration_ms: int) -> AgentResult:
     technical questions about the file, which is what A01 already reports,
     and the roster does not declare a thirteenth agent.
     """
-    result = AgentResult(agent_id="ingest_quality", name="Video Processing")
+    # The event stream reports `result.name`, not the label `_guard` was
+    # given, so the rename has to happen here to take effect.
+    result = AgentResult(agent_id="ingest_quality", name="Picture Quality")
     intel = quality.analyse(source, duration_ms)
     if intel is None:
         result.status = "SKIPPED"
