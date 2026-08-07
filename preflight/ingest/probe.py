@@ -99,17 +99,24 @@ def _stream(streams: list[dict[str, Any]], kind: str) -> dict[str, Any] | None:
     return None
 
 
-def probe_video(path: Path) -> VideoMeta:
+def probe_video(path: Path, *, data: dict[str, Any] | None = None) -> VideoMeta:
+    """Compact metadata for the report.
+
+    `data` lets a caller that has already probed pass the payload in rather
+    than paying for a second ffprobe — `ingest` builds the full technical
+    profile from the same call.
+    """
     path = Path(path)
     if not path.is_file():
         raise FileNotFoundError(f"no such file: {path}")
 
-    try:
-        data = ffmpeg.probe(path)
-    except ffmpeg.FfmpegFailed as exc:
-        # ffprobe's own stderr names an ffprobe.EXE path and an exit code,
-        # which tells a creator nothing about their file.
-        raise UnsupportedInput(_diagnose(path)) from exc
+    if data is None:
+        try:
+            data = ffmpeg.probe(path)
+        except ffmpeg.FfmpegFailed as exc:
+            # ffprobe's own stderr names an ffprobe.EXE path and an exit code,
+            # which tells a creator nothing about their file.
+            raise UnsupportedInput(_diagnose(path)) from exc
     streams = data.get("streams", [])
     fmt = data.get("format", {})
 
