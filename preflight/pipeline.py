@@ -164,13 +164,43 @@ def run_perception(
     skip_speech: bool = False,
     settings: Settings | None = None,
     budget: CallBudget | None = None,
+    on_event: Callable[[dict], None] | None = None,
 ) -> PipelineResult:
     source = Path(source)
     started_at = time.perf_counter()
     settings = settings or Settings.load()
     budget = budget or CallBudget()
 
-    orch = Orchestrator(max_attempts=2)
+    orch = Orchestrator(max_attempts=2, on_event=on_event)
+
+    if on_event is not None:
+        # The plan first, so a viewer sees the shape of the work before any
+        # of it happens rather than inferring it from what arrives.
+        on_event(
+            {
+                "type": "run.start",
+                "source": source.name,
+                "topology": [
+                    {"id": key, "tier": tier, "parents": parents}
+                    for key, (tier, parents) in TOPOLOGY.items()
+                ],
+            }
+        )
+        # The orchestrator is scheduling from here until the last stage
+        # settles, so it shows as working rather than as a node that never
+        # lit up. `remedy` and `report` are deliberately absent: A12 runs
+        # from `preflight fix` and the report is written after this returns,
+        # and inventing progress for stages that are not running is exactly
+        # the dishonesty the rest of this pipeline refuses.
+        on_event(
+            {
+                "type": "stage.start",
+                "stage": "orchestrator",
+                "agentId": "A01",
+                "name": "Orchestrator",
+                "startedMs": 0,
+            }
+        )
 
     orchestrator = AgentResult(
         agent_id="orchestrator",
@@ -279,19 +309,46 @@ def run_perception(
     all_findings = [f for agent in agents for f in agent.findings]
     fusion_log = apply_fusion(all_findings, per_agent_coverage)
 
-    scoring_agent = AgentResult(
-        agent_id="score",
+    # Fusion and scoring are real work with a real duration, and they were the
+    # one stage doing something a viewer would want to watch that never said
+    # so. Routed through the orchestrator like everything else rather than
+    # emitted by hand, so it lands in the timeline too.
+    scoring_agent = orch.run_stage(
+        "score",
+        lambda: AgentResult(
+            agent_id="score",
+            name="Scoring Agent",
+            status="OK",
+            log=fusion_log
+            + [
+                f"{len(all_findings)} finding(s) fused · "
+                f"readiness {compute_readiness(sub_scores(all_findings)).overall}"
+            ],
+        ),
+        required=False,
         name="Scoring Agent",
-        status="OK",
-        log=fusion_log
-        + [
-            f"{len(all_findings)} finding(s) fused · "
-            f"readiness {compute_readiness(sub_scores(all_findings)).overall}"
-        ],
     )
     agents.append(scoring_agent)
 
     orchestrator.elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+
+    if on_event is not None:
+        on_event(
+            {
+                "type": "stage.end",
+                "stage": "orchestrator",
+                "agentId": "A01",
+                "name": "Orchestrator",
+                "status": "OK",
+                "coverage": 1.0,
+                "elapsedMs": orchestrator.elapsed_ms,
+                "attempts": 1,
+                "findings": 0,
+                "calls": 0,
+                "detail": f"{len(orch.report.timeline)} stage(s) scheduled",
+            }
+        )
+
     orchestrator.artifacts["pipeline_id"] = orch.report.pipeline_id
     orchestrator.artifacts["timeline"] = orch.timeline_json()
     orchestrator.log.append(

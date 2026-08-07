@@ -146,10 +146,17 @@ class Orchestrator:
         roster: Roster | None = None,
         max_attempts: int = 2,
         clock: Callable[[], float] = time.perf_counter,
+        on_event: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self.roster = roster or load_roster()
         self.max_attempts = max_attempts
         self._clock = clock
+        # Fired as each stage starts and settles. The orchestrator already
+        # sequences every stage and records the timeline; a live view is the
+        # same information delivered while it is still happening rather than
+        # after. Never raises into the pipeline — a broken listener must not
+        # take down a run.
+        self._on_event = on_event
         self._stage_to_agent = {
             "orchestrator": "A01", "ingest": "A01", "speech": "A02",
             "vision": "A03", "audio": "A04", "ocr": "A05", "meta": "A06",
@@ -185,6 +192,16 @@ class Orchestrator:
         attempts = 0
         result: AgentResult | None = None
 
+        self._emit(
+            {
+                "type": "stage.start",
+                "stage": stage,
+                "agentId": self._stage_to_agent.get(stage, "A??"),
+                "name": name or stage.title(),
+                "startedMs": started_ms,
+            }
+        )
+
         while attempts < self.max_attempts:
             attempts += 1
             began = self._clock()
@@ -213,6 +230,22 @@ class Orchestrator:
                 attempts=attempts,
                 error=result.error,
             )
+        )
+
+        self._emit(
+            {
+                "type": "stage.end",
+                "stage": stage,
+                "agentId": self._stage_to_agent.get(stage, "A??"),
+                "name": result.name,
+                "status": result.status,
+                "coverage": round(result.coverage, 4),
+                "elapsedMs": result.elapsed_ms,
+                "attempts": attempts,
+                "findings": len(result.findings),
+                "calls": result.calls,
+                "detail": result.detail,
+            }
         )
 
         # A required stage that failed stops the pipeline cleanly. An optional
@@ -260,3 +293,11 @@ class Orchestrator:
 
     def timeline_json(self) -> list[dict[str, Any]]:
         return [outcome.to_json() for outcome in self.report.timeline]
+
+    def _emit(self, event: dict[str, Any]) -> None:
+        if self._on_event is None:
+            return
+        try:
+            self._on_event(event)
+        except Exception:  # noqa: BLE001 - a listener must never fail a run
+            pass

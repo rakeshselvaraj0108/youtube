@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { analyze, fetchHealth, fetchRun, fetchRuns, type Health, type RunSummary } from '@/lib/api';
+import { fetchHealth, fetchRun, fetchRuns, startJob, type Health, type RunSummary } from '@/lib/api';
 import { useAnalysis } from '@/store/analysis';
 
 /**
@@ -15,7 +15,11 @@ export function RunBar() {
   const [health, setHealth] = useState<Health | null>(null);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [video, setVideo] = useState('data/corpus/clips/g001.mp4');
-  const [offline, setOffline] = useState(true);
+  // Defaults to the full run. Defaulting to offline meant clicking "analyse"
+  // skipped the triad, retrieval and the key entirely and returned in three
+  // seconds — which reads as a broken tool rather than a deliberate mode,
+  // because the deck gave no sign the interesting half had been switched off.
+  const [offline, setOffline] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
@@ -48,13 +52,28 @@ export function RunBar() {
   async function run() {
     setBusy(true);
     setError(null);
+    useAnalysis.getState().resetLive();
     try {
-      const { report } = await analyze(video.trim(), { offline });
-      setReport(report, 'api');
-      setRuns(await fetchRuns());
+      await startJob(video.trim(), { offline }, (event) => {
+        useAnalysis.getState().applyEvent(event);
+        if (event.type === 'run.error') {
+          setError(event.error ?? 'run failed');
+          setBusy(false);
+        }
+        if (event.type === 'run.complete' && event.id) {
+          // The stream carries progress; the report itself is fetched once
+          // at the end rather than pushed through the event channel, which
+          // keeps a 60 kB document out of every frame.
+          void (async () => {
+            const report = await fetchRun(event.id!);
+            if (report) setReport(report, 'api');
+            setRuns(await fetchRuns());
+            setBusy(false);
+          })();
+        }
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-    } finally {
       setBusy(false);
     }
   }

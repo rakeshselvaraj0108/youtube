@@ -93,6 +93,65 @@ export async function fetchLatestRun(): Promise<AnalysisReport | null> {
   return runs.length > 0 ? fetchRun(runs[0].id) : null;
 }
 
+export interface StageEvent {
+  seq: number;
+  type: 'run.start' | 'stage.start' | 'stage.end' | 'run.complete' | 'run.error';
+  stage?: string;
+  agentId?: string;
+  name?: string;
+  status?: string;
+  coverage?: number;
+  elapsedMs?: number;
+  findings?: number;
+  calls?: number;
+  detail?: string;
+  error?: string;
+  id?: string;
+  topology?: { id: string; tier: number; parents: string[] }[];
+}
+
+/**
+ * Start a run and watch it happen.
+ *
+ * The synchronous route answers only when everything is finished — minutes
+ * of silence on a hosted run, which is indistinguishable from a hang. This
+ * returns immediately and streams each agent as it starts and settles.
+ *
+ * Returns a disposer. Call it to stop listening; the analysis continues
+ * server-side and its report still lands on disk.
+ */
+export async function startJob(
+  video: string,
+  options: { offline?: boolean; budget?: number; strategy?: string },
+  onEvent: (event: StageEvent) => void,
+): Promise<() => void> {
+  const started = await call<{ id: string }>(
+    '/api/jobs',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ video, ...options }),
+    },
+    READ_TIMEOUT_MS,
+  );
+
+  const stream = new EventSource(`${BASE}/api/events/${started.id}`);
+  stream.onmessage = (message) => {
+    try {
+      const event = JSON.parse(message.data) as StageEvent;
+      onEvent(event);
+      // The server closes after the terminal event; closing here too stops
+      // EventSource reconnecting and replaying a finished run forever.
+      if (event.type === 'run.complete' || event.type === 'run.error') stream.close();
+    } catch {
+      /* a malformed frame must not kill the stream */
+    }
+  };
+  stream.onerror = () => stream.close();
+
+  return () => stream.close();
+}
+
 export async function analyze(
   video: string,
   options: { offline?: boolean; budget?: number; strategy?: string } = {},

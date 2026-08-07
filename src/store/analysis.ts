@@ -1,7 +1,7 @@
 ﻿import { create } from 'zustand';
 import type { AnalysisReport, Finding } from '@/types/analysis';
 import { afterReport as fixtureAfter, beforeReport as fixtureBefore } from '@/data/fixture';
-import { fetchLatestRun } from '@/lib/api';
+import { fetchLatestRun, type StageEvent } from '@/lib/api';
 import { sortFindings, type FindingSort } from '@/lib/findings';
 import { injectedAfterReport, injectedReport } from '@/lib/reportSource';
 
@@ -22,6 +22,17 @@ export type DetailTab = 'EVIDENCE' | 'POLICY' | 'ADVERSARIAL';
  * screenshot presented as a result.
  */
 export type ReportSource = 'injected' | 'api' | 'fixture';
+
+/** One agent's state during a live run. */
+export interface LiveStage {
+  stage: string;
+  name: string;
+  status: 'RUNNING' | 'OK' | 'DEGRADED' | 'SKIPPED' | 'FAILED';
+  coverage?: number;
+  elapsedMs?: number;
+  findings?: number;
+  detail?: string;
+}
 
 interface AnalysisState {
   before: AnalysisReport;
@@ -45,6 +56,18 @@ interface AnalysisState {
   setSortBy: (sort: FindingSort) => void;
   setDetailTab: (tab: DetailTab) => void;
   setHoveredOp: (index: number | null) => void;
+  /**
+   * Per-agent state while a run is in flight, keyed by pipeline stage id.
+   * Empty when nothing is running, so the deck falls back to the report's
+   * own agent rows.
+   */
+  live: Record<string, LiveStage>;
+  /** True between the first event and the terminal one. */
+  running: boolean;
+
+  applyEvent: (event: StageEvent) => void;
+  resetLive: () => void;
+
   /** Adopt a report the engine produced. */
   setReport: (report: AnalysisReport, source: ReportSource) => void;
   /** Ask the API for its newest run. No-op when nothing answers. */
@@ -74,6 +97,60 @@ export const useAnalysis = create<AnalysisState>((set, get) => ({
   setSortBy: (sortBy) => set({ sortBy }),
   setDetailTab: (detailTab) => set({ detailTab }),
   setHoveredOp: (hoveredOpIndex) => set({ hoveredOpIndex }),
+
+  live: {},
+  running: false,
+
+  resetLive: () => set({ live: {}, running: false }),
+
+  applyEvent: (event) =>
+    set((state) => {
+      switch (event.type) {
+        case 'run.start':
+          return { live: {}, running: true };
+
+        case 'stage.start':
+          if (!event.stage) return state;
+          return {
+            running: true,
+            live: {
+              ...state.live,
+              [event.stage]: {
+                stage: event.stage,
+                name: event.name ?? event.stage,
+                status: 'RUNNING',
+              },
+            },
+          };
+
+        case 'stage.end':
+          if (!event.stage) return state;
+          return {
+            live: {
+              ...state.live,
+              [event.stage]: {
+                stage: event.stage,
+                name: event.name ?? event.stage,
+                status: (event.status as LiveStage['status']) ?? 'OK',
+                coverage: event.coverage,
+                elapsedMs: event.elapsedMs,
+                findings: event.findings,
+                detail: event.detail,
+              },
+            },
+          };
+
+        case 'run.complete':
+        case 'run.error':
+          // The per-agent states are kept, not cleared. They are the record
+          // of what just happened, and blanking the graph the instant a run
+          // finishes throws away the thing the viewer was watching.
+          return { running: false };
+
+        default:
+          return state;
+      }
+    }),
 
   setReport: (report, source) =>
     set({
@@ -114,6 +191,14 @@ export function useReport(): AnalysisReport {
  * mistaken for a real run. */
 export function useReportSource(): ReportSource {
   return useAnalysis((s) => s.source);
+}
+
+export function useLiveStages(): Record<string, LiveStage> {
+  return useAnalysis((s) => s.live);
+}
+
+export function useRunning(): boolean {
+  return useAnalysis((s) => s.running);
 }
 
 /** Findings after the category filter and the active sort. */

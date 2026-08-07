@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useReport } from '@/store/analysis';
+import { useLiveStages, useReport, type LiveStage } from '@/store/analysis';
 import { AGENT_HEX } from '@/lib/agents';
 import { SIGNAL_HEX } from '@/lib/scoring';
 import {
@@ -89,6 +89,24 @@ function Falcon({ size }: { size: number }) {
 /* ------------------------------------------------------------------ */
 /* Replay clock                                                        */
 /* ------------------------------------------------------------------ */
+
+/**
+ * Status for one node, preferring a run that is happening now.
+ *
+ * `statusAt` replays a *finished* report against a clock, which is the right
+ * answer when the deck is showing a report someone opened. It is the wrong
+ * answer while an analysis is actually in flight: the replay would animate
+ * the previous run's timings over the top of the live one. Live state wins
+ * whenever the engine is reporting.
+ */
+function resolveStatus(
+  agent: AgentRun,
+  clock: number | null,
+  live: Record<string, LiveStage>,
+): AgentStatus {
+  const stage = live[agent.id];
+  return stage ? (stage.status as AgentStatus) : statusAt(agent, clock);
+}
 
 function useReplay(agents: AgentRun[]) {
   const runMs = useMemo(() => totalRunMs(agents), [agents]);
@@ -256,6 +274,7 @@ function FlowPlane({
   setHovered: (id: AgentId | null) => void;
 }) {
   const nodes = useMemo(() => layoutFlow(), []);
+  const live = useLiveStages();
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
   const planeRef = useRef<HTMLDivElement>(null);
 
@@ -360,7 +379,7 @@ function FlowPlane({
               key={agent.id}
               agent={agent}
               node={node}
-              status={statusAt(agent, clock)}
+              status={resolveStatus(agent, clock, live)}
               scale={scale}
               dimmed={adjacency !== null && !adjacency.has(agent.id)}
               onHover={setHovered}
@@ -386,14 +405,17 @@ function FlowPlane({
  */
 function Telemetry({ clock, columns }: { clock: number | null; columns: string }) {
   const report = useReport();
+  const live = useLiveStages();
 
   const calls = report.agents.reduce(
-    (sum, a) => sum + (statusAt(a, clock) === 'PENDING' ? 0 : a.calls),
+    (sum, a) => sum + (resolveStatus(a, clock, live) === 'PENDING' ? 0 : a.calls),
     0,
   );
   const elapsed = clock ?? totalRunMs(report.agents);
   const coverage = Math.round(report.meta.coverage * 100);
-  const done = report.agents.filter((a) => statusAt(a, clock) !== 'PENDING').length;
+  const done = report.agents.filter(
+    (a) => resolveStatus(a, clock, live) !== 'PENDING',
+  ).length;
 
   const cells = [
     { label: 'Agents', value: `${done}/${report.agents.length}` },
@@ -430,6 +452,7 @@ function Telemetry({ clock, columns }: { clock: number | null; columns: string }
 
 function ExpandedFlow({ onClose }: { onClose: () => void }) {
   const report = useReport();
+  const live = useLiveStages();
   const { clock, play } = useReplay(report.agents);
   const [hovered, setHovered] = useState<AgentId | null>(null);
 
@@ -497,7 +520,7 @@ function ExpandedFlow({ onClose }: { onClose: () => void }) {
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {report.agents.map((agent) => {
-              const status = statusAt(agent, clock);
+              const status = resolveStatus(agent, clock, live);
               const color = AGENT_HEX[agent.id];
               const isActive = hovered === agent.id;
               return (
@@ -559,14 +582,17 @@ function ExpandedFlow({ onClose }: { onClose: () => void }) {
 
 export function AgentFlow() {
   const report = useReport();
+  const live = useLiveStages();
   const { clock, runMs } = useReplay(report.agents);
   const [hovered, setHovered] = useState<AgentId | null>(null);
   const [expanded, setExpanded] = useState(false);
 
   const active = hovered ? report.agents.find((a) => a.id === hovered) : null;
-  const running = report.agents.filter((a) => statusAt(a, clock) === 'RUNNING');
+  const running = report.agents.filter(
+    (a) => resolveStatus(a, clock, live) === 'RUNNING',
+  );
   const completed = report.agents.filter((a) => {
-    const s = statusAt(a, clock);
+    const s = resolveStatus(a, clock, live);
     return s === 'OK' || s === 'DEGRADED';
   }).length;
 

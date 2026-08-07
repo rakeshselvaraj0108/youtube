@@ -66,6 +66,58 @@ class ApiError(Exception):
         super().__init__(message)
 
 
+class Job:
+    """One analysis, running on its own thread, with a live event feed.
+
+    The synchronous `/api/analyze` answered only when the whole run was
+    finished. For an offline run that is three seconds and fine; online it is
+    minutes of silence, and a deck that shows nothing for two minutes is
+    indistinguishable from a deck that has hung.
+
+    Events are buffered rather than broadcast: a client that connects late,
+    reloads, or drops for a moment gets the whole run from the beginning
+    instead of joining midway with a half-populated graph.
+    """
+
+    def __init__(self, job_id: str, payload: dict[str, Any]) -> None:
+        self.id = job_id
+        self.payload = payload
+        self.events: list[dict[str, Any]] = []
+        self.done = threading.Event()
+        self.result: dict[str, Any] | None = None
+        self.error: str | None = None
+        self._lock = threading.Lock()
+
+    def emit(self, event: dict[str, Any]) -> None:
+        with self._lock:
+            event = {"seq": len(self.events), **event}
+            self.events.append(event)
+
+    def since(self, index: int) -> list[dict[str, Any]]:
+        with self._lock:
+            return self.events[index:]
+
+    def run(self) -> None:
+        try:
+            self.result = analyze(self.payload, on_event=self.emit)
+            self.emit({"type": "run.complete", "id": self.result["id"]})
+        except ApiError as exc:
+            self.error = exc.message
+            self.emit({"type": "run.error", "error": exc.message})
+        except Exception as exc:  # noqa: BLE001
+            traceback.print_exc()
+            self.error = type(exc).__name__
+            self.emit({"type": "run.error", "error": type(exc).__name__})
+        finally:
+            self.done.set()
+
+
+# Bounded so a long-lived server does not accumulate every run it ever did.
+JOBS: dict[str, Job] = {}
+JOBS_LOCK = threading.Lock()
+MAX_JOBS = 32
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -166,7 +218,29 @@ def read_run(run_id: str) -> dict[str, Any]:
     return json.loads(resolved.read_text(encoding="utf-8"))
 
 
-def analyze(payload: dict[str, Any]) -> dict[str, Any]:
+def start_job(payload: dict[str, Any]) -> Job:
+    job_id = f"job-{int(datetime.now().timestamp() * 1000)}"
+    job = Job(job_id, payload)
+    with JOBS_LOCK:
+        if len(JOBS) >= MAX_JOBS:
+            for stale in sorted(JOBS)[: len(JOBS) - MAX_JOBS + 1]:
+                JOBS.pop(stale, None)
+        JOBS[job_id] = job
+    threading.Thread(target=job.run, daemon=True).start()
+    return job
+
+
+def get_job(job_id: str) -> Job:
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+    if job is None:
+        raise ApiError(404, f"no job {job_id}")
+    return job
+
+
+def analyze(
+    payload: dict[str, Any], on_event: Any = None
+) -> dict[str, Any]:
     """Run the real pipeline. Same code path as `preflight check`."""
     raw = str(payload.get("video", "")).strip()
     if not raw:
@@ -183,7 +257,13 @@ def analyze(payload: dict[str, Any]) -> dict[str, Any]:
     settings = Settings.load(offline=True) if offline else Settings.load()
     budget = CallBudget(ceiling=int(ceiling) if ceiling else None)
 
-    result = run_perception(video, cas.Store(settings.cache_dir), settings=settings, budget=budget)
+    result = run_perception(
+        video,
+        cas.Store(settings.cache_dir),
+        settings=settings,
+        budget=budget,
+        on_event=on_event,
+    )
     bundle = build_report(
         result,
         policy_version=result.corpus.version if result.corpus else "unknown",
@@ -285,6 +365,44 @@ class Handler(BaseHTTPRequestHandler):
         self._cors()
         self.end_headers()
 
+    def _stream(self, job: Job) -> None:
+        """Server-sent events for one job, replayed from the beginning.
+
+        Written by hand rather than pulled from a framework: SSE is a
+        content type, a blank-line delimiter and a flush, and this is all of
+        it. The heartbeat matters — an idle proxy will close a connection
+        that says nothing for a minute, and an agent that takes two minutes
+        is normal here.
+        """
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        self._cors()
+        self.end_headers()
+
+        cursor = 0
+        try:
+            while True:
+                for event in job.since(cursor):
+                    cursor += 1
+                    self.wfile.write(
+                        f"data: {json.dumps(event, ensure_ascii=False)}\n\n".encode()
+                    )
+                    self.wfile.flush()
+                if job.done.is_set() and cursor >= len(job.events):
+                    break
+                # Comment frame: keeps the connection warm without being
+                # delivered to the EventSource `message` handler.
+                self.wfile.write(b": keepalive\n\n")
+                self.wfile.flush()
+                job.done.wait(timeout=0.4)
+        except (BrokenPipeError, ConnectionResetError):
+            # The client navigated away mid-run. The analysis keeps going and
+            # its report still lands on disk.
+            pass
+
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0].rstrip("/")
         try:
@@ -294,6 +412,20 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, agents())
             elif path == "/api/runs":
                 self._send(200, list_runs())
+            elif path.startswith("/api/events/"):
+                self._stream(get_job(path[len("/api/events/"):]))
+            elif path.startswith("/api/jobs/"):
+                job = get_job(path[len("/api/jobs/"):])
+                self._send(
+                    200,
+                    {
+                        "id": job.id,
+                        "done": job.done.is_set(),
+                        "error": job.error,
+                        "events": job.events,
+                        "result": job.result,
+                    },
+                )
             elif path.startswith("/api/runs/"):
                 self._send(200, read_run(path[len("/api/runs/"):]))
             else:
@@ -307,6 +439,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/plan":
                 self._send(200, plan_for(self._body()))
             elif path == "/api/analyze":
+                # Synchronous, for scripts and the CLI-shaped caller that
+                # just wants a report back.
                 payload = self._body()
                 if not self._analysis_lock.acquire(blocking=False):
                     raise ApiError(409, "an analysis is already running")
@@ -314,6 +448,12 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200, analyze(payload))
                 finally:
                     self._analysis_lock.release()
+            elif path == "/api/jobs":
+                # Asynchronous, for the deck: returns immediately with an id
+                # to stream, so twelve agents can be watched rather than
+                # waited on.
+                job = start_job(self._body())
+                self._send(202, {"id": job.id, "events": f"/api/events/{job.id}"})
             else:
                 self._send(404, {"error": f"no route {path}"})
         except Exception as exc:  # noqa: BLE001
