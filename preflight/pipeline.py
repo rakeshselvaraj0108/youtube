@@ -33,6 +33,7 @@ from preflight.perception import (
     disclosure,
     metadata,
     ocr,
+    quality,
     vision,
 )
 from preflight.perception import asr as asr_mod
@@ -225,6 +226,23 @@ def run_perception(
         log=list(ingested.log),
         artifacts={"keyframes": len(ingested.keyframes), "cached": ingested.cached},
     )
+    if ingested.profile is not None:
+        ingest_agent.artifacts["profile"] = ingested.profile.to_json()
+
+    # Picture quality, motion and thumbnail candidates — one decode, bounded
+    # by a fixed sample budget rather than by duration, so a thirty-minute
+    # upload costs what a two-minute clip costs. Guarded like every optional
+    # stage: a file that will not sample degrades the technical profile, it
+    # does not fail the run.
+    intel = _guard(
+        orch,
+        "ingest_quality",
+        "Video Processing",
+        lambda: _quality(source, ingested.meta.durationMs),
+    )
+    if intel.artifacts.get("intelligence"):
+        ingest_agent.artifacts.update(intel.artifacts["intelligence"])
+        ingest_agent.log.extend(intel.log)
     # Ingest itself stays unwrapped above — its specific exceptions
     # (FileNotFoundError, UnsupportedInput, FfmpegFailed) are caught by name at
     # the CLI boundary, and a retry loop swallowing them into a generic FAILED
@@ -432,6 +450,36 @@ def _policy(
         return agent
 
     return _guard(orch, "policy", "Policy Agent", run), corpus, backend
+
+
+def _quality(source: Path, duration_ms: int) -> AgentResult:
+    """Picture quality, motion and thumbnail candidates from one decode.
+
+    Folded into the ingest node rather than given its own agent: it answers
+    technical questions about the file, which is what A01 already reports,
+    and the roster does not declare a thirteenth agent.
+    """
+    result = AgentResult(agent_id="ingest_quality", name="Video Processing")
+    intel = quality.analyse(source, duration_ms)
+    if intel is None:
+        result.status = "SKIPPED"
+        result.error = "could not sample frames for quality analysis"
+        result.log.append(result.error)
+        return result
+
+    result.artifacts["intelligence"] = intel.to_json()
+    result.log.append(
+        f"picture: {intel.quality.blur_label} · "
+        f"brightness {intel.quality.brightness:.0f} · "
+        f"contrast {intel.quality.contrast:.0f} · "
+        f"{intel.quality.frames_sampled} frames sampled"
+    )
+    result.log.append(
+        f"motion: {intel.motion.scene_count} scene(s) · "
+        f"{len(intel.motion.hard_cuts)} hard cut(s), "
+        f"{len(intel.motion.gradual_transitions)} gradual"
+    )
+    return result
 
 
 def _registry(settings: Settings | None) -> Registry | None:
