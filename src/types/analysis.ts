@@ -127,6 +127,25 @@ export interface BreakdownRow {
   severity: Severity;
 }
 
+/**
+ * One fixed-length slice of a long video, ranked by how much of the total risk
+ * it carries. A 90-minute upload with 200 findings is not usefully read as a
+ * list of 200 findings; it is usefully read as "segments 4 and 7 carry 82% of
+ * the risk". Emitted only above the rollup threshold — short videos are their
+ * own segment and the grouping tells you nothing.
+ */
+export interface Segment {
+  index: number;
+  startMs: number;
+  endMs: number;
+  findingCount: number;
+  /** 0..1 — share of the run's total risk sitting in this segment. */
+  riskShare: number;
+  /** Most frequent clause in this segment, or null when it is clean. */
+  dominantClause: string | null;
+  worstSeverity: Severity | null;
+}
+
 export interface VideoMeta {
   filename: string;
   durationMs: number;
@@ -185,4 +204,10 @@ export interface AnalysisReport {
   breakdown: BreakdownRow[];
   remediation: Remediation;
   agents: AgentRun[];
+  /**
+   * Present only for videos long enough to roll up (see the decomposition
+   * plan's threshold). Absent, not empty, on short videos — an empty array
+   * would read as "rolled up and found nothing".
+   */
+  segments?: Segment[];
 }

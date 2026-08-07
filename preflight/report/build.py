@@ -24,7 +24,9 @@ from preflight.models import Finding, SEVERITY_RANK
 from preflight.pipeline import TOPOLOGY, PipelineResult
 from preflight.remediate.codegen import Program, build_program
 from preflight.remediate.edl import EDL, compile_edl
+from preflight.plan import HIERARCHICAL_ABOVE_MS, SEGMENT_MS
 from preflight.scoring.readiness import SUB_SCORE_ORDER, compute_readiness, sub_scores
+from preflight.scoring.rollup import rollup
 
 # How many keyframes to embed per finding. Each is roughly 40KB of base64, and
 # report.html has to stay openable.
@@ -202,6 +204,16 @@ def build_report(
         },
         "agents": agents,
     }
+
+    # Segment rollup, for videos long enough that a flat finding list stops
+    # being readable. Gated on the decomposition plan's own threshold rather
+    # than a second constant, so what the plan announced it would do is what
+    # the report actually contains. Absent rather than empty below it: an
+    # empty array reads as "rolled up and found nothing".
+    if duration_ms > HIERARCHICAL_ABOVE_MS:
+        report["segments"] = [
+            segment.to_json() for segment in rollup(findings, duration_ms, SEGMENT_MS)
+        ]
 
     return ReportBundle(report=report, edl=edl, program=program)
 

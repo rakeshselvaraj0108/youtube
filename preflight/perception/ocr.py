@@ -553,6 +553,10 @@ def analyse(
     zero and the run continues — a report that omits on-screen text and says
     so is more useful than no report.
     """
+    # Local, matching vision.py: importing the registry at module scope would
+    # close an import cycle back through the provider package.
+    from preflight.providers.registry import OCR_IMAGE
+
     started = time.perf_counter()
     rules = rules or RoleRules()
     report = OcrReport()
@@ -575,7 +579,7 @@ def analyse(
     unavailable_reason = ""
 
     for frame in frames:
-        result = registry.invoke("ocr.image", image=frame.path)
+        result = registry.invoke(OCR_IMAGE, image=frame.path)
         if not getattr(result, "ok", False):
             reason = getattr(result, "reason", "provider unavailable")
             if not report.frames_read:

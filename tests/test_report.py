@@ -112,6 +112,51 @@ def report() -> dict:
     }
 
 
+class TestSegmentRollupReachesTheReport:
+    """`scoring/rollup.py` shipped fully written and fully unit-tested with
+    no caller at all — the same orphan pattern as the vision agent, the
+    orchestrator and `rerank.text` before it. Its own tests passed the whole
+    time. This is the assertion that would have failed."""
+
+    def test_a_short_video_has_no_segments_key_at_all(self, report):
+        """Absent, not empty — an empty array reads as 'rolled up and found
+        nothing', which is a different and false claim."""
+        assert "segments" not in report
+
+    def test_the_schema_accepts_a_report_carrying_segments(self, report):
+        from preflight.plan import SEGMENT_MS
+        from preflight.scoring.rollup import rollup
+
+        findings = [
+            finding(fid="f1", start=100_000, end=110_000),
+            finding(fid="f2", start=1_900_000, end=1_910_000, severity="CRITICAL"),
+        ]
+        duration = 2_400_000
+        report["video"]["durationMs"] = duration
+        report["findings"] = [f.to_json() for f in findings]
+        report["segments"] = [
+            s.to_json() for s in rollup(findings, duration, SEGMENT_MS)
+        ]
+
+        from preflight.report.build import validate
+
+        schema = Path("schema/analysis-report.schema.json")
+        if not schema.is_file():
+            pytest.skip("run npm run schema")
+        validate(report, schema)
+
+    def test_shares_sum_to_one_so_the_page_can_show_percentages(self):
+        from preflight.plan import SEGMENT_MS
+        from preflight.scoring.rollup import rollup
+
+        findings = [
+            finding(fid="f1", start=100_000, end=110_000),
+            finding(fid="f2", start=1_900_000, end=1_910_000, severity="CRITICAL"),
+        ]
+        segments = rollup(findings, 2_400_000, SEGMENT_MS)
+        assert sum(s.risk_share for s in segments) == pytest.approx(1.0, abs=0.001)
+
+
 class TestRiskBands:
     def test_tiles_the_whole_runtime_without_gaps(self):
         bands = build_risk_bands([finding()], 90_000)
