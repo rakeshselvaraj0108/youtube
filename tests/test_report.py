@@ -95,6 +95,7 @@ def report() -> dict:
             "videoStreamCopied": True,
             "log": [],
         },
+        "incidents": [],
         "cost": {
             "estimatedCalls": 5,
             "actualCalls": 3,

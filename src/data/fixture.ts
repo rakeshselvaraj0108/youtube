@@ -830,6 +830,7 @@ export const beforeReport: AnalysisReport = {
   // Predicted before the run, measured after it. The estimate is an upper
   // bound, so actual coming in under it is the expected shape.
   cost: { estimatedCalls: 17, actualCalls: 14, ceiling: null, shed: [] },
+  incidents: [],
   agents,
 };
 

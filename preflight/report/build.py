@@ -25,6 +25,7 @@ from preflight.pipeline import TOPOLOGY, PipelineResult
 from preflight.remediate.codegen import Program, build_program
 from preflight.remediate.edl import EDL, compile_edl
 from preflight.plan import HIERARCHICAL_ABOVE_MS, SEGMENT_MS, build_plan
+from preflight.scoring.incidents import build_graph
 from preflight.scoring.readiness import SUB_SCORE_ORDER, compute_readiness, sub_scores
 from preflight.scoring.rollup import rollup
 
@@ -193,6 +194,10 @@ def build_report(
             "verdict": readiness.verdict,
             "weakest": readiness.weakest,
         },
+        # Findings are what each agent reported; incidents are what actually
+        # happened. Four agents noticing the same moment is one problem seen
+        # four times, and a reader acting on the count needs the second view.
+        "incidents": build_graph(findings, duration_ms).to_json()["incidents"],
         "riskBands": build_risk_bands(findings, duration_ms),
         "findings": [f.to_json() for f in findings],
         "breakdown": build_breakdown(findings),

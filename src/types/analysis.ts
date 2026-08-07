@@ -219,12 +219,43 @@ export interface CostRecord {
   shed: ShedRecord[];
 }
 
+/**
+ * One event, as every agent that saw it described it.
+ *
+ * Findings are what each agent reported; incidents are what happened. Four
+ * agents noticing the same moment is one problem observed four times, and a
+ * creator deciding what to fix needs the second view — the first tells them
+ * how many detectors fired, which is a fact about PREFLIGHT rather than
+ * about their video.
+ */
+export interface Incident {
+  id: string;
+  startMs: number;
+  endMs: number;
+  category: string;
+  severity: Severity;
+  /** 0..1 — the best single observation, plus a bounded corroboration step
+   * per additional independent agent. Never reaches certainty. */
+  confidence: number;
+  findingIds: string[];
+  /** Independent agents that observed this. One agent reporting twice does
+   * not appear twice, because an observer repeating itself is not
+   * corroboration. */
+  agents: string[];
+  clauses: string[];
+  suggestedFix: string;
+  reasoning: string;
+  /** True when more than one independent agent saw it. */
+  corroborated: boolean;
+}
+
 export interface AnalysisReport {
   video: VideoMeta;
   meta: RunMeta;
   scores: Scores;
   riskBands: RiskBand[];
   findings: Finding[];
+  incidents: Incident[];
   breakdown: BreakdownRow[];
   remediation: Remediation;
   agents: AgentRun[];

@@ -176,6 +176,12 @@
           },
           "type": "array"
         },
+        "incidents": {
+          "items": {
+            "$ref": "#/definitions/Incident"
+          },
+          "type": "array"
+        },
         "meta": {
           "$ref": "#/definitions/RunMeta"
         },
@@ -208,6 +214,7 @@
         "scores",
         "riskBands",
         "findings",
+        "incidents",
         "breakdown",
         "remediation",
         "agents",
@@ -391,6 +398,75 @@
         "policy",
         "adversarial",
         "suggestedFix"
+      ],
+      "type": "object"
+    },
+    "Incident": {
+      "additionalProperties": false,
+      "description": "One event, as every agent that saw it described it.\n\nFindings are what each agent reported; incidents are what happened. Four agents noticing the same moment is one problem observed four times, and a creator deciding what to fix needs the second view — the first tells them how many detectors fired, which is a fact about PREFLIGHT rather than about their video.",
+      "properties": {
+        "agents": {
+          "description": "Independent agents that observed this. One agent reporting twice does not appear twice, because an observer repeating itself is not corroboration.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "category": {
+          "type": "string"
+        },
+        "clauses": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "confidence": {
+          "description": "0..1 — the best single observation, plus a bounded corroboration step per additional independent agent. Never reaches certainty.",
+          "type": "number"
+        },
+        "corroborated": {
+          "description": "True when more than one independent agent saw it.",
+          "type": "boolean"
+        },
+        "endMs": {
+          "type": "number"
+        },
+        "findingIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "reasoning": {
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/definitions/Severity"
+        },
+        "startMs": {
+          "type": "number"
+        },
+        "suggestedFix": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "startMs",
+        "endMs",
+        "category",
+        "severity",
+        "confidence",
+        "findingIds",
+        "agents",
+        "clauses",
+        "suggestedFix",
+        "reasoning",
+        "corroborated"
       ],
       "type": "object"
     },
