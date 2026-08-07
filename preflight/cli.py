@@ -26,6 +26,7 @@ from preflight import bench as bench_mod
 from preflight.ingest.pipeline import ingest
 from preflight.ingest.probe import UnsupportedInput, probe_video
 from preflight.models import SEVERITY_RANK
+from preflight.budget import CallBudget
 from preflight.pipeline import SURFACE_WEIGHT, run_perception
 from preflight.plan import build_plan
 from preflight.agents.nim import NimClient
@@ -250,6 +251,13 @@ def check(
         "report trades viewer impact for risk reduction. Default trusts each "
         "finding's own suggested fix directly.",
     ),
+    budget: int = typer.Option(
+        0,
+        "--budget",
+        help="Ceiling on hosted model calls. The run sheds work to stay inside "
+        "it and reports what it gave up; coverage falls to match what was "
+        "actually examined. 0 means no ceiling.",
+    ),
 ) -> None:
     """Analyse a video, print findings, and score it against the full triad.
 
@@ -292,6 +300,13 @@ def check(
     for line in plan.describe():
         console.print(f"    [dim]{line}[/dim]")
 
+    call_budget = CallBudget(ceiling=budget if budget > 0 else None)
+    if call_budget.ceiling is not None and call_budget.ceiling < plan.est_total_llm_calls:
+        console.print(
+            f"    [yellow]budget {call_budget.ceiling} is below the "
+            f"{plan.est_total_llm_calls}-call estimate — work will be shed[/yellow]"
+        )
+
     try:
         result = run_perception(
             video,
@@ -299,6 +314,7 @@ def check(
             asr_model=asr_model,
             skip_speech=no_speech,
             settings=settings,
+            budget=call_budget,
         )
     except (FileNotFoundError, UnsupportedInput, ffmpeg.FfmpegFailed) as exc:
         console.print(f"[red]{exc}[/red]")
@@ -409,9 +425,18 @@ def check(
     coverage = result.coverage
     console.print(
         f"  coverage [bold]{coverage * 100:.0f}%[/bold]   "
-        f"LLM calls [bold]{result.total_calls}[/bold]   "
-        f"elapsed [bold]{sum(a.elapsed_ms for a in result.agents)} ms[/bold]"
+        f"LLM calls [bold]{result.total_calls}[/bold]"
+        + (
+            f"/{result.budget.ceiling}"
+            if result.budget.ceiling is not None
+            else f" (plan: at most {plan.est_total_llm_calls})"
+        )
+        + f"   elapsed [bold]{sum(a.elapsed_ms for a in result.agents)} ms[/bold]"
     )
+
+    # A shed stage that says nothing is indistinguishable from a bug.
+    for shed in result.budget.shed:
+        console.print(f"  [yellow]shed {shed.stage}[/yellow] — {shed.reason}")
     if coverage < 0.95:
         # Distinguish an agent that ran badly from one that never ran at all.
         # Every agent SURFACE_WEIGHT carries is unconditionally invoked by
@@ -474,6 +499,8 @@ def _emit(
         policy_version=result.corpus.version if result.corpus else "unknown",
         embed_media="html" in formats or fixture is not None,
         strategy=strategy,
+        chunk_ms=settings.chunk_ms,
+        overlap_ms=settings.overlap_ms,
     )
 
     schema_path = Path("schema/analysis-report.schema.json")

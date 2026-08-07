@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 
 from preflight.agents.nim import NimClient, NimUnavailable
 from preflight.agents import prompts
+from preflight.budget import CallBudget
 from preflight.chunking import Window, iou
 from preflight.config import Settings
 from preflight.models import Adversarial, AgentResult, Evidence, Finding, PolicyRef
@@ -30,6 +31,10 @@ from preflight.policy.index import IndexBuild
 AUDITOR_BATCH = 8
 ADVOCATE_BATCH = 6
 ADJUDICATOR_BATCH = 6
+
+
+def _ceil_div(numerator: int, denominator: int) -> int:
+    return -(-numerator // denominator) if denominator else 0
 
 VALID_SEVERITY = {"CRITICAL", "HIGH", "MEDIUM", "LOW"}
 VALID_FIX = {"MUTE", "BLEEP", "BLUR_REGION", "REPLACE_AUDIO", "CUT", "NONE"}
@@ -86,6 +91,13 @@ class Candidate:
     rationale: str = ""
     suggested_fix: str = "NONE"
 
+    # Whether the ADJUDICATOR actually ruled on this charge. `verdict`
+    # defaults to UPHELD so a malformed model response cannot silently
+    # dismiss a real violation — which means the field alone cannot
+    # distinguish "ruled and upheld" from "never reached". Under a call
+    # budget that distinction decides whether a charge ships at all.
+    ruled: bool = False
+
 
 @dataclass(frozen=True)
 class CrossModalContext:
@@ -117,6 +129,9 @@ class TriadResult:
     error: str | None = None
     windows_seen: int = 0
     windows_with_candidates: int = 0
+    # How many of `windows_seen` the AUDITOR actually got to. Equal to
+    # `windows_seen` unless a call budget cut the audit short.
+    windows_examined: int = 0
 
     # Every candidate the AUDITOR raised, carrying whatever the ADVOCATE and
     # ADJUDICATOR did to it. Retained rather than discarded for two reasons.
@@ -233,6 +248,7 @@ def run_triad(
     transcript: "Transcript | None" = None,
     *,
     cross_modal: CrossModalContext | None = None,
+    budget: CallBudget | None = None,
 ) -> TriadResult:
     started = time.perf_counter()
     result = TriadResult()
@@ -266,18 +282,31 @@ def run_triad(
 
     calls_before = client.usage.calls
 
+    budget = budget or CallBudget()
+
     try:
-        candidates = _audit(active, retrieved, client, settings, transcript)
+        # Hold back what the adjudicator will need before the audit spends a
+        # thing. The stages are not equal: an unexamined window is missing
+        # information, but an unruled charge is the unopposed-prosecutor
+        # output this triad exists to prevent. Running out mid-audit costs
+        # windows; it must never cost the ruling.
+        budget.reserve(_ceil_div(len(active), ADJUDICATOR_BATCH))
+
+        candidates, examined = _audit(
+            active, retrieved, client, settings, transcript, budget
+        )
         result.candidates = candidates
         result.windows_with_candidates = len({c.window for c in candidates})
+        result.windows_examined = examined
         result.log.append(
             f"AUDITOR: {len(candidates)} candidate(s) across "
-            f"{result.windows_with_candidates}/{len(active)} windows"
+            f"{result.windows_with_candidates}/{examined} windows examined"
+            + (f" ({len(active) - examined} unexamined)" if examined < len(active) else "")
         )
 
         if candidates:
             tagged = _tag_cross_modal_context(candidates, cross_modal or CrossModalContext())
-            _defend(candidates, client, settings)
+            _defend(candidates, client, settings, budget)
             defended = sum(1 for c in candidates if c.defense)
             signal_summary = ", ".join(
                 f"{name} {count}" for name, count in tagged.items() if count
@@ -287,13 +316,31 @@ def run_triad(
                 + (f" · cross-modal: {signal_summary}" if signal_summary else "")
             )
 
-            _adjudicate(candidates, client, settings)
-            upheld = [c for c in candidates if c.verdict == "UPHELD"]
+            # The reserve exists for exactly this call.
+            budget.release()
+            _adjudicate(candidates, client, settings, budget)
+
+            # Only charges someone actually ruled on may ship.
+            ruled = [c for c in candidates if c.ruled]
+            upheld = [c for c in ruled if c.verdict == "UPHELD"]
             result.log.append(
                 f"ADJUDICATOR: {len(upheld)} upheld, "
-                f"{len(candidates) - len(upheld)} dismissed"
+                f"{len(ruled) - len(upheld)} dismissed"
+                + (
+                    f", {len(candidates) - len(ruled)} dropped unruled"
+                    if len(ruled) < len(candidates)
+                    else ""
+                )
             )
             result.findings = _to_findings(_dedupe(upheld))
+
+        # Coverage is what was examined, not what was intended. A budget that
+        # looked at 12 of 31 windows while still reporting full coverage would
+        # break this project's central claim far more badly than running out
+        # of budget does.
+        if active and examined < len(active):
+            result.coverage = round(examined / len(active), 4)
+            result.status = "DEGRADED"
 
     except NimUnavailable as exc:
         result.status = "DEGRADED"
@@ -315,9 +362,18 @@ def _audit(
     client: NimClient,
     settings: Settings,
     transcript: "Transcript | None" = None,
-) -> list[Candidate]:
+    budget: CallBudget | None = None,
+) -> tuple[list[Candidate], int]:
+    """Returns the candidates and how many windows were actually examined.
+
+    The second number is the honest one. When a budget stops the audit part
+    way, the windows never looked at are not evidence of absence, and
+    coverage has to say so.
+    """
+    budget = budget or CallBudget()
     candidates: list[Candidate] = []
     counter = 0
+    examined = 0
 
     for batch in _batched(windows, AUDITOR_BATCH):
         chunks: dict[str, Chunk] = {}
@@ -325,7 +381,18 @@ def _audit(
             for chunk in retrieved.get(window.index, []):
                 chunks[chunk.id] = chunk
         if not chunks:
+            examined += len(batch)
             continue
+
+        # Checked before the call, never after — the whole point of a ceiling.
+        if not budget.can_afford(1):
+            budget.record_shed(
+                "auditor",
+                f"call budget reached after {examined}/{len(windows)} windows",
+                windows_lost=len(windows) - examined,
+            )
+            break
+        budget.spend(1)
 
         payload = client.chat_json(
             model=settings.models.auditor,
@@ -390,7 +457,10 @@ def _audit(
                     chunk=chunk,
                 )
             )
-    return candidates
+
+        examined += len(batch)
+
+    return candidates, examined
 
 
 def _tag_quotation_context(candidates: list[Candidate], spans: list) -> int:
@@ -527,8 +597,32 @@ def _tag_cross_modal_context(candidates: list[Candidate], context: CrossModalCon
     }
 
 
-def _defend(candidates: list[Candidate], client: NimClient, settings: Settings) -> None:
+def _defend(
+    candidates: list[Candidate],
+    client: NimClient,
+    settings: Settings,
+    budget: CallBudget | None = None,
+) -> int:
+    """Returns how many candidates got a defence attempt.
+
+    The ADVOCATE is the first stage shed under pressure: losing it costs
+    precision, because charges go to the adjudicator undefended. Losing the
+    adjudicator instead would ship unruled accusations, which is the failure
+    this design exists to prevent — so this yields first and says so.
+    """
+    budget = budget or CallBudget()
+    defended = 0
+
     for batch in _batched(candidates, ADVOCATE_BATCH):
+        if not budget.can_afford(1):
+            budget.record_shed(
+                "advocate",
+                f"call budget reached — {len(candidates) - defended} candidate(s) "
+                "went to the adjudicator undefended",
+            )
+            break
+        budget.spend(1)
+
         chunks = {c.chunk.id: c.chunk for c in batch}
         block = "\n\n".join(
             f'candidate_id: {c.id}\nclause_id: {c.clause_id}\n'
@@ -568,9 +662,38 @@ def _defend(candidates: list[Candidate], client: NimClient, settings: Settings) 
                 else 0.0
             )
 
+        defended += len(batch)
 
-def _adjudicate(candidates: list[Candidate], client: NimClient, settings: Settings) -> None:
+    return defended
+
+
+def _adjudicate(
+    candidates: list[Candidate],
+    client: NimClient,
+    settings: Settings,
+    budget: CallBudget | None = None,
+) -> int:
+    """Returns how many candidates were actually ruled on.
+
+    Runs against the reserve the audit was not allowed to touch. A candidate
+    that never reaches here is dropped rather than reported — an unruled
+    charge is the unopposed-prosecutor output this whole triad exists to
+    avoid, and shipping one because the budget ran out would be worse than
+    reporting fewer findings.
+    """
+    budget = budget or CallBudget()
+    ruled = 0
+
     for batch in _batched(candidates, ADJUDICATOR_BATCH):
+        if not budget.can_afford(1):
+            budget.record_shed(
+                "adjudicator",
+                f"call budget reached — {len(candidates) - ruled} unruled "
+                "candidate(s) dropped rather than reported",
+            )
+            break
+        budget.spend(1)
+
         block = "\n\n".join(
             f"candidate_id: {c.id}\n"
             f"CLAUSE [{c.clause_id}] {c.chunk.clause_title} — {c.chunk.section}\n"
@@ -608,6 +731,11 @@ def _adjudicate(candidates: list[Candidate], client: NimClient, settings: Settin
             candidate.suggested_fix = _sane_fix(
                 fix if fix in VALID_FIX else "NONE", candidate
             )
+            candidate.ruled = True
+
+        ruled += len(batch)
+
+    return ruled
 
 
 def _sane_fix(fix: str, candidate: Candidate) -> str:

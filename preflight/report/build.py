@@ -24,7 +24,7 @@ from preflight.models import Finding, SEVERITY_RANK
 from preflight.pipeline import TOPOLOGY, PipelineResult
 from preflight.remediate.codegen import Program, build_program
 from preflight.remediate.edl import EDL, compile_edl
-from preflight.plan import HIERARCHICAL_ABOVE_MS, SEGMENT_MS
+from preflight.plan import HIERARCHICAL_ABOVE_MS, SEGMENT_MS, build_plan
 from preflight.scoring.readiness import SUB_SCORE_ORDER, compute_readiness, sub_scores
 from preflight.scoring.rollup import rollup
 
@@ -134,6 +134,8 @@ def build_report(
     embed_media: bool = True,
     render_ms: int = 0,
     strategy: str | None = None,
+    chunk_ms: int = 30_000,
+    overlap_ms: int = 5_000,
 ) -> ReportBundle:
     meta = result.ingested.meta
     findings = result.findings
@@ -203,6 +205,18 @@ def build_report(
             "log": list(edl.log),
         },
         "agents": agents,
+        # What the run predicted against what it spent. The estimate is an
+        # upper bound computed before any work began, so `actualCalls`
+        # exceeding it is a bug in the plan rather than an unlucky run —
+        # which is what makes this a check on PREFLIGHT and not a decoration.
+        "cost": {
+            "estimatedCalls": build_plan(
+                duration_ms, chunk_ms=chunk_ms, overlap_ms=overlap_ms
+            ).est_total_llm_calls,
+            "actualCalls": result.total_calls,
+            "ceiling": result.budget.ceiling,
+            "shed": [s.to_json() for s in result.budget.shed],
+        },
     }
 
     # Segment rollup, for videos long enough that a flat finding list stops

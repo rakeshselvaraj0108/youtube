@@ -20,6 +20,7 @@ from typing import Callable
 from preflight import cas
 from preflight.agents.nim import NimClient
 from preflight.agents.triad import CrossModalContext, run_triad, to_agent_result
+from preflight.budget import CallBudget
 from preflight.chunking import Window, build_windows
 from preflight.config import Settings
 from preflight.ingest.pipeline import Ingested, ingest
@@ -91,6 +92,7 @@ class PipelineResult:
     fusion_log: list[str] = field(default_factory=list)
     visual_tracks: list = field(default_factory=list)
     ocr_items: list = field(default_factory=list)
+    budget: CallBudget = field(default_factory=lambda: CallBudget())
 
     @property
     def sub_scores(self) -> dict[str, float]:
@@ -161,10 +163,12 @@ def run_perception(
     asr_model: str = asr_mod.DEFAULT_MODEL,
     skip_speech: bool = False,
     settings: Settings | None = None,
+    budget: CallBudget | None = None,
 ) -> PipelineResult:
     source = Path(source)
     started_at = time.perf_counter()
     settings = settings or Settings.load()
+    budget = budget or CallBudget()
 
     orch = Orchestrator(max_attempts=2)
 
@@ -254,7 +258,7 @@ def run_perception(
         ),
     )
     policy_agent, corpus, backend = _policy(
-        orch, windows, store, settings, transcript, cross_modal, registry
+        orch, windows, store, settings, transcript, cross_modal, registry, budget
     )
 
     agents = [
@@ -307,6 +311,7 @@ def run_perception(
         fusion_log=fusion_log,
         visual_tracks=tracks,
         ocr_items=list(ocr_report.items),
+        budget=budget,
     )
 
 
@@ -318,6 +323,7 @@ def _policy(
     transcript: Transcript | None = None,
     cross_modal: CrossModalContext | None = None,
     registry: Registry | None = None,
+    budget: CallBudget | None = None,
 ) -> tuple[AgentResult, Corpus | None, str]:
     """Retrieval plus the triad, guarded like every other optional stage."""
     settings = settings or Settings.load()
@@ -353,6 +359,7 @@ def _policy(
             settings,
             transcript,
             cross_modal=cross_modal,
+            budget=budget,
         )
         agent = to_agent_result(result)
         agent.log = indexes.log + agent.log

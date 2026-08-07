@@ -167,6 +167,9 @@
           },
           "type": "array"
         },
+        "cost": {
+          "$ref": "#/definitions/CostRecord"
+        },
         "findings": {
           "items": {
             "$ref": "#/definitions/Finding"
@@ -207,7 +210,8 @@
         "findings",
         "breakdown",
         "remediation",
-        "agents"
+        "agents",
+        "cost"
       ],
       "type": "object"
     },
@@ -228,6 +232,38 @@
         "category",
         "count",
         "severity"
+      ],
+      "type": "object"
+    },
+    "CostRecord": {
+      "additionalProperties": false,
+      "description": "What the run predicted it would cost, against what it actually spent.\n\n`estimatedCalls` comes from the decomposition plan, computed before any work started, and is an upper bound by construction — so `actualCalls` exceeding it means the plan is wrong, not merely pessimistic. That makes this block a check on PREFLIGHT rather than a decoration.",
+      "properties": {
+        "actualCalls": {
+          "type": "number"
+        },
+        "ceiling": {
+          "description": "Ceiling in force, or null when the run was uncapped.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "estimatedCalls": {
+          "type": "number"
+        },
+        "shed": {
+          "items": {
+            "$ref": "#/definitions/ShedRecord"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "estimatedCalls",
+        "actualCalls",
+        "ceiling",
+        "shed"
       ],
       "type": "object"
     },
@@ -588,6 +624,28 @@
         "LOW"
       ],
       "type": "string"
+    },
+    "ShedRecord": {
+      "additionalProperties": false,
+      "description": "One stage the run gave up to stay inside its call budget.",
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "windowsLost": {
+          "description": "Windows the AUDITOR never examined because of this shed.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "stage",
+        "reason",
+        "windowsLost"
+      ],
+      "type": "object"
     },
     "SubScoreKey": {
       "enum": [

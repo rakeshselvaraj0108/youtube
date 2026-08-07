@@ -195,6 +195,30 @@ export interface Remediation {
   log: string[];
 }
 
+/** One stage the run gave up to stay inside its call budget. */
+export interface ShedRecord {
+  stage: string;
+  reason: string;
+  /** Windows the AUDITOR never examined because of this shed. */
+  windowsLost: number;
+}
+
+/**
+ * What the run predicted it would cost, against what it actually spent.
+ *
+ * `estimatedCalls` comes from the decomposition plan, computed before any
+ * work started, and is an upper bound by construction — so `actualCalls`
+ * exceeding it means the plan is wrong, not merely pessimistic. That makes
+ * this block a check on PREFLIGHT rather than a decoration.
+ */
+export interface CostRecord {
+  estimatedCalls: number;
+  actualCalls: number;
+  /** Ceiling in force, or null when the run was uncapped. */
+  ceiling: number | null;
+  shed: ShedRecord[];
+}
+
 export interface AnalysisReport {
   video: VideoMeta;
   meta: RunMeta;
@@ -210,4 +234,5 @@ export interface AnalysisReport {
    * would read as "rolled up and found nothing".
    */
   segments?: Segment[];
+  cost: CostRecord;
 }
