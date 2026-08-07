@@ -40,6 +40,7 @@ from typing import Any, Iterable
 
 from preflight.ingest.frames import Keyframe
 from preflight.models import AgentResult
+from preflight.perception import sampling
 
 AGENT_ID = "vision"
 AGENT_NAME = "Vision Agent"
@@ -271,18 +272,37 @@ def select_frames(
     *,
     baseline: int = BASELINE_FRAMES,
     budget: int | None = None,
+    motion: Any = None,
+    duration_ms: int = 0,
 ) -> list[Keyframe]:
     """Which frames are worth paying for.
 
-    Every frame inside a span the text layer already flagged, plus a uniform
-    baseline so a clean transcript with a visual problem is not invisible.
-    Roughly an eighty percent reduction against sending everything, and the
-    frames it drops are the ones nothing else pointed at.
+    Every frame inside a span the text layer already flagged, plus coverage
+    of the rest of the timeline. Roughly an eighty percent reduction against
+    sending everything, and the frames it drops are the ones nothing else
+    pointed at.
+
+    Given a motion signal — which `quality.analyse_motion` already produces
+    from a decode the run pays for anyway — the non-flagged half of the
+    budget is concentrated where the picture actually changes rather than
+    spread evenly. A talking head and a fight scene are not equally likely
+    to need a second look, and a fixed stride treats them as though they
+    were.
     """
     if not keyframes:
         return []
 
     spans = list(flagged_spans)
+
+    if motion is not None and duration_ms > 0:
+        ceiling = budget or max(baseline, len(spans))
+        plan = sampling.allocate(
+            duration_ms, ceiling, motion=motion, flagged_spans=spans
+        )
+        picked = sampling.nearest_frames(plan.timestamps, keyframes)
+        if picked:
+            return picked
+
     chosen: dict[int, Keyframe] = {}
 
     for frame in keyframes:
@@ -455,6 +475,8 @@ def analyse(
     flagged_spans: Iterable[tuple[int, int]] = (),
     vocab: VisionVocabulary | None = None,
     budget: int | None = None,
+    motion: Any = None,
+    duration_ms: int = 0,
 ) -> tuple[AgentResult, list[Track]]:
     """Run the vision agent, degrading rather than failing.
 
@@ -484,7 +506,13 @@ def analyse(
     from preflight.agents.roster import prompt_for
     from preflight.providers.registry import VISION_DESCRIBE
 
-    selected = select_frames(keyframes, flagged_spans, budget=budget)
+    selected = select_frames(
+        keyframes,
+        flagged_spans,
+        budget=budget,
+        motion=motion,
+        duration_ms=duration_ms,
+    )
     prompt = prompt_for("A03") or "Describe what is visibly present. JSON only."
 
     observations: list[Observation] = []

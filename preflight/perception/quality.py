@@ -363,6 +363,9 @@ class MediaIntelligence:
     quality: QualityReport
     motion: MotionReport
     thumbnails: ThumbnailCandidates
+    # The raw per-sample motion curve. Not serialised — it is an array of
+    # hundreds of floats and the report carries the summary instead.
+    signal: np.ndarray | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -370,6 +373,20 @@ class MediaIntelligence:
             "motion": self.motion.to_json(),
             "thumbnails": self.thumbnails.to_json(),
         }
+
+
+def motion_signal(frames: np.ndarray) -> np.ndarray:
+    """Per-sample inter-frame difference — the raw curve behind MotionReport.
+
+    Exposed because the adaptive frame sampler needs the shape of the
+    motion over time, not the summary statistics. Same array the report is
+    derived from, so the two can never disagree about where the video was
+    busy.
+    """
+    gray = luma(frames)
+    if gray.shape[0] < 2:
+        return np.zeros(0, dtype=np.float32)
+    return np.abs(np.diff(gray, axis=0)).reshape(gray.shape[0] - 1, -1).mean(axis=1)
 
 
 def analyse(source: Path, duration_ms: int) -> MediaIntelligence | None:
@@ -381,4 +398,5 @@ def analyse(source: Path, duration_ms: int) -> MediaIntelligence | None:
         quality=analyse_quality(frames),
         motion=analyse_motion(frames, duration_ms),
         thumbnails=pick_thumbnails(frames, duration_ms),
+        signal=motion_signal(frames),
     )

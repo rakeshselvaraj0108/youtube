@@ -243,6 +243,10 @@ def run_perception(
     if intel.artifacts.get("intelligence"):
         ingest_agent.artifacts.update(intel.artifacts["intelligence"])
         ingest_agent.log.extend(intel.log)
+    # Handed to vision so the frame budget follows the motion. Kept out of
+    # the artifacts dict deliberately: it is a per-sample numpy array, and
+    # the artifacts go into report.json.
+    _motion_signal = intel.artifacts.get("motion_signal")
     # Ingest itself stays unwrapped above — its specific exceptions
     # (FileNotFoundError, UnsupportedInput, FfmpegFailed) are caught by name at
     # the CLI boundary, and a retry loop swallowing them into a generic FAILED
@@ -290,7 +294,7 @@ def run_perception(
     registry = _registry(settings)
     flagged = _flagged_spans(speech_agent)
 
-    vision_agent, tracks = _vision(orch, ingested, registry, flagged)
+    vision_agent, tracks = _vision(orch, ingested, registry, flagged, _motion_signal)
     ocr_agent, ocr_report = _ocr(orch, ingested, registry, transcript)
 
     # Policy grounding + adversarial adjudication.
@@ -468,6 +472,7 @@ def _quality(source: Path, duration_ms: int) -> AgentResult:
         return result
 
     result.artifacts["intelligence"] = intel.to_json()
+    result.artifacts["motion_signal"] = intel.signal
     result.log.append(
         f"picture: {intel.quality.blur_label} · "
         f"brightness {intel.quality.brightness:.0f} · "
@@ -551,10 +556,18 @@ def _vision(
     ingested: Ingested,
     registry: Registry | None,
     flagged: list[tuple[int, int]],
+    motion: Any = None,
 ) -> tuple[AgentResult, list[vision.Track]]:
     def run() -> AgentResult:
         agent, tracks = vision.analyse(
-            ingested.keyframes, registry, flagged_spans=flagged
+            ingested.keyframes,
+            registry,
+            flagged_spans=flagged,
+            # Free: the quality pass already produced this from a decode the
+            # run paid for, so concentrating the vision budget where the
+            # picture moves costs arithmetic rather than another decode.
+            motion=motion,
+            duration_ms=ingested.meta.durationMs,
         )
         run.tracks = tracks  # type: ignore[attr-defined]
         return agent
