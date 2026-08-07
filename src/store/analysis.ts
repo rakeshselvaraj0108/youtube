@@ -1,6 +1,7 @@
 ﻿import { create } from 'zustand';
 import type { AnalysisReport, Finding } from '@/types/analysis';
 import { afterReport as fixtureAfter, beforeReport as fixtureBefore } from '@/data/fixture';
+import { fetchLatestRun } from '@/lib/api';
 import { sortFindings, type FindingSort } from '@/lib/findings';
 import { injectedAfterReport, injectedReport } from '@/lib/reportSource';
 
@@ -14,7 +15,21 @@ export const AFTER: AnalysisReport = injectedAfterReport() ?? fixtureAfter;
 
 export type DetailTab = 'EVIDENCE' | 'POLICY' | 'ADVERSARIAL';
 
+/**
+ * Where the report on screen came from. Shown in the header, because a deck
+ * rendering demo data and a deck rendering a real run must never be
+ * mistakable for one another — that confusion is how a fixture ends up in a
+ * screenshot presented as a result.
+ */
+export type ReportSource = 'injected' | 'api' | 'fixture';
+
 interface AnalysisState {
+  before: AnalysisReport;
+  after: AnalysisReport;
+  source: ReportSource;
+  /** True while the API is being polled at startup. */
+  loading: boolean;
+
   /** Which render the deck is showing. The fix transition flips this. */
   applied: boolean;
   selectedFindingId: string | null;
@@ -30,9 +45,18 @@ interface AnalysisState {
   setSortBy: (sort: FindingSort) => void;
   setDetailTab: (tab: DetailTab) => void;
   setHoveredOp: (index: number | null) => void;
+  /** Adopt a report the engine produced. */
+  setReport: (report: AnalysisReport, source: ReportSource) => void;
+  /** Ask the API for its newest run. No-op when nothing answers. */
+  hydrate: () => Promise<void>;
 }
 
-export const useAnalysis = create<AnalysisState>((set) => ({
+export const useAnalysis = create<AnalysisState>((set, get) => ({
+  before: BEFORE,
+  after: AFTER,
+  source: injectedReport() ? 'injected' : 'fixture',
+  loading: false,
+
   applied: false,
   selectedFindingId: BEFORE.findings[0]?.id ?? null,
   categoryFilter: null,
@@ -41,8 +65,8 @@ export const useAnalysis = create<AnalysisState>((set) => ({
   hoveredOpIndex: null,
 
   setApplied: (applied) =>
-    set(() => {
-      const next = applied ? AFTER : BEFORE;
+    set((state) => {
+      const next = applied ? state.after : state.before;
       return { applied, selectedFindingId: next.findings[0]?.id ?? null, categoryFilter: null };
     }),
   select: (selectedFindingId) => set({ selectedFindingId }),
@@ -50,6 +74,32 @@ export const useAnalysis = create<AnalysisState>((set) => ({
   setSortBy: (sortBy) => set({ sortBy }),
   setDetailTab: (detailTab) => set({ detailTab }),
   setHoveredOp: (hoveredOpIndex) => set({ hoveredOpIndex }),
+
+  setReport: (report, source) =>
+    set({
+      before: report,
+      // A run carries one report. Until a remediated render is analysed in
+      // its own right there is no honest "after" to show, so the toggle
+      // holds the same data rather than implying a second measurement that
+      // was never taken.
+      after: report,
+      source,
+      applied: false,
+      selectedFindingId: report.findings[0]?.id ?? null,
+      categoryFilter: null,
+      loading: false,
+    }),
+
+  hydrate: async () => {
+    // An injected report is the CLI's own output for *this* page. It already
+    // outranks anything the API might be serving from another run, so do not
+    // go looking.
+    if (get().source === 'injected') return;
+    set({ loading: true });
+    const report = await fetchLatestRun();
+    if (report) get().setReport(report, 'api');
+    else set({ loading: false });
+  },
 }));
 
 /* ------------------------------------------------------------------ */
@@ -57,7 +107,13 @@ export const useAnalysis = create<AnalysisState>((set) => ({
 /* ------------------------------------------------------------------ */
 
 export function useReport(): AnalysisReport {
-  return useAnalysis((s) => (s.applied ? AFTER : BEFORE));
+  return useAnalysis((s) => (s.applied ? s.after : s.before));
+}
+
+/** Where the rendered report came from — surfaced so demo data is never
+ * mistaken for a real run. */
+export function useReportSource(): ReportSource {
+  return useAnalysis((s) => s.source);
 }
 
 /** Findings after the category filter and the active sort. */

@@ -964,6 +964,25 @@ def _pull_embed() -> bool:
 
 
 @app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind address"),
+    port: int = typer.Option(8000, "--port", help="Port"),
+) -> None:
+    """Serve the HTTP API the Command Deck reads.
+
+    Binds loopback by default. The routes execute the same `run_perception`
+    and `build_report` this CLI does — there is no second implementation of
+    the engine behind the web surface to drift out of sync with this one.
+    """
+    from preflight.server import serve as _serve
+
+    console.print()
+    if not ffmpeg.available():
+        console.print("[yellow]ffmpeg is not on PATH — /api/analyze will refuse[/yellow]")
+    _serve(host=host, port=port)
+
+
+@app.command()
 def agents() -> None:
     """Print the agent roster declared in prompts/, and its conformance."""
     roster = load_roster()

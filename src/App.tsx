@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+
 import { AgentFlow } from '@/components/AgentFlow';
 import { BeforeAfterPlayers } from '@/components/BeforeAfterPlayers';
 import { DetailPanel } from '@/components/DetailPanel';
@@ -11,6 +13,7 @@ import { RiskTimeline } from '@/components/RiskTimeline';
 import { ScoreGauge } from '@/components/ScoreGauge';
 import { SubScorePanel } from '@/components/SubScorePanel';
 import { TerminalColumn } from '@/components/TerminalColumn';
+import { useAnalysis } from '@/store/analysis';
 
 /**
  * The Command Deck.
@@ -20,6 +23,13 @@ import { TerminalColumn } from '@/components/TerminalColumn';
  * positioned in absolute pixels.
  */
 export default function App() {
+  // Ask the engine for its newest run once, at startup. Fails soft: when
+  // `preflight serve` is not running — the normal case for a report.html
+  // opened from an email — the deck keeps whatever it already had.
+  useEffect(() => {
+    void useAnalysis.getState().hydrate();
+  }, []);
+
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-void lg:flex-row">
       {/* Terminal rail — a collapsible strip above the deck under 1024px. */}
