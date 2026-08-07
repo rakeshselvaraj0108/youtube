@@ -30,8 +30,10 @@ that resolved them.
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
+import time
 import traceback
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -99,8 +101,17 @@ class Job:
 
     def run(self) -> None:
         try:
-            self.result = analyze(self.payload, on_event=self.emit)
-            self.emit({"type": "run.complete", "id": self.result["id"]})
+            worker = apply_fix if self.payload.get("_fix") else analyze
+            self.result = worker(self.payload, on_event=self.emit)
+            # A fix result carries an output path, not a run id. Reading
+            # `result["id"]` unconditionally turns a successful render into a
+            # KeyError reported as a failed job.
+            self.emit(
+                {
+                    "type": "run.complete",
+                    **{k: v for k, v in (self.result or {}).items() if k != "report"},
+                }
+            )
         except ApiError as exc:
             self.error = exc.message
             self.emit({"type": "run.error", "error": exc.message})
@@ -352,6 +363,108 @@ def analyze(
     return {"id": run_id, "report": bundle.report}
 
 
+def apply_fix(payload: dict[str, Any], on_event: Any = None) -> dict[str, Any]:
+    """Compile the remediation and render it. Same path as `preflight fix`.
+
+    The deck's Apply button was a label with no handler, which is the worst
+    kind of broken: the plan beside it is real, the ffmpeg command beside it
+    is real, and the one control that would act on either did nothing.
+
+    Renders atomically — to a temp file whose extension stays last so
+    ffmpeg's muxer can infer the container, verified on duration, then
+    promoted. A half-written .safe.mp4 sitting next to the original is worse
+    than no output, because it looks like a finished render.
+    """
+    from preflight.ingest.probe import UnsupportedInput, probe_video
+    from preflight.remediate.codegen import build_program
+    from preflight.remediate.edl import InvalidEDL, compile_edl
+
+    raw = str(payload.get("video", "")).strip()
+    if not raw:
+        raise ApiError(400, "body must carry a 'video' path")
+    video = Path(raw)
+    if not video.is_file():
+        raise ApiError(404, f"no such file: {video}")
+    if not ffmpeg.available():
+        raise ApiError(503, "ffmpeg and ffprobe are required")
+
+    def emit(stage: str, detail: str = "", **extra: Any) -> None:
+        if on_event:
+            on_event({"type": "fix.progress", "stage": stage, "detail": detail, **extra})
+
+    offline = bool(payload.get("offline", False))
+    settings = Settings.load(offline=True) if offline else Settings.load()
+
+    emit("analysing", "re-reading findings for this video")
+    result = run_perception(video, cas.Store(settings.cache_dir), settings=settings)
+
+    emit("compiling", "lowering findings to an edit list")
+    try:
+        edl = compile_edl(
+            result.findings,
+            str(video),
+            result.ingested.meta.durationMs,
+            result.transcript,
+            strategy=str(payload.get("strategy") or "") or None,
+        )
+    except InvalidEDL as exc:
+        raise ApiError(400, f"remediation could not be compiled: {exc}") from exc
+
+    if not edl.ops:
+        emit("done", "nothing to repair")
+        return {"rendered": False, "reason": "no remediable findings", "ops": 0}
+
+    destination = video.with_name(f"{video.stem}.safe{video.suffix}")
+    program = build_program(edl, video, destination)
+
+    # Extension last so the muxer can still infer the container — a suffix
+    # like ".mp4.tmp1234" is one ffmpeg refuses outright.
+    staged = destination.with_name(
+        f"{destination.stem}.tmp{os.getpid()}{destination.suffix}"
+    )
+    emit("rendering", f"{len(edl.ops)} operation(s)", ops=len(edl.ops))
+    started = time.perf_counter()
+    try:
+        ffmpeg.run(program.command[1:-1] + [staged.as_posix()])
+    except ffmpeg.FfmpegFailed as exc:
+        staged.unlink(missing_ok=True)
+        raise ApiError(500, f"render failed: {exc}") from exc
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+
+    if not staged.is_file() or staged.stat().st_size == 0:
+        staged.unlink(missing_ok=True)
+        raise ApiError(500, "render produced no output")
+
+    # Verified against the file, not against ffmpeg's exit code: a truncated
+    # render from a killed process still exits clean.
+    emit("verifying", "checking duration against the edit list")
+    try:
+        out_meta = probe_video(staged)
+        cut_ms = sum(op.duration_ms for op in edl.ops if op.op == "CUT")
+        expected = result.ingested.meta.durationMs - cut_ms
+        if abs(out_meta.durationMs - expected) > 1500:
+            staged.unlink(missing_ok=True)
+            raise ApiError(
+                500,
+                f"verification failed: output is {out_meta.durationMs}ms, "
+                f"expected {expected}ms — nothing was written",
+            )
+    except (ffmpeg.FfmpegFailed, UnsupportedInput) as exc:
+        staged.unlink(missing_ok=True)
+        raise ApiError(500, f"verification failed: {exc}") from exc
+
+    staged.replace(destination)
+    emit("done", f"wrote {destination.name}")
+    return {
+        "rendered": True,
+        "output": str(destination),
+        "ops": len(edl.ops),
+        "renderMs": elapsed_ms,
+        "videoStreamCopied": program.video_stream_copied,
+        "command": program.pretty(),
+    }
+
+
 def plan_for(payload: dict[str, Any]) -> dict[str, Any]:
     """The decomposition plan alone — cheap, and answers "what will this cost"
     without spending anything."""
@@ -513,6 +626,15 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200, analyze(payload))
                 finally:
                     self._analysis_lock.release()
+            elif path == "/api/fix":
+                payload = self._body()
+                candidate = str(payload.get("video", "")).strip()
+                if not candidate:
+                    raise ApiError(400, "body must carry a 'video' path")
+                if not Path(candidate).is_file():
+                    raise ApiError(404, f"no such file: {candidate}")
+                job = start_job({**payload, "_fix": True})
+                self._send(202, {"id": job.id, "events": f"/api/events/{job.id}"})
             elif path == "/api/upload":
                 self._send(201, receive_upload(self))
             elif path == "/api/jobs":

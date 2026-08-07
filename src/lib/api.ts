@@ -129,7 +129,13 @@ export async function uploadVideo(
 
 export interface StageEvent {
   seq: number;
-  type: 'run.start' | 'stage.start' | 'stage.end' | 'run.complete' | 'run.error';
+  type:
+    | 'run.start'
+    | 'stage.start'
+    | 'stage.end'
+    | 'run.complete'
+    | 'run.error'
+    | 'fix.progress';
   stage?: string;
   agentId?: string;
   name?: string;
@@ -142,6 +148,11 @@ export interface StageEvent {
   error?: string;
   id?: string;
   topology?: { id: string; tier: number; parents: string[] }[];
+  /** fix.progress only — which phase of the render is running. */
+  stage_label?: string;
+  ops?: number;
+  output?: string;
+  rendered?: boolean;
 }
 
 /**
@@ -183,6 +194,42 @@ export async function startJob(
   };
   stream.onerror = () => stream.close();
 
+  return () => stream.close();
+}
+
+/**
+ * Compile and render the remediation, streaming progress.
+ *
+ * The Apply control was a label with no handler — the worst kind of broken,
+ * because the plan and the ffmpeg command beside it are both real and only
+ * the one button that would act on them did nothing.
+ */
+export async function applyFix(
+  video: string,
+  options: { offline?: boolean; strategy?: string },
+  onEvent: (event: StageEvent) => void,
+): Promise<() => void> {
+  const started = await call<{ id: string }>(
+    '/api/fix',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ video, ...options }),
+    },
+    READ_TIMEOUT_MS,
+  );
+
+  const stream = new EventSource(`${BASE}/api/events/${started.id}`);
+  stream.onmessage = (message) => {
+    try {
+      const event = JSON.parse(message.data) as StageEvent;
+      onEvent(event);
+      if (event.type === 'run.complete' || event.type === 'run.error') stream.close();
+    } catch {
+      /* a malformed frame must not kill the stream */
+    }
+  };
+  stream.onerror = () => stream.close();
   return () => stream.close();
 }
 

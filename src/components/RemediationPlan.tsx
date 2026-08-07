@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { ArrowRight, AudioLines, Music4, Scissors, SquareDashedBottom, VolumeX } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Panel } from '@/components/ui';
 import { useAnalysis, useReport } from '@/store/analysis';
+import { applyFix } from '@/lib/api';
 import { OP_LABELS } from '@/lib/ffmpeg';
 import { formatTimecode } from '@/lib/time';
 import type { OpKind } from '@/types/analysis';
@@ -15,6 +17,31 @@ const OP_ICON: Record<OpKind, LucideIcon> = {
 };
 
 export function RemediationPlan() {
+  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<string | null>(null);
+  const source = useAnalysis((s) => s.before.video.srcUrl);
+
+  async function apply() {
+    setBusy(true);
+    setPhase('starting…');
+    try {
+      await applyFix(source.replace(/^\.\//, ''), {}, (event) => {
+        if (event.type === 'fix.progress') setPhase(event.stage ?? null);
+        if (event.type === 'run.complete') {
+          setPhase(event.rendered ? 'rendered' : 'nothing to fix');
+          setBusy(false);
+        }
+        if (event.type === 'run.error') {
+          setPhase(event.error ?? 'failed');
+          setBusy(false);
+        }
+      });
+    } catch (e) {
+      setPhase(e instanceof Error ? e.message : String(e));
+      setBusy(false);
+    }
+  }
+
   const report = useReport();
   const setHoveredOp = useAnalysis((s) => s.setHoveredOp);
   const ops = report.remediation.ops;
@@ -91,9 +118,16 @@ export function RemediationPlan() {
         </span>
         <button
           type="button"
-          className="flex items-center gap-1 text-[10px] text-inkDim transition-colors duration-instant hover:text-ink"
+          onClick={() => void apply()}
+          disabled={busy || ops.length === 0}
+          title={
+            ops.length === 0
+              ? 'Nothing to remediate'
+              : 'Compile and render the fix with ffmpeg'
+          }
+          className="flex items-center gap-1 text-[10px] text-inkDim transition-colors duration-instant hover:text-ink disabled:opacity-40"
         >
-          edl.json
+          {busy ? phase || 'rendering…' : 'apply fix'}
           <ArrowRight className="h-3 w-3" />
         </button>
       </div>
