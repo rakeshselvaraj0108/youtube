@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import subprocess
 import wave
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -104,6 +105,38 @@ def spectral_flatness(signal: np.ndarray, sample_rate: int, window_ms: int = 100
     return geometric / np.maximum(arithmetic, 1e-12)
 
 
+# One decode of one (file, rate, size) is reusable by every consumer of it.
+# Small on purpose: three entries covers the accessibility agent's two rates
+# plus one spare, and each entry is a few megabytes of downscaled greyscale.
+# An unbounded cache here would hold every frame of every file the process
+# ever touched, which is the memory leak this bound exists to prevent.
+_FRAME_CACHE: "OrderedDict[tuple, np.ndarray]" = OrderedDict()
+_FRAME_CACHE_LIMIT = 3
+
+# Observable so a test can prove the reuse rather than assume it.
+_CACHE_STATS = {"hits": 0, "misses": 0}
+
+
+def _cache_key(source: Path, fps: int, width: int, height: int) -> tuple:
+    """Identity of a decode. Includes mtime and size so an edited file in
+    the same path is a miss rather than a stale hit."""
+    try:
+        stat = Path(source).stat()
+        stamp = (stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        stamp = (0, 0)
+    return (str(source), fps, width, height, *stamp)
+
+
+def clear_frame_cache() -> None:
+    _FRAME_CACHE.clear()
+    _CACHE_STATS.update(hits=0, misses=0)
+
+
+def frame_cache_stats() -> dict[str, int]:
+    return dict(_CACHE_STATS)
+
+
 def _grayscale_frames(
     source: Path, fps: int, width: int, height: int
 ) -> np.ndarray:
@@ -112,9 +145,23 @@ def _grayscale_frames(
     Scene-cut keyframes are far too sparse for this kind of analysis — a
     strobe or a freeze lives entirely between two cuts. This pipes downscaled
     frames straight out of ffmpeg, so an 18-minute file costs about 24MB of
-    transfer and no intermediate files. Shared by every per-frame check in
-    this module rather than each one re-decoding the file.
+    transfer and no intermediate files.
+
+    Memoised, because it was not shared in practice even though the comment
+    claimed it was: the accessibility agent asks for frozen-frame differences
+    and black-frame luminance at the same rate and size, and measurement of a
+    real run showed `fps=10,scale=64:36` decoded twice, back to back, for two
+    views of identical pixels. The returned array is read-only so a consumer
+    cannot mutate the copy the next one will receive.
     """
+    key = _cache_key(source, fps, width, height)
+    cached = _FRAME_CACHE.get(key)
+    if cached is not None:
+        _FRAME_CACHE.move_to_end(key)
+        _CACHE_STATS["hits"] += 1
+        return cached
+    _CACHE_STATS["misses"] += 1
+
     command = [
         "ffmpeg",
         "-hide_banner",
@@ -141,7 +188,16 @@ def _grayscale_frames(
         return np.zeros((0, frame_bytes), dtype=np.float32)
 
     frames = np.frombuffer(result.stdout[:usable], dtype=np.uint8).reshape(-1, frame_bytes)
-    return frames.astype(np.float32)
+    frames = frames.astype(np.float32)
+    # Shared by reference from here on, so it must not be writable — one
+    # consumer normalising in place would silently corrupt the next one's
+    # view of the same decode.
+    frames.flags.writeable = False
+
+    _FRAME_CACHE[key] = frames
+    while len(_FRAME_CACHE) > _FRAME_CACHE_LIMIT:
+        _FRAME_CACHE.popitem(last=False)   # evict least recently used
+    return frames
 
 
 def luminance_series(source: Path, fps: int = 10, width: int = 64, height: int = 36) -> np.ndarray:
