@@ -47,6 +47,7 @@ from preflight.config import Settings
 from preflight.pipeline import run_perception
 from preflight.plan import build_plan
 from preflight.report.build import build_report
+from preflight.verify import compare, prediction_outcome
 
 # Reports are written here by the server and listed from here. The CLI's own
 # --out directories are separate; a run triggered from the deck lands in one
@@ -454,7 +455,67 @@ def apply_fix(payload: dict[str, Any], on_event: Any = None) -> dict[str, Any]:
         raise ApiError(500, f"verification failed: {exc}") from exc
 
     staged.replace(destination)
-    emit("done", f"wrote {destination.name}")
+    emit("rendered", f"wrote {destination.name}")
+
+    # A successful render is not a successful remediation. ffmpeg exiting
+    # zero proves a file was written; only the same pipeline finding fewer
+    # problems in the output proves the fix worked. So the output goes back
+    # through the real analysis — no second scorer, no deleting findings
+    # from the original report to simulate success.
+    emit("reanalysing", "running the pipeline against the rendered file")
+    verified: dict[str, Any] = {}
+    try:
+        after = run_perception(
+            destination, cas.Store(settings.cache_dir), settings=settings
+        )
+        after_bundle = build_report(
+            after,
+            policy_version=after.corpus.version if after.corpus else "unknown",
+            embed_media=False,
+            chunk_ms=settings.chunk_ms,
+            overlap_ms=settings.overlap_ms,
+        )
+        reanalysis_ok = True
+    except Exception as exc:  # noqa: BLE001 - a failed re-analysis is a state
+        emit("reanalysis_failed", type(exc).__name__)
+        after_bundle = None
+        reanalysis_ok = False
+
+    emit("comparing", "matching findings across the two runs")
+    before_report = build_report(
+        result,
+        policy_version=result.corpus.version if result.corpus else "unknown",
+        embed_media=False,
+        chunk_ms=settings.chunk_ms,
+        overlap_ms=settings.overlap_ms,
+    ).report
+
+    comparison = compare(
+        before_report["findings"],
+        after_bundle.report["findings"] if after_bundle else [],
+        edl.ops,
+        original_score=int(before_report["scores"]["overall"]),
+        remediated_score=(
+            int(after_bundle.report["scores"]["overall"]) if after_bundle else 0
+        ),
+        structural_ok=True,
+        reanalysis_ok=reanalysis_ok,
+    )
+    verified = comparison.to_json()
+
+    # Predicted against actual. The simulation scored the same scenario with
+    # the same scorer, so the two numbers are comparable by construction.
+    predicted = None
+    for scenario in before_report.get("simulation", {}).get("scenarios", []):
+        if scenario.get("name") == before_report["simulation"].get("best"):
+            predicted = int(scenario["overall"])
+            break
+    verified["predictedScore"] = predicted
+    verified["predictionOutcome"] = prediction_outcome(
+        predicted, comparison.remediated_score
+    )
+
+    emit("verified", verified["verdict"], verdict=verified["verdict"])
     return {
         "rendered": True,
         "output": str(destination),
@@ -462,6 +523,7 @@ def apply_fix(payload: dict[str, Any], on_event: Any = None) -> dict[str, Any]:
         "renderMs": elapsed_ms,
         "videoStreamCopied": program.video_stream_copied,
         "command": program.pretty(),
+        "verification": verified,
     }
 
 
