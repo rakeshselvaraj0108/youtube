@@ -14,7 +14,9 @@ import type { AnalysisReport } from '@/types/analysis';
  * Phase 2 renders both players with the remediated spans marked.
  */
 
-const DEMO_POSITION = 0.404; // where the demo is parked: just after the blur op
+// The playhead now starts at 0 and is driven by whatever the reader clicks,
+// so the parked demo position no longer applies — a hardcoded start would
+// fight the first seek.
 
 function PlayerFrame({
   report,
@@ -230,10 +232,18 @@ function FixBridge() {
 }
 
 export function BeforeAfterPlayers() {
-  // One position, two players. Dragging either scrub bar moves both.
-  const [positionT, setPositionT] = useState(DEMO_POSITION);
+  // One position, two players — and now one position shared with the whole
+  // deck. Held in the store rather than here so a finding, a timeline band
+  // or a piece of evidence can move the video; while it was local state,
+  // clicking a finding could highlight it and nothing else.
   const before = useAnalysis((s) => s.before);
   const after = useAnalysis((s) => s.after);
+  const playheadMs = useAnalysis((s) => s.playheadMs);
+  const seekTo = useAnalysis((s) => s.seekTo);
+
+  const duration = before.video.durationMs || 1;
+  const positionT = Math.min(1, Math.max(0, playheadMs / duration));
+  const setPositionT = (t: number) => seekTo(t * duration);
 
   return (
     <>

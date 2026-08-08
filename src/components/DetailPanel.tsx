@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ArrowRight, ImageOff } from 'lucide-react';
 import { Bar, Panel, SeverityChip } from '@/components/ui';
-import { useAnalysis, useSelectedFinding } from '@/store/analysis';
+import { useAnalysis, useReport, useSelectedFinding } from '@/store/analysis';
 import type { DetailTab } from '@/store/analysis';
 import { severityHex, SIGNAL_HEX } from '@/lib/scoring';
 import { AGENT_HEX } from '@/lib/agents';
@@ -18,7 +18,7 @@ const TABS: { key: DetailTab; label: string }[] = [
 /* Evidence                                                            */
 /* ------------------------------------------------------------------ */
 
-function FrameStrip({ frames }: { frames: string[] }) {
+function FrameStrip({ frames, onSeek }: { frames: string[]; onSeek: () => void }) {
   const [index, setIndex] = useState(0);
   const [failed, setFailed] = useState<Record<number, boolean>>({});
 
@@ -44,7 +44,9 @@ function FrameStrip({ frames }: { frames: string[] }) {
           <img
             src={frames[index]}
             alt={`Keyframe ${index + 1} of ${frames.length}`}
-            className="h-full w-full object-cover"
+            onClick={onSeek}
+            title="Play from this frame"
+            className="h-full w-full cursor-pointer object-cover"
             onError={() => setFailed((f) => ({ ...f, [index]: true }))}
           />
         )}
@@ -73,12 +75,28 @@ function EvidenceTab({ finding }: { finding: Finding }) {
   const text = finding.evidence.transcript;
   const hasHighlight = end > start;
   const tone = severityHex(finding.severity);
+  const seekTo = useAnalysis((s) => s.seekTo);
 
   return (
     <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto lg:grid-cols-[1.3fr_1fr]">
       <div className="flex min-w-0 flex-col gap-2">
         <span className="text-label uppercase text-inkFaint">Transcript / Evidence</span>
-        <p className="num rounded-panel border border-edge bg-abyss p-3 text-code leading-relaxed text-inkDim">
+        {/* The transcript is a seek control. A reader looking at the words
+            wants to hear them, and asking them to find the same moment on a
+            scrub bar is the step that makes a report feel like a document
+            rather than a workspace. */}
+        <p
+          role="button"
+          tabIndex={0}
+          onClick={() => seekTo(finding.startMs)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              seekTo(finding.startMs);
+            }
+          }}
+          title="Play from here"
+          className="num cursor-pointer rounded-panel border border-edge bg-abyss p-3 text-code leading-relaxed text-inkDim transition-colors duration-instant hover:border-inkFaint">
           {hasHighlight ? (
             <>
               {text.slice(0, start)}
@@ -111,7 +129,22 @@ function EvidenceTab({ finding }: { finding: Finding }) {
               <span className="num text-[10px] text-inkDim">{value.toFixed(2)}</span>
             </span>
           ))}
-          <span className="flex items-center gap-1.5">
+          <span
+            className="flex cursor-help items-center gap-1.5"
+            // The fused number is the one a reader is asked to trust, so the
+            // calculation behind it belongs where it is read rather than in
+            // documentation nobody opens.
+            title={
+              'Noisy-or over the per-modality confidences, each scaled by ' +
+              "that agent's actual coverage.\n" +
+              Object.entries(finding.modalities)
+                .map(([m, v]) => `  ${m}: ${v.toFixed(2)}`)
+                .join('\n') +
+              `\n  fused: ${finding.fusedConfidence.toFixed(2)}\n` +
+              'Independent agents agreeing raises it; one agent repeating ' +
+              'itself does not.'
+            }
+          >
             <span className="text-[9px] uppercase tracking-[0.08em] text-inkFaint">fused</span>
             <span className="num text-[10px] text-ink">{finding.fusedConfidence.toFixed(2)}</span>
           </span>
@@ -120,7 +153,10 @@ function EvidenceTab({ finding }: { finding: Finding }) {
 
       <div className="flex min-w-0 flex-col gap-2">
         <span className="text-label uppercase text-inkFaint">Visual Evidence</span>
-        <FrameStrip frames={finding.evidence.frames} />
+        <FrameStrip
+          frames={finding.evidence.frames}
+          onSeek={() => seekTo(finding.startMs)}
+        />
       </div>
     </div>
   );
@@ -129,6 +165,56 @@ function EvidenceTab({ finding }: { finding: Finding }) {
 /* ------------------------------------------------------------------ */
 /* Policy                                                              */
 /* ------------------------------------------------------------------ */
+
+/**
+ * Every other finding judged under the same clause.
+ *
+ * Replaces a "View full clause" button that had no handler. The clause text
+ * is already printed directly above it, so the useful move is not showing
+ * that text again — it is showing what else in this video was judged the
+ * same way, which is the question a reader has once they have read it.
+ * Clicking one selects it, which seeks the video to that moment.
+ */
+function ClauseSiblings({ clauseId }: { clauseId: string }) {
+  const report = useReport();
+  const selectedId = useAnalysis((s) => s.selectedFindingId);
+  const select = useAnalysis((s) => s.select);
+
+  const siblings = report.findings.filter(
+    (f) => f.policy.clauseId === clauseId && f.id !== selectedId,
+  );
+
+  if (siblings.length === 0) {
+    return (
+      <p className="text-[11px] text-inkFaint">
+        No other finding in this video was judged under {clauseId}.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-[9px] uppercase tracking-[0.08em] text-inkFaint">
+        {siblings.length} other finding{siblings.length === 1 ? '' : 's'} under {clauseId}
+      </span>
+      {siblings.map((f) => (
+        <button
+          key={f.id}
+          type="button"
+          onClick={() => select(f.id)}
+          title="Select and seek the video to this moment"
+          className="flex w-full items-center gap-2 rounded border border-edge px-2 py-1 text-left text-[11px] text-inkDim transition-colors duration-instant hover:border-inkFaint hover:text-ink"
+        >
+          <span className="num text-[10px] text-inkFaint">
+            {formatPrecise(f.startMs)}
+          </span>
+          <span className="min-w-0 flex-1 truncate">{f.title}</span>
+          <ArrowRight className="h-3 w-3 shrink-0" />
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function PolicyTab({ finding }: { finding: Finding }) {
   return (
@@ -146,13 +232,7 @@ function PolicyTab({ finding }: { finding: Finding }) {
         {finding.policy.text}
       </blockquote>
 
-      <button
-        type="button"
-        className="flex w-fit items-center gap-1.5 text-[11px] text-inkDim transition-colors duration-instant hover:text-ink"
-      >
-        View full clause
-        <ArrowRight className="h-3 w-3" />
-      </button>
+      <ClauseSiblings clauseId={finding.policy.clauseId} />
 
       <p className="mt-auto border-t border-edge pt-2.5 text-[9px] uppercase leading-relaxed tracking-[0.06em] text-inkFaint">
         retrieved by RRF fusion of dense + BM25 over the policy corpus · every finding cites the

@@ -68,6 +68,22 @@ interface AnalysisState {
   applyEvent: (event: StageEvent) => void;
   resetLive: () => void;
 
+  /**
+   * Playhead position, in milliseconds.
+   *
+   * Lifted out of the player because it was the thing stopping the deck
+   * being an investigation surface: while it lived in local state, no other
+   * panel could move the video, so clicking a finding could highlight it
+   * and nothing else. Every panel that knows a timestamp can now seek.
+   */
+  playheadMs: number;
+  /** Which clause the reader is following, if any. Filters the findings
+   * list to the incidents citing it. */
+  clauseFilter: string | null;
+
+  seekTo: (ms: number) => void;
+  setClauseFilter: (clause: string | null) => void;
+
   /** Adopt a report the engine produced. */
   setReport: (report: AnalysisReport, source: ReportSource) => void;
   /** Ask the API for its newest run. No-op when nothing answers. */
@@ -92,7 +108,24 @@ export const useAnalysis = create<AnalysisState>((set, get) => ({
       const next = applied ? state.after : state.before;
       return { applied, selectedFindingId: next.findings[0]?.id ?? null, categoryFilter: null };
     }),
-  select: (selectedFindingId) => set({ selectedFindingId }),
+  // Selecting a finding moves the playhead to it. This is the whole
+  // investigative loop in one line: every panel keyed on the selection
+  // highlights, and the video arrives at the moment being discussed
+  // instead of leaving the reader to scrub for it.
+  select: (selectedFindingId) =>
+    set((state) => {
+      const report = state.applied ? state.after : state.before;
+      const finding = report.findings.find((f) => f.id === selectedFindingId);
+      const duration = report.video.durationMs || 0;
+      if (!finding) return { selectedFindingId };
+      // A file-scoped finding has no moment to seek to — jumping to 0 would
+      // claim the problem is at the start, which is a different and false
+      // statement about the video.
+      const scoped = duration > 0 && finding.endMs - finding.startMs >= duration * 0.9;
+      return scoped
+        ? { selectedFindingId }
+        : { selectedFindingId, playheadMs: finding.startMs };
+    }),
   setCategoryFilter: (categoryFilter) => set({ categoryFilter }),
   setSortBy: (sortBy) => set({ sortBy }),
   setDetailTab: (detailTab) => set({ detailTab }),
@@ -100,6 +133,11 @@ export const useAnalysis = create<AnalysisState>((set, get) => ({
 
   live: {},
   running: false,
+  playheadMs: 0,
+  clauseFilter: null,
+
+  seekTo: (ms) => set({ playheadMs: Math.max(0, Math.round(ms)) }),
+  setClauseFilter: (clauseFilter) => set({ clauseFilter }),
 
   resetLive: () => set({ live: {}, running: false }),
 
