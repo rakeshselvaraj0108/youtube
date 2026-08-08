@@ -61,6 +61,13 @@ MATCH_IOU = 0.3
 # when IoU is poor — a short finding inside a long one, most often.
 MATCH_TOLERANCE_MS = 1_500
 
+# Coverage an agent must have reached in the re-analysis before its silence
+# counts as evidence of absence. Set at half because that is the same line
+# the reasoning engine already draws for "this agent looked hard enough for
+# not-finding-it to mean something", and two different thresholds for the
+# same judgement would eventually disagree.
+MIN_COVERAGE_FOR_ABSENCE = 0.5
+
 
 @dataclass(frozen=True)
 class TimeMap:
@@ -215,8 +222,18 @@ def compare(
     remediated_score: int = 0,
     structural_ok: bool = True,
     reanalysis_ok: bool = True,
+    coverage: dict[str, float] | None = None,
 ) -> Comparison:
-    """Classify every finding across the two runs. Deterministic — no model."""
+    """Classify every finding across the two runs. Deterministic — no model.
+
+    `coverage` is the second run's per-agent coverage, and it gates what
+    absence is allowed to mean. A finding that vanished from a modality the
+    re-analysis barely examined has not been shown to be fixed — it has been
+    unobserved, which is a different claim. Without this gate, making the
+    re-analysis cheaper would silently make it more likely to report
+    success, which is the worst possible incentive to build into a
+    verification system.
+    """
     time_map = TimeMap.from_ops(ops)
     result = Comparison(
         original_score=original_score,
@@ -268,6 +285,38 @@ def compare(
             (c for c in unmatched if _same_problem(f, c, mapped)), None
         )
         if match is None:
+            # Absence only counts as resolution when the re-analysis
+            # actually looked. A vision finding gone from a run whose vision
+            # agent covered 9% of frames is unobserved, not fixed.
+            observers = [
+                name for name, value in (f.get("modalities") or {}).items() if value > 0
+            ]
+            seen = [
+                (coverage or {}).get(name, 1.0) for name in observers
+            ] or [1.0]
+            if max(seen) < MIN_COVERAGE_FOR_ABSENCE:
+                thin = ", ".join(
+                    f"{n} {((coverage or {}).get(n, 0.0)):.0%}" for n in observers
+                )
+                result.changes.append(
+                    FindingChange(
+                        status="INCONCLUSIVE",
+                        clause_id=str(f.get("clauseId", "")),
+                        category=str(f.get("category", "")),
+                        severity=str(f.get("severity", "MEDIUM")),
+                        original_id=str(f.get("id", "")),
+                        detail=(
+                            f"not detected, but the re-analysis examined too "
+                            f"little to call it resolved ({thin})"
+                        ),
+                    )
+                )
+                result.notes.append(
+                    f"{f.get('clauseId')} unobserved rather than resolved — "
+                    "coverage too low for an absence claim"
+                )
+                continue
+
             result.changes.append(
                 FindingChange(
                     status="RESOLVED",

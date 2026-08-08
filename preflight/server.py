@@ -465,8 +465,16 @@ def apply_fix(payload: dict[str, Any], on_event: Any = None) -> dict[str, Any]:
     emit("reanalysing", "running the pipeline against the rendered file")
     verified: dict[str, Any] = {}
     try:
+        # Bounded so a verification pass on a long video terminates.
+        # This is only honest because `compare` refuses to call a finding
+        # resolved when the modality that would have seen it fell below the
+        # coverage floor — otherwise making re-analysis cheaper would make
+        # success more likely, which is the worst incentive to build in.
         after = run_perception(
-            destination, cas.Store(settings.cache_dir), settings=settings
+            destination,
+            cas.Store(settings.cache_dir),
+            settings=settings,
+            budget=CallBudget(ceiling=int(payload.get("verifyBudget", 12))),
         )
         after_bundle = build_report(
             after,
@@ -500,6 +508,9 @@ def apply_fix(payload: dict[str, Any], on_event: Any = None) -> dict[str, Any]:
         ),
         structural_ok=True,
         reanalysis_ok=reanalysis_ok,
+        coverage=(
+            {a.agent_id: a.coverage for a in after.agents} if reanalysis_ok else {}
+        ),
     )
     verified = comparison.to_json()
 

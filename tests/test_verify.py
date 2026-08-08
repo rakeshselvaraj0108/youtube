@@ -264,3 +264,58 @@ class TestScale:
         result = compare(original, remediated, [])
         assert len(result.changes) == 20
         assert len(result.resolved) + len(result.persisting) == 20
+
+
+class TestCoverageGatesAbsence:
+    """Making re-analysis cheaper must not make success more likely.
+
+    Bounding the verification budget is what makes a closed loop terminate
+    on a long video. Without this gate it would also make the loop
+    dishonest: fewer frames examined means fewer findings detected means
+    more findings apparently "resolved". Absence is only evidence when
+    something actually looked.
+    """
+
+    def _vision_finding(self):
+        f = finding("f1", clause="AF-04", category="Violence")
+        f["modalities"] = {"vision": 0.9}
+        return f
+
+    def test_absence_under_thin_coverage_is_inconclusive(self):
+        result = compare(
+            [self._vision_finding()], [], [], coverage={"vision": 0.09}
+        )
+        assert result.changes[0].status == "INCONCLUSIVE"
+        assert "too little" in result.changes[0].detail
+
+    def test_absence_under_real_coverage_is_resolved(self):
+        result = compare(
+            [self._vision_finding()], [], [], coverage={"vision": 0.95}
+        )
+        assert result.changes[0].status == "RESOLVED"
+
+    def test_a_thin_run_cannot_reach_verified_safe(self):
+        """The property that matters: a cheap re-analysis must not be able
+        to certify a video."""
+        result = compare(
+            [self._vision_finding()], [], [], coverage={"vision": 0.09}
+        )
+        assert verdict(result) != "VERIFIED_SAFE"
+
+    def test_missing_coverage_information_does_not_block_resolution(self):
+        """Callers that cannot supply coverage — the CLI, older reports —
+        keep the previous behaviour rather than having every finding
+        downgraded to inconclusive."""
+        result = compare([self._vision_finding()], [], [])
+        assert result.changes[0].status == "RESOLVED"
+
+    def test_a_persisting_finding_is_unaffected_by_coverage(self):
+        """The gate only governs absence. A finding still detected is still
+        detected however little else was examined."""
+        result = compare(
+            [self._vision_finding()],
+            [self._vision_finding()],
+            [],
+            coverage={"vision": 0.05},
+        )
+        assert result.changes[0].status == "PERSISTING"
