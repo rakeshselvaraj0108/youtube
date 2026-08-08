@@ -9,6 +9,8 @@ import { FindingsList } from '@/components/FindingsList';
 import { HeaderBar } from '@/components/HeaderBar';
 import { PolicyBreakdown } from '@/components/PolicyBreakdown';
 import { RemediationPlan } from '@/components/RemediationPlan';
+import { DecisionSimulator } from '@/components/DecisionSimulator';
+import { IncidentsPanel } from '@/components/IncidentsPanel';
 import { RiskTimeline } from '@/components/RiskTimeline';
 import { RunBar } from '@/components/RunBar';
 import { ScoreGauge } from '@/components/ScoreGauge';
@@ -61,12 +63,20 @@ export default function App() {
             <PolicyBreakdown />
           </div>
 
+          {/* Row 2b — incidents: the correlation layer. Placed between the
+              timeline and the findings so the page reads what-happened before
+              what-each-agent-observed. */}
+          <div className="grid shrink-0 grid-cols-1 gap-gutter">
+            <IncidentsPanel />
+          </div>
+
           {/* Row 3 — findings, detail, remediation */}
           <div className="grid min-h-[420px] shrink-0 grid-cols-1 gap-gutter lg:grid-cols-2 2xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)_minmax(0,1.05fr)]">
             <FindingsList />
             <DetailPanel />
             <div className="flex min-h-0 min-w-0 flex-col gap-gutter lg:col-span-2 2xl:col-span-1">
               <RemediationPlan />
+              <DecisionSimulator />
               <FfmpegBlock />
             </div>
           </div>

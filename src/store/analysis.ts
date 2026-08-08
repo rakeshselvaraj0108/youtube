@@ -84,6 +84,26 @@ interface AnalysisState {
   seekTo: (ms: number) => void;
   setClauseFilter: (clause: string | null) => void;
 
+  /**
+   * The incident under investigation. Distinct from `selectedFindingId`:
+   * a finding is one agent's observation, an incident is the event those
+   * observations describe, and a reader moves between the two constantly.
+   */
+  selectedIncidentId: string | null;
+  expandedIncidentId: string | null;
+  incidentSeverity: string | null;
+
+  /** Simulator is collapsed by default — it is the decision layer, not
+   * the reporting layer, and should not consume the deck by default. */
+  simulatorOpen: boolean;
+  selectedScenario: string | null;
+  toggleSimulator: () => void;
+  selectScenario: (name: string | null) => void;
+
+  selectIncident: (id: string | null) => void;
+  toggleIncident: (id: string) => void;
+  setIncidentSeverity: (severity: string | null) => void;
+
   /** Adopt a report the engine produced. */
   setReport: (report: AnalysisReport, source: ReportSource) => void;
   /** Ask the API for its newest run. No-op when nothing answers. */
@@ -122,9 +142,11 @@ export const useAnalysis = create<AnalysisState>((set, get) => ({
       // claim the problem is at the start, which is a different and false
       // statement about the video.
       const scoped = duration > 0 && finding.endMs - finding.startMs >= duration * 0.9;
-      return scoped
-        ? { selectedFindingId }
-        : { selectedFindingId, playheadMs: finding.startMs };
+      const owning = (report.incidents ?? []).find((i) =>
+        i.findingIds.includes(finding.id),
+      );
+      const base = { selectedFindingId, selectedIncidentId: owning?.id ?? null };
+      return scoped ? base : { ...base, playheadMs: finding.startMs };
     }),
   setCategoryFilter: (categoryFilter) => set({ categoryFilter }),
   setSortBy: (sortBy) => set({ sortBy }),
@@ -135,6 +157,43 @@ export const useAnalysis = create<AnalysisState>((set, get) => ({
   running: false,
   playheadMs: 0,
   clauseFilter: null,
+
+  simulatorOpen: false,
+  selectedScenario: null,
+  toggleSimulator: () => set((st) => ({ simulatorOpen: !st.simulatorOpen })),
+  selectScenario: (selectedScenario) => set({ selectedScenario }),
+
+  selectedIncidentId: null,
+  expandedIncidentId: null,
+  incidentSeverity: null,
+
+  // Selecting an incident seeks to where it starts and selects its first
+  // finding, so the detail panel, the evidence and the policy tab all follow
+  // without the reader having to click again in three more places.
+  selectIncident: (id) =>
+    set((state) => {
+      const report = state.applied ? state.after : state.before;
+      const incident = (report.incidents ?? []).find((i) => i.id === id);
+      if (!incident) return { selectedIncidentId: id };
+      const duration = report.video.durationMs || 0;
+      const scoped =
+        duration > 0 && incident.endMs - incident.startMs >= duration * 0.9;
+      return {
+        selectedIncidentId: id,
+        expandedIncidentId: id,
+        selectedFindingId: incident.findingIds[0] ?? state.selectedFindingId,
+        // A file-scoped incident describes the upload, not a moment in it —
+        // seeking to 0 would assert the problem is at the start.
+        ...(scoped ? {} : { playheadMs: incident.startMs }),
+      };
+    }),
+
+  toggleIncident: (id) =>
+    set((state) => ({
+      expandedIncidentId: state.expandedIncidentId === id ? null : id,
+    })),
+
+  setIncidentSeverity: (incidentSeverity) => set({ incidentSeverity }),
 
   seekTo: (ms) => set({ playheadMs: Math.max(0, Math.round(ms)) }),
   setClauseFilter: (clauseFilter) => set({ clauseFilter }),
