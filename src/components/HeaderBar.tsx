@@ -62,6 +62,27 @@ export function HeaderBar() {
           Policy {report.meta.policyVersion}
         </Chip>
 
+        {/* Predicted before the run, measured after it. The estimate is an
+            upper bound by construction, so actual exceeding it would mean
+            the plan is wrong rather than the run unlucky — which makes this
+            a check on PREFLIGHT rather than a statistic about the video. */}
+        {report.cost && (
+          <Chip
+            title={
+              `Plan estimated at most ${report.cost.estimatedCalls} hosted calls; ` +
+              `the run made ${report.cost.actualCalls}.` +
+              (report.cost.ceiling !== null
+                ? `\nBudget ceiling: ${report.cost.ceiling}`
+                : '\nNo budget ceiling was set.') +
+              (report.cost.shed.length > 0
+                ? `\nShed: ${report.cost.shed.map((s) => s.stage).join(', ')}`
+                : '')
+            }
+          >
+            {report.cost.actualCalls}/{report.cost.estimatedCalls} calls
+          </Chip>
+        )}
+
         <Chip
           tone={exitCode(report) === 0 ? SIGNAL_HEX.clear : SIGNAL_HEX.critical}
           title="Exit code a CI run would take from this report"

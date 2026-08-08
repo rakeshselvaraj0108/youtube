@@ -13,7 +13,7 @@ import { injectedAfterReport, injectedReport } from '@/lib/reportSource';
 export const BEFORE: AnalysisReport = injectedReport() ?? fixtureBefore;
 export const AFTER: AnalysisReport = injectedAfterReport() ?? fixtureAfter;
 
-export type DetailTab = 'EVIDENCE' | 'POLICY' | 'ADVERSARIAL';
+export type DetailTab = 'EVIDENCE' | 'POLICY' | 'ADVERSARIAL' | 'REASONING';
 
 /**
  * Where the report on screen came from. Shown in the header, because a deck
