@@ -81,9 +81,9 @@ export function FfmpegBlock() {
       <Panel title="Generated ffmpeg Command" className="min-w-0">
         <div className="flex flex-1 items-center justify-center">
           <span className="num text-center text-[10px] uppercase leading-relaxed tracking-[0.1em] text-inkFaint">
-            program executed
+            no command generated
             <br />
-            documentary.safe.mp4 written
+            no remediable operations in this report
           </span>
         </div>
       </Panel>

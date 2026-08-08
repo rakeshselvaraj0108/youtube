@@ -1,6 +1,6 @@
 ﻿import { create } from 'zustand';
 import type { AnalysisReport, Finding } from '@/types/analysis';
-import { afterReport as fixtureAfter, beforeReport as fixtureBefore } from '@/data/fixture';
+import { beforeReport as fixtureBefore } from '@/data/fixture';
 import { fetchLatestRun, type StageEvent } from '@/lib/api';
 import { sortFindings, type FindingSort } from '@/lib/findings';
 import { injectedAfterReport, injectedReport } from '@/lib/reportSource';
@@ -11,7 +11,10 @@ import { injectedAfterReport, injectedReport } from '@/lib/reportSource';
  * agrees on which report it is reading.
  */
 export const BEFORE: AnalysisReport = injectedReport() ?? fixtureBefore;
-export const AFTER: AnalysisReport = injectedAfterReport() ?? fixtureAfter;
+// A remediated report exists only after a separate analysis of the rendered
+// artifact. The fallback preserves the layout without manufacturing an
+// unverified improvement from fixture data.
+export const AFTER: AnalysisReport = injectedAfterReport() ?? BEFORE;
 
 export type DetailTab = 'EVIDENCE' | 'POLICY' | 'ADVERSARIAL' | 'REASONING';
 
@@ -43,6 +46,8 @@ interface AnalysisState {
 
   /** Which render the deck is showing. The fix transition flips this. */
   applied: boolean;
+  /** Set only for an embedded or freshly measured remediation report. */
+  hasVerifiedAfter: boolean;
   selectedFindingId: string | null;
   categoryFilter: string | null;
   sortBy: FindingSort;
@@ -106,6 +111,10 @@ interface AnalysisState {
 
   /** Adopt a report the engine produced. */
   setReport: (report: AnalysisReport, source: ReportSource) => void;
+  /** Adopt the independently analysed rendered artifact. This is deliberately
+   * separate from `setApplied`: a toggle must never manufacture an "after"
+   * result from a plan or a successful ffmpeg exit. */
+  setRemediatedReport: (report: AnalysisReport) => void;
   /** Ask the API for its newest run. No-op when nothing answers. */
   hydrate: () => Promise<void>;
 }
@@ -117,6 +126,7 @@ export const useAnalysis = create<AnalysisState>((set, get) => ({
   loading: false,
 
   applied: false,
+  hasVerifiedAfter: Boolean(injectedAfterReport()),
   selectedFindingId: BEFORE.findings[0]?.id ?? null,
   categoryFilter: null,
   sortBy: 'severity',
@@ -125,6 +135,7 @@ export const useAnalysis = create<AnalysisState>((set, get) => ({
 
   setApplied: (applied) =>
     set((state) => {
+      if (applied && !state.hasVerifiedAfter) return state;
       const next = applied ? state.after : state.before;
       return { applied, selectedFindingId: next.findings[0]?.id ?? null, categoryFilter: null };
     }),
@@ -259,6 +270,17 @@ export const useAnalysis = create<AnalysisState>((set, get) => ({
       after: report,
       source,
       applied: false,
+      hasVerifiedAfter: false,
+      selectedFindingId: report.findings[0]?.id ?? null,
+      categoryFilter: null,
+      loading: false,
+    }),
+
+  setRemediatedReport: (report) =>
+    set({
+      after: report,
+      applied: true,
+      hasVerifiedAfter: true,
       selectedFindingId: report.findings[0]?.id ?? null,
       categoryFilter: null,
       loading: false,

@@ -20,6 +20,7 @@ export function RemediationPlan() {
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<string | null>(null);
   const source = useAnalysis((s) => s.before.video.srcUrl);
+  const setRemediatedReport = useAnalysis((s) => s.setRemediatedReport);
 
   async function apply() {
     setBusy(true);
@@ -28,7 +29,12 @@ export function RemediationPlan() {
       await applyFix(source.replace(/^\.\//, ''), {}, (event) => {
         if (event.type === 'fix.progress') setPhase(event.stage ?? null);
         if (event.type === 'run.complete') {
-          setPhase(event.rendered ? 'rendered' : 'nothing to fix');
+          if (event.afterReport) {
+            setRemediatedReport(event.afterReport);
+            setPhase('verified — viewing rendered analysis');
+          } else {
+            setPhase(event.rendered ? 'rendered — re-analysis unavailable' : 'nothing to fix');
+          }
           setBusy(false);
         }
         if (event.type === 'run.error') {

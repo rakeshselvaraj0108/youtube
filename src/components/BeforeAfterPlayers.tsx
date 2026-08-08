@@ -30,10 +30,13 @@ function PlayerFrame({
   onSeek: (t: number) => void;
 }) {
   const [failed, setFailed] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
   const scrubRef = useRef<HTMLDivElement>(null);
   const duration = report.video.durationMs;
   const isAfter = variant === 'AFTER';
+  const hasVerifiedAfter = useAnalysis((s) => s.hasVerifiedAfter);
   // From the live store, so the counts describe the run on screen rather
   // than the demo fixture this component used to read regardless.
   const ops = useAnalysis((s) => s.before.remediation.ops);
@@ -65,6 +68,26 @@ function PlayerFrame({
     seekFromEvent(event.clientX);
   };
 
+  const togglePlayback = async () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) {
+      try {
+        await video.play();
+      } catch {
+        // Autoplay policy or a missing source leaves an honest paused player.
+      }
+    } else {
+      video.pause();
+    }
+  };
+
+  const skip = () => {
+    const video = videoRef.current;
+    if (!video || !Number.isFinite(video.duration)) return;
+    onSeek(Math.min(1, (video.currentTime + 10) / video.duration));
+  };
+
   return (
     <Panel className="min-w-0" flush>
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-edge px-3 py-2">
@@ -72,7 +95,7 @@ function PlayerFrame({
           className="text-micro uppercase"
           style={{ color: isAfter ? SIGNAL_HEX.clear : '#8A97AE' }}
         >
-          {isAfter ? 'After (Safe)' : 'Before (Original)'}
+          {isAfter ? (hasVerifiedAfter ? 'After (Verified)' : 'After (Pending)') : 'Before (Original)'}
         </span>
         <span className="num text-[10px] text-inkFaint">
           {formatTimecode(duration * positionT)} / {formatTimecode(duration)}
@@ -87,8 +110,16 @@ function PlayerFrame({
             poster={report.video.posterUrl}
             className="h-full w-full object-cover"
             preload="metadata"
-            muted
+            muted={muted}
             playsInline
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+            onTimeUpdate={(event) => {
+              const video = event.currentTarget;
+              if (Number.isFinite(video.duration) && video.duration > 0) {
+                onSeek(video.currentTime / video.duration);
+              }
+            }}
             onError={() => setFailed(true)}
           />
         ) : (
@@ -128,7 +159,7 @@ function PlayerFrame({
             }}
           />
           {/* remediated spans — only meaningful on the safe render */}
-          {isAfter &&
+          {isAfter && hasVerifiedAfter &&
             ops.map((op) => (
               <span
                 key={op.index}
@@ -153,11 +184,26 @@ function PlayerFrame({
       </div>
 
       <div className="flex shrink-0 items-center gap-3 px-3 py-2.5 text-inkFaint">
-        <Play className="h-3.5 w-3.5" fill="currentColor" />
-        <SkipForward className="h-3.5 w-3.5" />
-        <Volume2 className="h-3.5 w-3.5" />
+        <button type="button" onClick={() => void togglePlayback()} title={playing ? 'Pause' : 'Play'}>
+          {playing ? <Pause className="h-3.5 w-3.5" fill="currentColor" /> : <Play className="h-3.5 w-3.5" fill="currentColor" />}
+        </button>
+        <button type="button" onClick={skip} title="Skip forward 10 seconds">
+          <SkipForward className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const video = videoRef.current;
+            if (!video) return;
+            video.muted = !muted;
+            setMuted(video.muted);
+          }}
+          title={muted ? 'Unmute' : 'Mute'}
+        >
+          <Volume2 className={`h-3.5 w-3.5 ${muted ? 'opacity-50' : ''}`} />
+        </button>
         <span className="ml-auto num text-[9px] uppercase tracking-[0.08em]">
-          {isAfter ? `${ops.length} spans remediated` : `${findingCount} findings`}
+          {isAfter ? (hasVerifiedAfter ? `${ops.length} spans remediated` : 'verification pending') : `${findingCount} findings`}
         </span>
       </div>
     </Panel>
@@ -166,6 +212,7 @@ function PlayerFrame({
 
 function FixBridge() {
   const applied = useAnalysis((s) => s.applied);
+  const hasVerifiedAfter = useAnalysis((s) => s.hasVerifiedAfter);
   const setApplied = useAnalysis((s) => s.setApplied);
 
   const before = useAnalysis((s) => s.before.scores);
@@ -199,9 +246,9 @@ function FixBridge() {
 
       <div className="flex flex-col items-center gap-0.5">
         <span className="num text-data" style={{ color: SIGNAL_HEX.clear }}>
-          +{delta} readiness
+          {hasVerifiedAfter ? `${delta >= 0 ? '+' : ''}${delta} readiness` : 'verification required'}
         </span>
-        <span className="num text-[9px] text-inkFaint">
+        <span className={`num text-[9px] text-inkFaint ${hasVerifiedAfter ? '' : 'invisible'}`}>
           <span style={{ color: readinessHex(before.overall) }}>{before.overall}</span>
           {' → '}
           <span style={{ color: readinessHex(after.overall) }}>{after.overall}</span>
@@ -211,18 +258,19 @@ function FixBridge() {
       <button
         type="button"
         onClick={() => setApplied(!applied)}
+        disabled={!hasVerifiedAfter}
         className="flex w-full items-center justify-center gap-1.5 rounded-chip border px-2.5 py-2 text-micro uppercase transition-colors duration-fast"
         style={{
-          color: applied ? '#8A97AE' : SIGNAL_HEX.clear,
-          borderColor: applied ? '#26324A' : `${SIGNAL_HEX.clear}66`,
-          background: applied ? 'transparent' : `${SIGNAL_HEX.clear}14`,
+          color: !hasVerifiedAfter ? '#58647A' : applied ? '#8A97AE' : SIGNAL_HEX.clear,
+          borderColor: !hasVerifiedAfter || applied ? '#26324A' : `${SIGNAL_HEX.clear}66`,
+          background: !hasVerifiedAfter || applied ? 'transparent' : `${SIGNAL_HEX.clear}14`,
         }}
       >
         {applied ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
-        {applied ? 'Revert' : 'Apply Fix'}
+        {!hasVerifiedAfter ? 'Await verification' : applied ? 'View original' : 'View verified render'}
       </button>
 
-      <span className="num text-center text-[9px] uppercase leading-relaxed tracking-[0.06em] text-inkFaint">
+      <span className={`num text-center text-[9px] uppercase leading-relaxed tracking-[0.06em] text-inkFaint ${hasVerifiedAfter ? '' : 'invisible'}`}>
         {VERDICT_META[before.verdict].label}
         <br />↓<br />
         {VERDICT_META[after.verdict].label}

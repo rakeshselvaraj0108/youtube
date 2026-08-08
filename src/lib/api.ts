@@ -81,7 +81,18 @@ export async function fetchRuns(): Promise<RunSummary[]> {
 
 export async function fetchRun(id: string): Promise<AnalysisReport | null> {
   try {
-    return await call<AnalysisReport>(`/api/runs/${encodeURIComponent(id)}`);
+    const report = await call<AnalysisReport>(`/api/runs/${encodeURIComponent(id)}`);
+    // API reports are stored as portable standalone artifacts, whose relative
+    // video URL is correct beside report.html but not inside the dashboard's
+    // origin. The server resolves this id through lineage and supports ranges
+    // so the player can seek the exact evidence timestamp.
+    return {
+      ...report,
+      video: {
+        ...report.video,
+        srcUrl: `${BASE}/api/runs/${encodeURIComponent(id)}/media`,
+      },
+    };
   } catch {
     return null;
   }
@@ -153,6 +164,9 @@ export interface StageEvent {
   ops?: number;
   output?: string;
   rendered?: boolean;
+  /** A measurement of the rendered artifact, supplied only after the
+   * verification pass has completed successfully. */
+  afterReport?: AnalysisReport;
 }
 
 /**

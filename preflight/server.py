@@ -30,6 +30,7 @@ that resolved them.
 from __future__ import annotations
 
 import json
+import mimetypes
 import os
 import re
 import threading
@@ -40,13 +41,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from preflight import __version__, cas, ffmpeg
+from preflight import __version__, cas, ffmpeg, lifecycle, lineage
 from preflight.agents.roster import load_roster
 from preflight.budget import CallBudget
 from preflight.config import Settings
 from preflight.pipeline import run_perception
 from preflight.plan import build_plan
 from preflight.report.build import build_report
+from preflight.report.sarif import build_certificate
 from preflight.verify import compare, prediction_outcome
 
 # Reports are written here by the server and listed from here. The CLI's own
@@ -230,6 +232,25 @@ def read_run(run_id: str) -> dict[str, Any]:
     return json.loads(resolved.read_text(encoding="utf-8"))
 
 
+def run_media(run_id: str) -> Path:
+    """Resolve the measured input/output artifact for a persisted run.
+
+    The report intentionally stores a portable relative media URL for the
+    standalone HTML artifact. The API deck is a different origin, so it must
+    resolve media from the durable lineage record rather than guessing a path
+    from the filename supplied by a browser.
+    """
+    if not RUN_ID.match(run_id):
+        raise ApiError(400, "malformed run id")
+    node = lineage.Lineage().run(run_id)
+    if node is None:
+        raise ApiError(404, f"no recorded media for run {run_id}")
+    path = Path(node.video_path)
+    if not path.is_file():
+        raise ApiError(404, "recorded media is no longer available")
+    return path
+
+
 # Uploads land here. Separate from RUNS_DIR because these are inputs, not
 # results, and a creator clearing old reports should not delete the video
 # they are still working on.
@@ -361,6 +382,25 @@ def analyze(
         raise ApiError(500, "refusing to persist a report containing the API key")
     (directory / "report.json").write_text(text, encoding="utf-8")
 
+    # Reports on disk are the UI's source of truth; the lineage record is the
+    # durable index that lets a later remediation name exactly which analysis
+    # and bytes it derives from. Record both from the same measured result,
+    # never from request data supplied by the browser.
+    graph = lineage.Lineage()
+    artifact = graph.record_artifact(video, duration_ms=result.ingested.meta.durationMs)
+    graph.record_run(
+        run_id,
+        bundle.report,
+        role="ORIGINAL",
+        video_path=str(video),
+        video_hash=cas.prefixed(result.ingested.video_hash),
+        report_path=str(directory / "report.json"),
+        artifact_id=artifact.artifact_id,
+    )
+    simulation = bundle.report.get("simulation")
+    if isinstance(simulation, dict):
+        graph.record_simulation(run_id, simulation)
+
     return {"id": run_id, "report": bundle.report}
 
 
@@ -399,6 +439,44 @@ def apply_fix(payload: dict[str, Any], on_event: Any = None) -> dict[str, Any]:
     emit("analysing", "re-reading findings for this video")
     result = run_perception(video, cas.Store(settings.cache_dir), settings=settings)
 
+    # Establish the original run before requesting a remediation. The lineage
+    # record must exist before ffmpeg starts, otherwise an interrupted render
+    # would be indistinguishable from a remediation that was never requested.
+    before_bundle = build_report(
+        result,
+        policy_version=result.corpus.version if result.corpus else "unknown",
+        embed_media=False,
+        strategy=str(payload.get("strategy") or "") or None,
+        chunk_ms=settings.chunk_ms,
+        overlap_ms=settings.overlap_ms,
+    )
+    before_report = before_bundle.report
+    source_run_id = (
+        f"fix-{cas.prefixed(result.ingested.video_hash)[3:15]}-{time.time_ns()}"
+    )
+    source_dir = RUNS_DIR / source_run_id
+    source_dir.mkdir(parents=True, exist_ok=True)
+    source_report_path = source_dir / "report.json"
+    source_report_path.write_text(
+        json.dumps(before_report, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    graph = lineage.Lineage()
+    source_artifact = graph.record_artifact(
+        video, duration_ms=result.ingested.meta.durationMs
+    )
+    graph.record_run(
+        source_run_id,
+        before_report,
+        role="ORIGINAL",
+        video_path=str(video),
+        video_hash=cas.prefixed(result.ingested.video_hash),
+        report_path=str(source_report_path),
+        artifact_id=source_artifact.artifact_id,
+    )
+    simulation_id = graph.record_simulation(
+        source_run_id, before_report.get("simulation", {})
+    )
+
     emit("compiling", "lowering findings to an edit list")
     try:
         edl = compile_edl(
@@ -413,7 +491,27 @@ def apply_fix(payload: dict[str, Any], on_event: Any = None) -> dict[str, Any]:
 
     if not edl.ops:
         emit("done", "nothing to repair")
-        return {"rendered": False, "reason": "no remediable findings", "ops": 0}
+        return {
+            "rendered": False,
+            "reason": "no remediable findings",
+            "ops": 0,
+            "sourceRunId": source_run_id,
+        }
+
+    remediation = graph.open_remediation(
+        source_run_id,
+        source_path=str(video),
+        simulation_id=simulation_id,
+        finding_ids=(finding.id for finding in result.findings),
+        incident_ids=(incident.id for incident in result.incidents),
+    )
+    remediation_id = remediation.remediation_id
+    graph.transition(
+        remediation_id,
+        "RENDERING",
+        detail="ffmpeg render started",
+        edl_json=json.dumps(edl.to_json(), separators=(",", ":")),
+    )
 
     destination = video.with_name(f"{video.stem}.safe{video.suffix}")
     program = build_program(edl, video, destination)
@@ -429,16 +527,20 @@ def apply_fix(payload: dict[str, Any], on_event: Any = None) -> dict[str, Any]:
         ffmpeg.run(program.command[1:-1] + [staged.as_posix()])
     except ffmpeg.FfmpegFailed as exc:
         staged.unlink(missing_ok=True)
+        graph.fail(remediation_id, f"render failed: {exc}")
         raise ApiError(500, f"render failed: {exc}") from exc
     elapsed_ms = int((time.perf_counter() - started) * 1000)
 
     if not staged.is_file() or staged.stat().st_size == 0:
         staged.unlink(missing_ok=True)
+        graph.fail(remediation_id, "render produced no output")
         raise ApiError(500, "render produced no output")
 
     # Verified against the file, not against ffmpeg's exit code: a truncated
     # render from a killed process still exits clean.
     emit("verifying", "checking duration against the edit list")
+    graph.transition(remediation_id, "RENDERED", detail="ffmpeg output written")
+    graph.transition(remediation_id, "STRUCTURAL_VERIFYING", detail="probing rendered output")
     try:
         out_meta = probe_video(staged)
         cut_ms = sum(op.duration_ms for op in edl.ops if op.op == "CUT")
@@ -450,11 +552,25 @@ def apply_fix(payload: dict[str, Any], on_event: Any = None) -> dict[str, Any]:
                 f"verification failed: output is {out_meta.durationMs}ms, "
                 f"expected {expected}ms — nothing was written",
             )
+    except ApiError as exc:
+        graph.fail(remediation_id, exc.message)
+        raise
     except (ffmpeg.FfmpegFailed, UnsupportedInput) as exc:
         staged.unlink(missing_ok=True)
+        graph.fail(remediation_id, f"structural verification failed: {exc}")
         raise ApiError(500, f"verification failed: {exc}") from exc
 
     staged.replace(destination)
+    output_artifact = graph.record_artifact(destination, duration_ms=out_meta.durationMs)
+    graph.transition(
+        remediation_id,
+        "STRUCTURALLY_VALID",
+        detail="duration matches edit list",
+        artifact_id=output_artifact.artifact_id,
+        output_path=str(destination),
+    )
+    graph.transition(remediation_id, "REANALYSIS_QUEUED", detail="render queued for analysis")
+    graph.transition(remediation_id, "REANALYSING", detail="rendered artifact analysis started")
     emit("rendered", f"wrote {destination.name}")
 
     # A successful render is not a successful remediation. ffmpeg exiting
@@ -489,14 +605,27 @@ def apply_fix(payload: dict[str, Any], on_event: Any = None) -> dict[str, Any]:
         after_bundle = None
         reanalysis_ok = False
 
-    emit("comparing", "matching findings across the two runs")
-    before_report = build_report(
-        result,
-        policy_version=result.corpus.version if result.corpus else "unknown",
-        embed_media=False,
-        chunk_ms=settings.chunk_ms,
-        overlap_ms=settings.overlap_ms,
-    ).report
+    verification_run_id: str | None = None
+    if reanalysis_ok and after_bundle is not None:
+        verification_run_id = f"verify-{cas.prefixed(after.ingested.video_hash)[3:15]}-{time.time_ns()}"
+        verification_dir = RUNS_DIR / verification_run_id
+        verification_dir.mkdir(parents=True, exist_ok=True)
+        verification_path = verification_dir / "report.json"
+        verification_path.write_text(
+            json.dumps(after_bundle.report, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        graph.record_run(
+            verification_run_id,
+            after_bundle.report,
+            role="VERIFICATION",
+            parent_run_id=source_run_id,
+            video_path=str(destination),
+            video_hash=cas.prefixed(after.ingested.video_hash),
+            report_path=str(verification_path),
+            artifact_id=output_artifact.artifact_id,
+        )
+        graph.transition(remediation_id, "REANALYSIS_COMPLETE", detail="rendered artifact analysed")
+        graph.transition(remediation_id, "COMPARING", detail="matching original and rendered findings")
 
     comparison = compare(
         before_report["findings"],
@@ -526,6 +655,52 @@ def apply_fix(payload: dict[str, Any], on_event: Any = None) -> dict[str, Any]:
         predicted, comparison.remediated_score
     )
 
+    verification_id = graph.record_verification(
+        remediation_id,
+        original_run_id=source_run_id,
+        verification_run_id=verification_run_id,
+        comparison=verified,
+        telemetry={"renderMs": elapsed_ms, "ops": len(edl.ops)},
+    )
+    if reanalysis_ok:
+        graph.transition(
+            remediation_id,
+            lifecycle.state_for_verdict(verified["verdict"]),
+            detail="comparison completed",
+            verification_run_id=verification_run_id,
+            verification_id=verification_id,
+            verdict=verified["verdict"],
+        )
+    else:
+        graph.transition(
+            remediation_id,
+            "INCONCLUSIVE",
+            detail="rendered artifact could not be re-analysed",
+            verification_id=verification_id,
+            verdict=verified["verdict"],
+        )
+
+    certificate_id: str | None = None
+    if after_bundle is not None:
+        # A certificate is evidence for the measured rendered artifact, not a
+        # promise based on the original plan. It is therefore emitted only
+        # after a completed comparison and stored by reference in lineage.
+        from preflight.providers.registry import Registry
+
+        certificate = build_certificate(
+            after_bundle.report,
+            models=settings.models.to_json(),
+            policy_digest=after.corpus.digest if after.corpus else "none",
+            video_hash=cas.prefixed(after.ingested.video_hash),
+            retrieval_backend=after.retrieval_backend,
+            provenance=Registry(offline=settings.offline).provenance(),
+        )
+        certificate_id = graph.record_certificate(
+            verification_id,
+            certificate,
+            cas.prefixed(cas.hash_json(certificate)),
+        )
+
     emit("verified", verified["verdict"], verdict=verified["verdict"])
     return {
         "rendered": True,
@@ -535,6 +710,14 @@ def apply_fix(payload: dict[str, Any], on_event: Any = None) -> dict[str, Any]:
         "videoStreamCopied": program.video_stream_copied,
         "command": program.pretty(),
         "verification": verified,
+        "sourceRunId": source_run_id,
+        "remediationId": remediation_id,
+        "verificationId": verification_id,
+        **({"certificateId": certificate_id} if certificate_id else {}),
+        # The rendered file is shown as an "after" only when it was actually
+        # re-analysed. A successful render proves bytes were written; it does
+        # not prove the policy findings changed.
+        **({"afterReport": after_bundle.report} if after_bundle else {}),
     }
 
 
@@ -654,6 +837,49 @@ class Handler(BaseHTTPRequestHandler):
             # its report still lands on disk.
             pass
 
+    def _media(self, path: Path) -> None:
+        """Send media with byte ranges so the browser can seek without loading
+        the entire source video. The path comes only from lineage, never from
+        a URL component.
+        """
+        size = path.stat().st_size
+        start, end = 0, max(0, size - 1)
+        status = 200
+        header = self.headers.get("Range", "")
+        if header.startswith("bytes="):
+            try:
+                raw_start, raw_end = header[6:].split("-", 1)
+                start = int(raw_start) if raw_start else 0
+                end = int(raw_end) if raw_end else end
+                if start < 0 or end < start or start >= size:
+                    raise ValueError
+                end = min(end, size - 1)
+                status = 206
+            except ValueError:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self._cors()
+                self.end_headers()
+                return
+        length = end - start + 1
+        self.send_response(status)
+        self.send_header("Content-Type", mimetypes.guess_type(path.name)[0] or "application/octet-stream")
+        self.send_header("Content-Length", str(length))
+        self.send_header("Accept-Ranges", "bytes")
+        if status == 206:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self._cors()
+        self.end_headers()
+        with path.open("rb") as media:
+            media.seek(start)
+            remaining = length
+            while remaining:
+                chunk = media.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                remaining -= len(chunk)
+
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0].rstrip("/")
         try:
@@ -663,6 +889,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, agents())
             elif path == "/api/runs":
                 self._send(200, list_runs())
+            elif path.startswith("/api/runs/") and path.endswith("/media"):
+                run_id = path[len("/api/runs/"):-len("/media")].rstrip("/")
+                self._media(run_media(run_id))
             elif path.startswith("/api/events/"):
                 self._stream(get_job(path[len("/api/events/"):]))
             elif path.startswith("/api/jobs/"):
