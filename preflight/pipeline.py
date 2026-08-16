@@ -150,9 +150,29 @@ class PipelineResult:
         examined = (vision_agent.artifacts or {}).get("examined_ms") if vision_agent else None
         if examined:
             evidence["vision"] = [{"ts_ms": ts} for ts in examined]
-        segments = getattr(self.transcript, "segments", None) if self.transcript else None
-        if segments:
-            evidence["speech"] = segments
+        if self.transcript is not None:
+            # ASR decodes the whole waveform continuously in one pass — it
+            # is not frame-sampled the way vision/OCR are, so a segment's
+            # start time is the wrong signal for "was this span examined".
+            # A silent or music-only stretch produces zero segments there
+            # despite ASR having processed every sample of it; keying
+            # coverage on segments marked exactly the passages with no
+            # dialogue as under-examined, which is backwards — those are
+            # the passages ASR most conclusively ruled out. Evidence is
+            # synthesised evenly across the duration ASR actually ran
+            # over, not the timestamps of what it happened to find. And
+            # `is not None` rather than truthiness: a video that is
+            # genuinely silent throughout produces an empty segment list,
+            # which must still read as "examined, nothing found" rather
+            # than "never ran".
+            duration = self.transcript.duration_ms or (
+                self.ingested.meta.durationMs if self.ingested else 0
+            )
+            if duration > 0:
+                step_ms = 5_000
+                evidence["speech"] = [
+                    {"ts_ms": ts} for ts in range(0, duration, step_ms)
+                ]
         return coverage_mod.build(
             self.ingested.meta.durationMs if self.ingested else 0, evidence
         )

@@ -703,3 +703,115 @@ class TestOrchestratorDrivesTheRealRun:
         assert timeline, "no stages were recorded at all"
         for entry in timeline:
             assert entry["attempts"] >= 1
+
+
+class TestSpeechTemporalCoverage:
+    """Speech coverage evidence must reflect what ASR examined, not what it
+    found.
+
+    ASR decodes the whole waveform continuously in one pass — it is not
+    frame-sampled the way vision and OCR are. A silent or music-only stretch
+    produces zero transcript segments there despite every sample of it having
+    been processed. Keying coverage on segment timestamps marked exactly the
+    passages with no dialogue as under-examined, which is backwards: those
+    are the passages ASR most conclusively ruled out.
+    """
+
+    def _result(self, transcript, duration_ms: int = 90_000):
+        from preflight.ingest.pipeline import Ingested
+        from preflight.ingest.probe import VideoMeta
+        from preflight.pipeline import PipelineResult
+
+        meta = VideoMeta(
+            filename="clip.mp4",
+            durationMs=duration_ms,
+            width=1024,
+            height=576,
+            fps=30.0,
+            sizeBytes=1,
+            audioCodec="aac",
+            sampleRate=44100,
+            posterUrl="./x.jpg",
+            srcUrl="./x.mp4",
+        )
+        ingested = Ingested(
+            video_hash="deadbeef",
+            meta=meta,
+            asr_wav=Path("x.wav"),
+            fingerprint_wav=Path("x.wav"),
+            poster=Path("x.jpg"),
+            keyframes=[],
+            cached=False,
+            elapsed_ms=0,
+        )
+        return PipelineResult(source=Path("clip.mp4"), ingested=ingested, transcript=transcript)
+
+    def test_a_silent_stretch_with_dialogue_elsewhere_is_still_examined(self):
+        """The exact shape of the real bug: two bursts of speech early, then
+        20+ seconds of music-only silence. Segment-keyed coverage marked the
+        silent tail UNEXAMINED; it was transcribed just as thoroughly as the
+        talkative opening — it just found nothing to report."""
+        transcript = Transcript(
+            language="en",
+            duration_ms=90_000,
+            segments=[
+                Segment(start_ms=1_000, end_ms=5_000, text="hello"),
+                Segment(start_ms=10_000, end_ms=15_000, text="world"),
+            ],
+        )
+        tc = self._result(transcript, duration_ms=90_000).temporal_coverage
+        assert tc.blind_spots("speech") == []
+        assert tc.share_examined("speech") == 1.0
+
+    def test_a_wholly_silent_video_is_examined_not_unrun(self):
+        """An empty segment list is a real, negative finding — ASR ran over
+        the whole file and detected no speech anywhere. That must read as
+        NEGATIVE_EVIDENCE, not NOT_RUN."""
+        from preflight import coverage as coverage_mod
+
+        transcript = Transcript(language="en", duration_ms=60_000, segments=[])
+        result = self._result(transcript, duration_ms=60_000)
+        tc = result.temporal_coverage
+
+        assert "speech" in tc.modalities
+        assert tc.blind_spots("speech") == []
+        assert (
+            coverage_mod.classify_absence(tc, "speech", 0, 60_000)
+            == coverage_mod.NEGATIVE_EVIDENCE
+        )
+
+    def test_asr_never_running_is_not_run_not_examined(self):
+        """No transcript at all — ASR skipped (no audio stream, or the
+        optional backend is not installed) — must be absent from the table
+        entirely, distinct from having run and found silence."""
+        from preflight import coverage as coverage_mod
+
+        result = self._result(None, duration_ms=60_000)
+        tc = result.temporal_coverage
+
+        assert "speech" not in tc.modalities
+        assert (
+            coverage_mod.classify_absence(tc, "speech", 0, 60_000)
+            == coverage_mod.NOT_RUN
+        )
+
+    def test_evidence_density_does_not_depend_on_how_much_was_said(self):
+        """A chatty video and a quiet one must be equally 'examined' by this
+        measure — coverage is about whether ASR ran, never about how much
+        was said, which is a property of the video, not of the audit."""
+        talkative = Transcript(
+            language="en",
+            duration_ms=60_000,
+            segments=[
+                Segment(start_ms=i * 1_000, end_ms=i * 1_000 + 800, text="word")
+                for i in range(50)
+            ],
+        )
+        quiet = Transcript(
+            language="en",
+            duration_ms=60_000,
+            segments=[Segment(start_ms=30_000, end_ms=31_000, text="hi")],
+        )
+        talkative_tc = self._result(talkative, duration_ms=60_000).temporal_coverage
+        quiet_tc = self._result(quiet, duration_ms=60_000).temporal_coverage
+        assert talkative_tc.share_examined("speech") == quiet_tc.share_examined("speech")
