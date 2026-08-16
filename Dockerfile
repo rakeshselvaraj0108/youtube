@@ -50,5 +50,13 @@ RUN useradd --create-home --uid 1000 preflight \
  && chown -R preflight:preflight /app
 USER preflight
 
+# Plain `docker run image` (no args — exactly what a PaaS does when it has
+# no dockerCommand override configured) now serves by default: with a fixed
+# ENTRYPOINT, Docker combines it with CMD verbatim when no args are passed.
+# `docker run image check foo.mp4` still overrides only the CMD half, so the
+# CLI-passthrough contract judges rely on is untouched. 10000 is a fixed
+# literal, not read from $PORT — exec-form CMD can't do shell expansion —
+# so whatever PORT the deploy target sets must match this, or override the
+# whole command.
 ENTRYPOINT ["preflight"]
-CMD ["--help"]
+CMD ["serve", "--host", "0.0.0.0", "--port", "10000"]

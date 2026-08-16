@@ -20,7 +20,13 @@ services:
     plan: free
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    dockerCommand: serve --host 0.0.0.0 --port 10000
+    # Deliberately omitted: the Dockerfile's own CMD already serves on
+    # 0.0.0.0:10000 by default. An earlier dockerCommand override here
+    # produced a container that never wrote a single byte to stdout and was
+    # killed ~20s in — most consistent with dockerCommand not composing with
+    # a custom ENTRYPOINT the way plain Docker CMD-override semantics would.
+    # Letting Render fall back to "the Dockerfile's own CMD" sidesteps the
+    # question entirely instead of relying on unconfirmed behavior.
     healthCheckPath: /api/health
     envVars:
       - key: PORT
@@ -44,10 +50,11 @@ services:
     buildCommand: npm ci && npm run build
     staticPublishPath: ./dist
     envVars:
-      # Deterministic from the backend service name above — Render assigns
-      # https://<name>.onrender.com unless a custom domain is attached.
+      # Not the name-derived guess (https://preflight-api.onrender.com) —
+      # Render appended a disambiguation suffix on creation, confirmed from
+      # the actual service record rather than assumed.
       - key: VITE_PREFLIGHT_API
-        value: https://preflight-api.onrender.com
+        value: https://preflight-api-vax3.onrender.com
     routes:
       - type: rewrite
         source: /*
