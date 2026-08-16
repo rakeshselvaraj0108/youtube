@@ -39,7 +39,7 @@ export function RemediationPlan() {
           // the reader happened to press.
           adoptVerification(event);
           if (event.afterReport) {
-            setRemediatedReport(event.afterReport);
+            setRemediatedReport(event.afterReport, event.verificationRunId);
             setPhase(event.verification?.verdict ?? 'verified');
           } else {
             setPhase(event.rendered ? 'rendered — re-analysis unavailable' : 'nothing to fix');

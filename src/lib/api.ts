@@ -24,6 +24,15 @@ import type {
 
 const BASE = (import.meta.env.VITE_PREFLIGHT_API as string | undefined) ?? 'http://127.0.0.1:8000';
 
+/** The byte-range media route for a run recorded in lineage. Every report
+ * carries a portable relative `video.srcUrl` (correct beside a standalone
+ * report.html); inside the dashboard's origin that path resolves to nothing,
+ * so any report served through this API must have its video URL rewritten
+ * through here instead. */
+export function runMediaUrl(runId: string): string {
+  return `${BASE}/api/runs/${encodeURIComponent(runId)}/media`;
+}
+
 /** Long enough for a real analysis, short enough that a dead port is obvious. */
 const ANALYZE_TIMEOUT_MS = 15 * 60 * 1000;
 const READ_TIMEOUT_MS = 4000;
@@ -96,7 +105,7 @@ export async function fetchRun(id: string): Promise<AnalysisReport | null> {
       ...report,
       video: {
         ...report.video,
-        srcUrl: `${BASE}/api/runs/${encodeURIComponent(id)}/media`,
+        srcUrl: runMediaUrl(id),
       },
     };
   } catch {
@@ -189,6 +198,10 @@ export interface StageEvent {
   remediationId?: string;
   certificateId?: string;
   verificationId?: string;
+  /** The runs-table id the rendered artifact's media is recorded under.
+   * Distinct from `verificationId` (the VER-#### comparison record) —
+   * this is the one `runMediaUrl` needs. */
+  verificationRunId?: string;
   sourceRunId?: string;
   /** Set when this run picked up a remediation an earlier process left
    * unfinished — names the state it was interrupted in. */

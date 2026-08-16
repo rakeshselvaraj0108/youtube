@@ -13,11 +13,14 @@ ENV PYTHONUNBUFFERED=1 \
 
 # ffmpeg is the workhorse: demux, keyframes, loudness, and the remediation
 # render all route through it. espeak-ng is only needed to synthesise the demo
-# clip, and costs a few megabytes.
+# clip, and costs a few megabytes. tesseract-ocr backs the on-screen text /
+# credential-disclosure scanner — without it OCR degrades honestly rather
+# than failing, but a deployed instance should have the real thing.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ffmpeg \
       espeak-ng \
+      tesseract-ocr \
       ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
@@ -26,7 +29,7 @@ WORKDIR /app
 # Dependencies first, so a source edit does not invalidate the model layers.
 COPY pyproject.toml README.md ./
 COPY preflight/__init__.py preflight/__init__.py
-RUN pip install --quiet -e '.[asr]'
+RUN pip install --quiet -e '.[asr,ocr]'
 
 # Bake the ASR weights. This is the layer that makes the image self-sufficient.
 RUN python -c "\

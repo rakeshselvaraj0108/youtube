@@ -267,7 +267,7 @@ function FixBridge() {
           // it, not to re-derive any part of it.
           adoptVerification(event);
           if (event.afterReport) {
-            setRemediatedReport(event.afterReport);
+            setRemediatedReport(event.afterReport, event.verificationRunId);
             setPhase(event.verification?.verdict ?? 'verified');
           } else {
             setPhase(event.rendered ? 'verification unavailable' : 'nothing to fix');

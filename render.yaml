@@ -1,0 +1,54 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# Two services, matched to how the app actually splits: the engine is a
+# stdlib HTTP server with a real filesystem and ffmpeg dependency (Docker),
+# the deck is a static Vite build that only ever talks to the engine over
+# HTTP (a static site, cheaper and instantly cache-served).
+#
+# The engine runs fully degraded-but-correct with zero secrets set — NVIDIA_API_KEY
+# only upgrades individual capability tiers, per .env.example. Fill it in on
+# the dashboard (Environment tab) after the first deploy; nothing here can
+# see or set its value, by design (`sync: false`).
+services:
+  - type: web
+    name: preflight-api
+    runtime: docker
+    # Free by default — a hackathon submission has no business defaulting to
+    # a paid plan. Free web services on Render spin down after 15 minutes
+    # idle and cold-start on the next request; bump this to "starter" in the
+    # dashboard once real usage needs it to stay warm.
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: serve --host 0.0.0.0 --port 10000
+    healthCheckPath: /api/health
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: NVIDIA_BASE_URL
+        value: https://integrate.api.nvidia.com/v1
+      - key: ACOUSTID_API_KEY
+        sync: false
+      - key: PREFLIGHT_RPM
+        value: "30"
+      - key: PREFLIGHT_OFFLINE
+        value: "0"
+      - key: PREFLIGHT_CACHE_DIR
+        value: .preflight/cache
+
+  - type: web
+    name: preflight-deck
+    runtime: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      # Deterministic from the backend service name above — Render assigns
+      # https://<name>.onrender.com unless a custom domain is attached.
+      - key: VITE_PREFLIGHT_API
+        value: https://preflight-api.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

@@ -299,3 +299,58 @@ class TestLiveServer:
         except error.HTTPError as exc:
             status = exc.code
         assert status == 400
+
+
+class TestApplyFixExposesPlayableMedia:
+    """A real remediation's rendered file landed on disk correctly — ffmpeg
+    exited 0, the byte count was right — and the deck still showed nothing in
+    the "after" player. `afterReport.video.srcUrl` is `./name.safe.mp4`, the
+    portable relative path built for a report.html sitting beside the file;
+    inside the dashboard's origin that resolves to nothing. The response
+    named a `verificationId` that looks like it should fetch the video and
+    does not: that is the VER-#### comparison record, not a runs-table key.
+    `verificationRunId` is the one `/api/runs/{id}/media` can actually serve.
+    """
+
+    @pytest.fixture
+    def rendered(self, tmp_path, monkeypatch):
+        source = Path(__file__).resolve().parent.parent / "samples" / "synthetic.mp4"
+        if not source.is_file():
+            pytest.skip("samples/synthetic.mp4 is not present")
+        # Isolated from the real project without a chdir — `prompts/` (the
+        # agent roster) is itself a cwd-relative path, so moving cwd breaks
+        # run_perception before the code under test is even reached. RUNS_DIR
+        # and the lineage db are redirected individually instead.
+        clip = tmp_path / "clip.mp4"
+        clip.write_bytes(source.read_bytes())
+        monkeypatch.setattr(server_mod, "RUNS_DIR", tmp_path / "runs")
+        real_lineage_cls = server_mod.lineage.Lineage
+        monkeypatch.setattr(
+            server_mod.lineage,
+            "Lineage",
+            lambda path=tmp_path / "lineage.db": real_lineage_cls(path),
+        )
+        result = server_mod.apply_fix({"video": str(clip), "offline": True})
+        if not result.get("rendered"):
+            pytest.skip("this clip currently compiles no remediable ops")
+        return result
+
+    def test_a_render_carries_a_verification_run_id_distinct_from_the_record_id(
+        self, rendered
+    ):
+        assert rendered.get("verificationRunId")
+        assert rendered["verificationRunId"] != rendered["verificationId"]
+
+    def test_the_verification_run_id_resolves_to_the_file_apply_fix_wrote(
+        self, rendered
+    ):
+        resolved = server_mod.run_media(rendered["verificationRunId"])
+        assert resolved.is_file()
+        assert resolved.samefile(rendered["output"])
+
+    def test_the_verification_record_id_is_not_a_fetchable_run(self, rendered):
+        """Regression guard for the actual bug: `verificationId` is the id
+        that reads as though it should work, and building a media URL from it
+        is exactly the mistake the frontend made."""
+        with pytest.raises(ApiError):
+            server_mod.run_media(rendered["verificationId"])

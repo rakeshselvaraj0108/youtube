@@ -984,6 +984,12 @@ def apply_fix(payload: dict[str, Any], on_event: Any = None) -> dict[str, Any]:
         "sourceRunId": source_run_id,
         "remediationId": remediation_id,
         "verificationId": verification_id,
+        # Distinct from verificationId above: that is the VER-#### record of
+        # the comparison, this is the runs-table id the rendered artifact's
+        # media actually lives under. The deck needs this one to fetch the
+        # video — /api/runs/{verificationId}/media 404s, because that id was
+        # never a run.
+        **({"verificationRunId": verification_run_id} if verification_run_id else {}),
         "certificateId": certificate_id,
         "lifecycle": (graph.remediation(remediation_id) or remediation).to_json(),
         **({"resumedFrom": resumed_from} if resumed_from else {}),

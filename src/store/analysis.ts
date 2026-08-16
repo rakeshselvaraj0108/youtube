@@ -4,6 +4,7 @@ import { beforeReport as fixtureBefore } from '@/data/fixture';
 import {
   fetchLatestRun,
   fetchRemediations,
+  runMediaUrl,
   type InterruptedRemediation,
   type StageEvent,
 } from '@/lib/api';
@@ -174,7 +175,7 @@ interface AnalysisState {
   /** Adopt the independently analysed rendered artifact. This is deliberately
    * separate from `setApplied`: a toggle must never manufacture an "after"
    * result from a plan or a successful ffmpeg exit. */
-  setRemediatedReport: (report: AnalysisReport) => void;
+  setRemediatedReport: (report: AnalysisReport, verificationRunId?: string) => void;
   /** Ask the API for its newest run. No-op when nothing answers. */
   hydrate: () => Promise<void>;
 }
@@ -439,9 +440,29 @@ export const useAnalysis = create<AnalysisState>((set, get) => ({
       loading: false,
     }),
 
-  setRemediatedReport: (report) =>
+  setRemediatedReport: (report, verificationRunId) =>
     set({
-      after: report,
+      // The backend builds this report with `embed_media: false` (it is a
+      // comparison payload, not a standalone artifact), so `video.srcUrl` is
+      // still the portable relative path meant for report.html beside the
+      // file — not a URL this origin can fetch. Rewritten through the same
+      // lineage-backed media route `fetchRun` uses, or the player just fails
+      // silently: the render succeeded, the browser simply never asked for
+      // the right bytes.
+      after: verificationRunId
+        ? {
+            ...report,
+            video: {
+              ...report.video,
+              srcUrl: runMediaUrl(verificationRunId),
+              // Same relative-path problem as srcUrl, and this report was
+              // never built with embed_media to carry a posterDataUri
+              // either. An empty poster is a no-op attribute; the video
+              // element still shows its first frame once metadata loads.
+              posterUrl: '',
+            },
+          }
+        : report,
       applied: true,
       hasVerifiedAfter: true,
       selectedFindingId: report.findings[0]?.id ?? null,
