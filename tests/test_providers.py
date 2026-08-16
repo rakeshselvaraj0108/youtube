@@ -642,3 +642,84 @@ class TestRequestDeadline:
             assert raw["choices"][0]["message"]["content"] == "ok"
         finally:
             server.shutdown()
+
+
+class TestUnreachableVendorFailsFast:
+    """A vendor down for the whole run must not cost the whole run.
+
+    Measured live: one policy-retrieval stage against a genuinely
+    unreachable NVIDIA endpoint cost 1536.7s (25.6 minutes) on a video whose
+    entire runtime should have been a few minutes — almost all of it retries
+    against a host that was never going to answer, because the circuit
+    breaker's failure threshold could not be reached until a call had
+    already exhausted its own five-attempt, 180s-each budget. The breaker
+    was protecting nothing: by the time it could trip, the damage for that
+    call was already done.
+    """
+
+    def _unreachable_server(self):
+        """A listening socket that refuses every connection outright —
+        the fast transport failure, not the slow-trickle one covered by
+        TestRequestDeadline above."""
+        import socket
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+        sock.close()  # nothing is listening on this port now
+        return port
+
+    def test_one_call_against_a_dead_host_is_bounded_well_under_the_old_cost(
+        self, monkeypatch
+    ):
+        from preflight.providers import nvidia as nv
+
+        monkeypatch.setattr(nv, "REQUEST_DEADLINE_S", 1)
+        monkeypatch.setattr(nv, "TRANSPORT_MAX_ATTEMPTS", 2)
+        port = self._unreachable_server()
+        provider = nv.NvidiaChat(
+            CHAT_REASONING, "m", Secret("NVIDIA_API_KEY", "nvapi-" + "x" * 24, "env", True)
+        )
+        provider.base_url = f"http://127.0.0.1:{port}"
+
+        started = time.monotonic()
+        result = provider._call("/chat/completions", {"model": "m"})
+        elapsed = time.monotonic() - started
+
+        assert not result
+        assert result.retryable
+        # Two attempts, not five — this is the actual fix under test.
+        assert elapsed < 10, f"took {elapsed:.1f}s for what should be ~2 fast attempts"
+
+    def test_the_transport_retry_budget_is_smaller_than_the_http_status_budget(self):
+        """HTTP 429/5xx means the vendor is reachable and answered "try
+        again" — retrying the full budget there is correct, because the
+        same endpoint moments later often succeeds. A transport failure
+        means nothing answered at all, and gets a smaller budget on
+        purpose."""
+        from preflight.providers import nvidia as nv
+
+        assert nv.TRANSPORT_MAX_ATTEMPTS < nv.MAX_ATTEMPTS
+
+    def test_the_breaker_trips_before_a_single_calls_retry_budget_used_to_end(self):
+        """The threshold that made the breaker protect nothing: it could
+        not open until a call's own retries were already exhausted. Now it
+        must be reachable within one transport retry budget's worth of
+        failures, so the breaker can actually cut off a bad run early."""
+        from preflight.providers import governor as gov
+        from preflight.providers import nvidia as nv
+
+        assert gov.FAILURE_THRESHOLD <= nv.TRANSPORT_MAX_ATTEMPTS + 1
+
+    def test_worst_case_before_the_run_is_protected_beats_the_old_regression(self):
+        """The exact number that mattered live: 25.6 minutes on one stage.
+        The new worst case, before the breaker takes over for the rest of
+        the run, must be a small fraction of that."""
+        from preflight.providers import governor as gov
+        from preflight.providers import nvidia as nv
+
+        worst_case_s = (gov.FAILURE_THRESHOLD / nv.TRANSPORT_MAX_ATTEMPTS) * (
+            nv.TRANSPORT_MAX_ATTEMPTS * nv.REQUEST_DEADLINE_S
+        )
+        observed_regression_s = 1536.7
+        assert worst_case_s < observed_regression_s / 4

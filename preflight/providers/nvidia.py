@@ -46,9 +46,19 @@ SOCKET_TIMEOUT_S = 60
 # pipeline for eight minutes against a nominal 120s setting, with no error
 # raised and nothing to distinguish it from a slow model.
 #
-# 180s is generous for a vision or reasoning call that is genuinely working
-# and short enough that a stuck one cannot swallow an analysis.
-REQUEST_DEADLINE_S = 180
+# Every measured working call — vision, reasoning, everything — has answered
+# in under 15s. 90s is still 6x that, generous headroom for one genuinely
+# slow-but-working call, while halving what a failing one costs against
+# TRANSPORT_MAX_ATTEMPTS below.
+REQUEST_DEADLINE_S = 90
+
+# Retry budget specifically for "nothing answered at all" — a URLError or our
+# own deadline firing — kept separate from and smaller than MAX_ATTEMPTS,
+# which governs HTTP 429/5xx where the vendor is reachable and retrying is
+# the correct move. Two attempts is enough to rule out one transient blip;
+# five, at up to REQUEST_DEADLINE_S each, is most of a run's budget spent
+# re-asking a host that was never going to answer.
+TRANSPORT_MAX_ATTEMPTS = 2
 
 
 class NvidiaProvider(BaseProvider):
@@ -183,7 +193,19 @@ class NvidiaProvider(BaseProvider):
                 return Unavailable(f"HTTP {exc.code}: {redact(detail)}", VENDOR)
             except (urllib.error.URLError, TimeoutError) as exc:
                 self.gov.on_failure()
-                if attempt < MAX_ATTEMPTS - 1:
+                # A smaller budget than the HTTP-status branch above, and on
+                # purpose. HTTP 429/5xx means the vendor answered and said
+                # "try again" — retrying the full budget is the right thing
+                # to do, because the same endpoint moments later often
+                # succeeds. A URLError or a deadline timeout means nothing
+                # answered at all; retrying the identical request five times
+                # against a host that is not responding does not test
+                # anything a second attempt did not already establish, and
+                # at up to REQUEST_DEADLINE_S per attempt it is the single
+                # most expensive way to fail. Measured live: one `_call()`
+                # against an unreachable vendor cost most of a 25-minute
+                # stage on this branch alone before this existed.
+                if attempt < TRANSPORT_MAX_ATTEMPTS - 1:
                     self.gov.backoff(attempt, cap=8.0)
                     continue
                 return Unavailable(f"unreachable: {redact(str(exc))}", VENDOR, True)

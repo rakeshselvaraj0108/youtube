@@ -26,7 +26,18 @@ from preflight.providers.base import BudgetExhausted, CircuitOpen
 
 BreakerState = Literal["CLOSED", "OPEN", "HALF_OPEN"]
 
-FAILURE_THRESHOLD = 5
+# Consecutive failures across the whole vendor before the breaker opens.
+#
+# Was 5. Measured live: a single `_call()` retries up to `MAX_ATTEMPTS`
+# times internally before the breaker is ever consulted again, so at 5 the
+# breaker could not trip until the *first* call had already exhausted its
+# own retry budget — it was protecting nothing. A vendor genuinely
+# unreachable for a whole run cost 25.6 minutes on one policy-retrieval
+# stage alone, almost all of it retries against a host that was never going
+# to answer. 3 still requires real repeated evidence — one blip does not
+# trip it — while letting the breaker actually intervene during the second
+# failing call instead of after it.
+FAILURE_THRESHOLD = 3
 COOLDOWN_S = 60.0
 BACKOFF_CAP_S = 30.0
 
