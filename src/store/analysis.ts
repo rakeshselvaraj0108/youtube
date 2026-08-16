@@ -1,7 +1,18 @@
 ﻿import { create } from 'zustand';
 import type { AnalysisReport, Finding } from '@/types/analysis';
 import { beforeReport as fixtureBefore } from '@/data/fixture';
-import { fetchLatestRun, type StageEvent } from '@/lib/api';
+import {
+  fetchLatestRun,
+  fetchRemediations,
+  type InterruptedRemediation,
+  type StageEvent,
+} from '@/lib/api';
+import type {
+  EvidencePair,
+  RemediationRecord,
+  Verification,
+  VerificationCertificate,
+} from '@/types/analysis';
 import { sortFindings, type FindingSort } from '@/lib/findings';
 import { injectedAfterReport, injectedReport } from '@/lib/reportSource';
 
@@ -25,6 +36,7 @@ export type DetailTab = 'EVIDENCE' | 'POLICY' | 'ADVERSARIAL' | 'REASONING';
  * screenshot presented as a result.
  */
 export type ReportSource = 'injected' | 'api' | 'fixture';
+export type AnalysisStatus = 'IDLE' | 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED';
 
 /** One agent's state during a live run. */
 export interface LiveStage {
@@ -41,6 +53,8 @@ interface AnalysisState {
   before: AnalysisReport;
   after: AnalysisReport;
   source: ReportSource;
+  analysisStatus: AnalysisStatus;
+  analysisError: string | null;
   /** True while the API is being polled at startup. */
   loading: boolean;
 
@@ -109,6 +123,52 @@ interface AnalysisState {
   toggleIncident: (id: string) => void;
   setIncidentSeverity: (severity: string | null) => void;
 
+  /* ---- the closed loop --------------------------------------------- */
+
+  /**
+   * The comparison between the original and the rendered artifact, exactly as
+   * the backend computed it. Null until a remediation has actually reached a
+   * verdict — never derived from a plan, a prediction or a successful ffmpeg
+   * exit, because each of those is a claim about what *should* happen and
+   * this is the record of what did.
+   */
+  verification: Verification | null;
+  certificate: VerificationCertificate | null;
+  evidence: EvidencePair[];
+  telemetry: Record<string, unknown> | null;
+  /** The persisted lifecycle row, so the deck shows a state the engine
+   * actually stored rather than one inferred from the last event seen. */
+  remediationRecord: RemediationRecord | null;
+  /** Remediations a previous process left unfinished, found at startup. */
+  interrupted: InterruptedRemediation[];
+  /** Which comparison row the reader is inspecting — a finding change or an
+   * incident change. Drives the evidence panel and the players. */
+  selectedChangeId: string | null;
+
+  /**
+   * The remediation in flight, as the engine reports it.
+   *
+   * `fixState` is the lifecycle state the backend says it is in — never one
+   * inferred here from a stage word. `fixSeen` is the ordered set of states
+   * already passed, which is what lets the strip show a completed step as
+   * completed rather than merely not-current.
+   */
+  fixRunning: boolean;
+  fixStage: string | null;
+  fixDetail: string;
+  fixState: string | null;
+  fixSeen: string[];
+  fixError: string | null;
+  fixStartedAt: number | null;
+
+  applyFixEvent: (event: StageEvent) => void;
+  beginFix: () => void;
+
+  adoptVerification: (event: StageEvent) => void;
+  selectChange: (findingId: string | null) => void;
+  /** Ask the engine what it has on disk. Surfaces interrupted work. */
+  loadRemediations: () => Promise<void>;
+
   /** Adopt a report the engine produced. */
   setReport: (report: AnalysisReport, source: ReportSource) => void;
   /** Adopt the independently analysed rendered artifact. This is deliberately
@@ -123,6 +183,8 @@ export const useAnalysis = create<AnalysisState>((set, get) => ({
   before: BEFORE,
   after: AFTER,
   source: injectedReport() ? 'injected' : 'fixture',
+  analysisStatus: injectedReport() ? 'COMPLETED' : 'IDLE',
+  analysisError: null,
   loading: false,
 
   applied: false,
@@ -215,7 +277,7 @@ export const useAnalysis = create<AnalysisState>((set, get) => ({
     set((state) => {
       switch (event.type) {
         case 'run.start':
-          return { live: {}, running: true };
+          return { live: {}, running: true, analysisStatus: 'RUNNING', analysisError: null };
 
         case 'stage.start':
           if (!event.stage) return state;
@@ -249,16 +311,115 @@ export const useAnalysis = create<AnalysisState>((set, get) => ({
           };
 
         case 'run.complete':
-        case 'run.error':
           // The per-agent states are kept, not cleared. They are the record
           // of what just happened, and blanking the graph the instant a run
           // finishes throws away the thing the viewer was watching.
-          return { running: false };
+          return { running: false, analysisStatus: 'COMPLETED' };
+
+        case 'run.error':
+          return { running: false, analysisStatus: 'FAILED', analysisError: event.error ?? 'analysis failed' };
 
         default:
           return state;
       }
     }),
+
+  verification: null,
+  certificate: null,
+  evidence: [],
+  telemetry: null,
+  remediationRecord: null,
+  interrupted: [],
+  selectedChangeId: null,
+
+  fixRunning: false,
+  fixStage: null,
+  fixDetail: '',
+  fixState: null,
+  fixSeen: [],
+  fixError: null,
+  fixStartedAt: null,
+
+  beginFix: () =>
+    set({
+      fixRunning: true,
+      fixStage: 'starting',
+      fixDetail: 'requesting a remediation',
+      fixState: 'REMEDIATION_REQUESTED',
+      fixSeen: [],
+      fixError: null,
+      fixStartedAt: Date.now(),
+      // The previous verdict belongs to the previous render. Keeping it on
+      // screen while a new remediation runs would attribute an old result to
+      // work still in progress.
+      verification: null,
+      certificate: null,
+      evidence: [],
+    }),
+
+  applyFixEvent: (event) =>
+    set((state) => {
+      if (event.type === 'run.error') {
+        return { fixRunning: false, fixError: event.error ?? 'remediation failed' };
+      }
+      if (event.type === 'run.complete') {
+        return { fixRunning: false, fixStage: 'complete', fixDetail: '' };
+      }
+      if (event.type !== 'fix.progress') return state;
+      const seen =
+        event.state && !state.fixSeen.includes(event.state)
+          ? [...state.fixSeen, event.state]
+          : state.fixSeen;
+      return {
+        fixRunning: true,
+        fixStage: event.stage ?? state.fixStage,
+        fixDetail: event.detail ?? '',
+        fixState: event.state ?? state.fixState,
+        fixSeen: seen,
+      };
+    }),
+
+  // Adopted wholesale from the terminal event. Nothing is recomputed here:
+  // a rollup on this side would eventually disagree with the certificate,
+  // and then the page and the document it displays would be making different
+  // claims about the same run.
+  adoptVerification: (event) =>
+    set(() => ({
+      verification: event.verification ?? null,
+      certificate: event.certificate ?? null,
+      evidence: event.evidence ?? [],
+      telemetry: event.telemetry ?? null,
+      remediationRecord: event.lifecycle ?? null,
+      selectedChangeId:
+        // Open on what appeared, if anything did. A new finding is the one
+        // outcome a reader must not have to go looking for.
+        event.verification?.changes.find((c) => c.status === 'NEW')?.remediatedId ??
+        event.verification?.changes[0]?.originalId ??
+        null,
+    })),
+
+  selectChange: (selectedChangeId) =>
+    set((state) => {
+      const pair = state.evidence.find((p) => p.findingId === selectedChangeId);
+      if (!pair) return { selectedChangeId };
+      // Seek to the moment being discussed — in whichever timeline the reader
+      // is looking at. Seeking the remediated player to the original
+      // timestamp would land on unrelated material after a cut.
+      const ms = state.applied ? pair.after.tsMs : pair.before.tsMs;
+      return {
+        selectedChangeId,
+        selectedFindingId: pair.findingId,
+        selectedIncidentId: pair.incidentId ?? state.selectedIncidentId,
+        // A removed span has no counterpart to seek to, so the playhead stays
+        // where it is rather than jumping somewhere that means nothing.
+        ...(ms === null || ms === undefined ? {} : { playheadMs: ms }),
+      };
+    }),
+
+  loadRemediations: async () => {
+    const { interrupted } = await fetchRemediations();
+    set({ interrupted });
+  },
 
   setReport: (report, source) =>
     set({
@@ -269,6 +430,8 @@ export const useAnalysis = create<AnalysisState>((set, get) => ({
       // was never taken.
       after: report,
       source,
+      analysisStatus: 'COMPLETED',
+      analysisError: null,
       applied: false,
       hasVerifiedAfter: false,
       selectedFindingId: report.findings[0]?.id ?? null,
@@ -294,7 +457,7 @@ export const useAnalysis = create<AnalysisState>((set, get) => ({
     set({ loading: true });
     const report = await fetchLatestRun();
     if (report) get().setReport(report, 'api');
-    else set({ loading: false });
+    else set({ loading: false, analysisStatus: 'IDLE' });
   },
 }));
 

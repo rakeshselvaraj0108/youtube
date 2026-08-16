@@ -1,6 +1,6 @@
 import { Download, ShieldCheck } from 'lucide-react';
 import { Chip } from '@/components/ui';
-import { useReport } from '@/store/analysis';
+import { useAnalysis, useReport } from '@/store/analysis';
 import { degradedAgents } from '@/lib/coverage';
 import { SIGNAL_HEX } from '@/lib/scoring';
 import { buildSarif, exitCode } from '@/lib/sarif';
@@ -18,6 +18,26 @@ function Falcon({ className = '' }: { className?: string }) {
 
 export function HeaderBar() {
   const report = useReport();
+  const analysisStatus = useAnalysis((s) => s.analysisStatus);
+  if (analysisStatus !== 'COMPLETED') {
+    return (
+      <header className="flex h-11 shrink-0 items-center justify-between border-b border-edge px-4">
+        <div className="flex items-center gap-3">
+          <Falcon className="h-4 w-6 text-ink" />
+          <span className="text-[13px] font-semibold tracking-[0.14em] text-ink">PREFLIGHT</span>
+          <Chip>CLI</Chip>
+          <span className="text-micro uppercase tracking-[0.18em] text-inkFaint">
+            {analysisStatus === 'RUNNING' || analysisStatus === 'QUEUED'
+              ? 'Analysis in progress'
+              : analysisStatus === 'FAILED'
+                ? 'Analysis failed'
+                : 'Ready to analyze'}
+          </span>
+        </div>
+        <Chip title="Metrics appear only after a completed backend report">NOT MEASURED</Chip>
+      </header>
+    );
+  }
   const degraded = degradedAgents(report.agents);
   const coveragePct = Math.round(report.meta.coverage * 100);
 

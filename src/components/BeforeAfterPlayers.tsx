@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Film, Pause, Play, SkipForward, Volume2 } from 'lucide-react';
 import { Panel } from '@/components/ui';
 import { useAnalysis } from '@/store/analysis';
+import { applyFix } from '@/lib/api';
 import { readinessHex, SIGNAL_HEX, VERDICT_META } from '@/lib/scoring';
 import { formatTimecode } from '@/lib/time';
 import type { AnalysisReport } from '@/types/analysis';
@@ -37,6 +38,11 @@ function PlayerFrame({
   const duration = report.video.durationMs;
   const isAfter = variant === 'AFTER';
   const hasVerifiedAfter = useAnalysis((s) => s.hasVerifiedAfter);
+  const fixRunning = useAnalysis((s) => s.fixRunning);
+  const fixState = useAnalysis((s) => s.fixState);
+  const fixStage = useAnalysis((s) => s.fixStage);
+  const fixDetail = useAnalysis((s) => s.fixDetail);
+  const fixError = useAnalysis((s) => s.fixError);
   // From the live store, so the counts describe the run on screen rather
   // than the demo fixture this component used to read regardless.
   const ops = useAnalysis((s) => s.before.remediation.ops);
@@ -103,7 +109,7 @@ function PlayerFrame({
       </div>
 
       <div className="relative aspect-video w-full shrink-0 overflow-hidden bg-abyss">
-        {!failed ? (
+        {(!isAfter || hasVerifiedAfter) && !failed ? (
           <video
             ref={videoRef}
             src={report.video.srcUrl}
@@ -123,11 +129,26 @@ function PlayerFrame({
             onError={() => setFailed(true)}
           />
         ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 text-inkFaint">
+          <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 px-4 text-inkFaint">
             <Film className="h-5 w-5" strokeWidth={1.5} />
-            <span className="num text-[9px] uppercase tracking-[0.1em]">
-              {report.video.filename}
+            <span className="num text-center text-[9px] uppercase tracking-[0.1em]">
+              {isAfter && !hasVerifiedAfter ? 'awaiting verified output' : report.video.filename}
             </span>
+            {/* During a remediation this pane is the longest wait on the deck.
+                Naming the state the engine is actually in is the difference
+                between "working" and "hung" — and it is real, because the
+                backend sends the state it just persisted. */}
+            {isAfter && !hasVerifiedAfter && fixRunning && (
+              <span className="num text-center text-[9px] uppercase leading-relaxed tracking-[0.08em] text-inkDim">
+                {fixState ?? fixStage}
+                {fixDetail ? <><br />{fixDetail}</> : null}
+              </span>
+            )}
+            {isAfter && !hasVerifiedAfter && !fixRunning && fixError && (
+              <span className="num text-center text-[9px] uppercase leading-relaxed tracking-[0.08em]" style={{ color: SIGNAL_HEX.critical }}>
+                {fixError}
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -139,7 +160,7 @@ function PlayerFrame({
           onPointerDown={onScrubDown}
           onPointerMove={onScrubMove}
           role="slider"
-          tabIndex={0}
+          tabIndex={isAfter && !hasVerifiedAfter ? -1 : 0}
           aria-label={`${isAfter ? 'Safe' : 'Original'} render position`}
           aria-valuemin={0}
           aria-valuemax={100}
@@ -184,14 +205,15 @@ function PlayerFrame({
       </div>
 
       <div className="flex shrink-0 items-center gap-3 px-3 py-2.5 text-inkFaint">
-        <button type="button" onClick={() => void togglePlayback()} title={playing ? 'Pause' : 'Play'}>
+        <button type="button" disabled={isAfter && !hasVerifiedAfter} onClick={() => void togglePlayback()} title={playing ? 'Pause' : 'Play'}>
           {playing ? <Pause className="h-3.5 w-3.5" fill="currentColor" /> : <Play className="h-3.5 w-3.5" fill="currentColor" />}
         </button>
-        <button type="button" onClick={skip} title="Skip forward 10 seconds">
+        <button type="button" disabled={isAfter && !hasVerifiedAfter} onClick={skip} title="Skip forward 10 seconds">
           <SkipForward className="h-3.5 w-3.5" />
         </button>
         <button
           type="button"
+          disabled={isAfter && !hasVerifiedAfter}
           onClick={() => {
             const video = videoRef.current;
             if (!video) return;
@@ -211,14 +233,57 @@ function PlayerFrame({
 }
 
 function FixBridge() {
+  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<string | null>(null);
   const applied = useAnalysis((s) => s.applied);
   const hasVerifiedAfter = useAnalysis((s) => s.hasVerifiedAfter);
   const setApplied = useAnalysis((s) => s.setApplied);
+  const setRemediatedReport = useAnalysis((s) => s.setRemediatedReport);
+  const adoptVerification = useAnalysis((s) => s.adoptVerification);
+  const applyFixEvent = useAnalysis((s) => s.applyFixEvent);
+  const beginFix = useAnalysis((s) => s.beginFix);
+  const source = useAnalysis((s) => s.before.video.srcUrl);
 
   const before = useAnalysis((s) => s.before.scores);
   const after = useAnalysis((s) => s.after.scores);
   const delta = after.overall - before.overall;
   const ops = useAnalysis((s) => s.before.remediation.ops.length);
+
+  async function runFix() {
+    if (busy || hasVerifiedAfter || ops === 0) return;
+    setBusy(true);
+    setPhase('starting…');
+    beginFix();
+    try {
+      await applyFix(source.replace(/^\.\//, ''), {}, (event) => {
+        // Every event feeds the store's lifecycle view, so the strip and the
+        // after-pane track the engine rather than this component's local
+        // phase string.
+        applyFixEvent(event);
+        if (event.type === 'fix.progress') setPhase(event.stage ?? 'working…');
+        if (event.type === 'run.complete') {
+          // The verification object arrives whole and is adopted whole. It is
+          // the record of what the engine measured; the deck's job is to show
+          // it, not to re-derive any part of it.
+          adoptVerification(event);
+          if (event.afterReport) {
+            setRemediatedReport(event.afterReport);
+            setPhase(event.verification?.verdict ?? 'verified');
+          } else {
+            setPhase(event.rendered ? 'verification unavailable' : 'nothing to fix');
+          }
+          setBusy(false);
+        }
+        if (event.type === 'run.error') {
+          setPhase(event.error ?? 'failed');
+          setBusy(false);
+        }
+      });
+    } catch (error) {
+      setPhase(error instanceof Error ? error.message : 'remediation failed');
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="flex min-w-0 flex-col items-center justify-center gap-3 px-2">
@@ -257,8 +322,8 @@ function FixBridge() {
 
       <button
         type="button"
-        onClick={() => setApplied(!applied)}
-        disabled={!hasVerifiedAfter}
+        onClick={() => (hasVerifiedAfter ? setApplied(!applied) : void runFix())}
+        disabled={busy || (hasVerifiedAfter ? false : ops === 0)}
         className="flex w-full items-center justify-center gap-1.5 rounded-chip border px-2.5 py-2 text-micro uppercase transition-colors duration-fast"
         style={{
           color: !hasVerifiedAfter ? '#58647A' : applied ? '#8A97AE' : SIGNAL_HEX.clear,
@@ -267,7 +332,7 @@ function FixBridge() {
         }}
       >
         {applied ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
-        {!hasVerifiedAfter ? 'Await verification' : applied ? 'View original' : 'View verified render'}
+        {busy ? phase ?? 'working…' : !hasVerifiedAfter ? (ops ? 'Apply and verify fix' : 'No remediable operations') : applied ? 'View original' : 'View verified render'}
       </button>
 
       <span className={`num text-center text-[9px] uppercase leading-relaxed tracking-[0.06em] text-inkFaint ${hasVerifiedAfter ? '' : 'invisible'}`}>

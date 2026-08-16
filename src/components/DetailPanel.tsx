@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ArrowRight, ImageOff } from 'lucide-react';
 import { Bar, Panel, SeverityChip } from '@/components/ui';
+import { ReasoningChainView } from '@/components/ReasoningChainView';
 import { useAnalysis, useReport, useSelectedFinding } from '@/store/analysis';
 import type { DetailTab } from '@/store/analysis';
 import { severityHex, SIGNAL_HEX } from '@/lib/scoring';
@@ -217,23 +218,14 @@ function ClauseSiblings({ clauseId }: { clauseId: string }) {
   );
 }
 
-const STEP_LABELS: Record<string, string> = {
-  observation: 'Observation',
-  evidence: 'Evidence',
-  policy: 'Policy',
-  risk_argument: 'Argument for risk',
-  counter_argument: 'Argument against',
-  decision: 'Decision',
-  uncertainty: 'Remaining uncertainty',
-};
-
 /**
  * The reasoning chain for the incident this finding belongs to.
  *
  * The engine has emitted these for several versions and nothing displayed
  * them — every claim carries a citation and none of it reached the screen.
- * Rendered in reading order, with each claim's source shown, because a
- * chain whose provenance is hidden is no more auditable than a number.
+ * Rendering itself lives in `ReasoningChainView`, shared with the incidents
+ * panel so the two surfaces cannot show two different accounts of the same
+ * chain.
  */
 function ReasoningTab({ finding }: { finding: Finding }) {
   const report = useReport();
@@ -253,63 +245,9 @@ function ReasoningTab({ finding }: { finding: Finding }) {
     );
   }
 
-  const ordered = Object.keys(STEP_LABELS);
-  const grouped = ordered
-    .map((step) => ({ step, claims: chain.claims.filter((c) => c.step === step) }))
-    .filter((g) => g.claims.length > 0);
-
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
-      <div className="flex items-baseline gap-2">
-        <span className="num rounded-chip border border-edge bg-panelHi px-1.5 py-1 text-[10px] text-ink">
-          {chain.incidentId}
-        </span>
-        <span className="text-[13px] font-semibold text-ink">{chain.decision}</span>
-        <span
-          className="num ml-auto cursor-help text-[10px] text-inkFaint"
-          title="Best single observation, plus a bounded step per additional independent agent. Never reaches certainty."
-        >
-          {(chain.confidence * 100).toFixed(0)}%
-        </span>
-      </div>
-
-      {grouped.map(({ step, claims }) => (
-        <div key={step} className="flex flex-col gap-1">
-          <span className="text-[9px] uppercase tracking-[0.08em] text-inkFaint">
-            {STEP_LABELS[step]}
-          </span>
-          {claims.map((claim, i) => (
-            <div
-              key={`${step}-${i}`}
-              className="rounded-panel border border-edge bg-abyss px-2.5 py-2"
-            >
-              <p className="text-body leading-relaxed text-inkDim">{claim.text}</p>
-              <span className="num mt-1 block text-[9px] text-inkFaint">
-                {claim.source.kind}:{claim.source.ref}
-                {claim.source.detail ? ` · ${claim.source.detail}` : ''}
-              </span>
-            </div>
-          ))}
-        </div>
-      ))}
-
-      {chain.dismissed.length > 0 && (
-        <div className="flex flex-col gap-1 border-t border-edge pt-2.5">
-          <span className="text-[9px] uppercase tracking-[0.08em] text-inkFaint">
-            Considered and rejected
-          </span>
-          {chain.dismissed.map((claim, i) => (
-            <p key={i} className="text-[11px] leading-relaxed text-inkFaint">
-              {claim.text}
-            </p>
-          ))}
-        </div>
-      )}
-
-      <p className="mt-auto border-t border-edge pt-2.5 text-[9px] uppercase leading-relaxed tracking-[0.06em] text-inkFaint">
-        every claim cites a finding, a clause, an agent or a measurement · no
-        statement here was generated at report time
-      </p>
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <ReasoningChainView chain={chain} />
     </div>
   );
 }

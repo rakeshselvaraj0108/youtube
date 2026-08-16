@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import base64
 import json
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -50,6 +51,26 @@ VOCAB_DIR = Path("data/vision")
 # the vendor governor's token bucket is the real ceiling and it is enforced
 # across threads, so raising this buys queueing rather than speed.
 VISION_WORKERS = 4
+
+# Consecutive provider failures after which the remaining frames are
+# abandoned. Three rather than one because a single timeout is ordinary on a
+# hosted endpoint and abandoning the modality on it would be its own kind of
+# wrong; three in a row is a provider that is not answering.
+TRANSPORT_FAILURE_LIMIT = 3
+
+# Wall-clock this agent may spend without a single successful call.
+#
+# The failure-count rule alone does not bound the damage, because it only
+# reacts *after* three calls have each run to their own read timeout, and how
+# those interleave depends on whether the vendor governor serialises them. On
+# the run that motivated this the same unreachable endpoint cost 253s once and
+# 721s the next time — the count was identical, the wall clock was not.
+#
+# A deadline is the only thing that bounds it in both cases: any frame that
+# has not been dispatched by the time this elapses with nothing to show for it
+# is abandoned. Ninety seconds is comfortably longer than several healthy
+# hosted calls and far shorter than one round of timeouts.
+VISION_BUDGET_S = 90.0
 
 # Confidence bands, per the specification.
 BAND_VERY_HIGH = 0.95
@@ -541,11 +562,64 @@ def analyse(
     # hiding, not throughput, and the bucket is the actual limit.
     workers = min(VISION_WORKERS, max(1, len(encoded)))
 
+    # A provider that is unreachable is unreachable for every frame, and each
+    # attempt costs a full read timeout. On the run that exposed this, eight
+    # timeouts against a dead endpoint turned a 3-second analysis into a
+    # 250-second one — 96% of the wall clock spent re-proving that the network
+    # was down. After this many failures in a row the rest are abandoned.
+    #
+    # Deliberately not a retry policy: the governor already owns retries. This
+    # only decides when to stop asking.
+    tripped = threading.Event()
+    lock = threading.Lock()
+    run_length = 0
+    # Why the breaker tripped. The abandoned frames inherit it rather than
+    # getting a reason of their own: a uniform reason across every frame is
+    # how `analyse` recognises an absent capability and reports SKIPPED
+    # instead of FAILED. Giving the abandoned frames a distinct message made
+    # an offline run — the default for anyone cloning this repo — report a
+    # broken vision agent in red.
+    trip_reason = ""
+    successes = 0
+
     def describe(item: tuple[Keyframe, str]):
+        nonlocal run_length, trip_reason, successes
         frame, image_b64 = item
-        return frame, registry.invoke(
+
+        # Checked before dispatch, so a frame that has not started yet is
+        # never begun once the budget is spent. Only when nothing has
+        # succeeded: a slow provider that is actually working must be allowed
+        # to finish the job it is doing.
+        if not tripped.is_set() and successes == 0:
+            spent = time.perf_counter() - started
+            if spent > VISION_BUDGET_S:
+                with lock:
+                    if not tripped.is_set():
+                        trip_reason = (
+                            f"vision budget of {VISION_BUDGET_S:.0f}s elapsed "
+                            "with no successful call"
+                        )
+                        tripped.set()
+
+        if tripped.is_set():
+            # Not attempted. Distinct from attempted-and-failed: "we did not
+            # look" and "we looked and could not see" are different facts, and
+            # coverage must not credit either as an inspection.
+            return frame, None
+
+        result = registry.invoke(
             VISION_DESCRIBE, prompt=prompt, image_b64=image_b64, max_tokens=512
         )
+        with lock:
+            if result:
+                successes += 1
+                run_length = 0
+            else:
+                run_length += 1
+            if run_length >= TRANSPORT_FAILURE_LIMIT and not tripped.is_set():
+                trip_reason = result.reason
+                tripped.set()
+        return frame, result
 
     if workers == 1:
         results = [describe(item) for item in encoded]
@@ -557,6 +631,18 @@ def analyse(
             results = list(pool.map(describe, encoded))
 
     for frame, result in results:
+        if result is None:
+            # Abandoned after the breaker tripped. Not counted as a call,
+            # because none was made — and carrying the reason that tripped it,
+            # so an absent capability stays recognisable as one.
+            failures.append(
+                FrameFailure(
+                    f"S{frame.index:03d}",
+                    frame.ts_ms,
+                    trip_reason or "vision provider unreachable",
+                )
+            )
+            continue
         calls += 1
         if not result:
             failures.append(
@@ -591,6 +677,7 @@ def analyse(
     # never attempted by design.
     attempted = len(selected)
     status = "OK" if not failures else "DEGRADED"
+    error: str | None = None
     if inspected == 0:
         # Nothing was inspected, and the two reasons for that are not the same
         # thing. If every frame was refused for the same reason and none was
@@ -606,6 +693,11 @@ def analyse(
                 [],
             )
         status = "FAILED"
+        # A FAILED agent that carries no error tells a reader the modality
+        # broke and refuses to say how — which is the shape of an unexplained
+        # zero, and this project's rule is that uncertainty is stated rather
+        # than left blank. The distinct reasons are the explanation.
+        error = "; ".join(sorted(reasons)[:3]) or "no frame could be inspected"
 
     log = [
         f"{vocab.size} labels, {len(vocab.synonyms)} synonyms, "
@@ -625,6 +717,7 @@ def analyse(
             status=status,
             coverage=round(coverage, 4),
             calls=calls,
+            error=error,
             artifacts={
                 "tracks": [t.to_json() for t in tracks],
                 "failures": [f.to_json() for f in failures],

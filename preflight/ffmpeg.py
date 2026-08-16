@@ -14,6 +14,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from preflight import telemetry
+
 
 class FfmpegMissing(RuntimeError):
     """ffmpeg or ffprobe is not on PATH."""
@@ -61,6 +63,10 @@ def version() -> str | None:
 def run(args: list[str], *, capture_stderr: bool = False) -> subprocess.CompletedProcess[str]:
     """Run ffmpeg with the given arguments after `ffmpeg -hide_banner`."""
     command = [_resolve("ffmpeg"), "-hide_banner", "-nostdin", *args]
+    # Counted here rather than at the call sites: this is the only place a
+    # subprocess is actually spawned, so the figure a report carries is the
+    # number of processes that ran, not the number someone remembered to log.
+    telemetry.count(telemetry.FFMPEG_RUNS)
     result = subprocess.run(command, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise FfmpegFailed(command, result.returncode, result.stderr)
@@ -79,6 +85,7 @@ def probe(path: Path) -> dict[str, Any]:
         "-show_streams",
         str(path),
     ]
+    telemetry.count(telemetry.FFPROBE_RUNS)
     result = subprocess.run(command, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise FfmpegFailed(command, result.returncode, result.stderr)

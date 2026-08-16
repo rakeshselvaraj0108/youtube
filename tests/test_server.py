@@ -249,7 +249,11 @@ class TestLiveServer:
         assert body["bytes"] == len(payload)
         saved = Path(body["path"])
         assert saved.is_file() and saved.read_bytes() == payload
-        assert "holiday" in saved.name and " " not in saved.name
+        # Storage ids are server-generated; the user filename is preserved as
+        # metadata rather than becoming a filesystem path.
+        assert saved.name.startswith("vid_") and saved.suffix == ".mp4"
+        assert body["name"] == "holiday clip.mp4"
+        assert body["id"].startswith("vid_")
         saved.unlink(missing_ok=True)
 
     def test_an_empty_upload_is_refused(self, base_url):
@@ -258,6 +262,29 @@ class TestLiveServer:
             {"Content-Type": "application/octet-stream", "X-Filename": "x.mp4"},
         )
         assert status == 400
+
+    def test_multipart_unicode_filename_is_stored_without_header_transport(self, base_url):
+        """Browsers put this name in the multipart body, never a header.
+
+        This is the regression for `RequestInit` rejecting a non-Latin-1
+        X-Filename value before the request could leave the browser.
+        """
+        boundary = "preflight-upload-boundary"
+        name = "தமிழ்_🎬.mp4"
+        payload = b"\x00\x01" * 32
+        body = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{name}"\r\n'
+            "Content-Type: video/mp4\r\n\r\n"
+        ).encode("utf-8") + payload + f"\r\n--{boundary}--\r\n".encode("ascii")
+        status, response = self.post(
+            f"{base_url}/api/upload",
+            body,
+            {"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        )
+        assert status == 201
+        assert response["name"] == name
+        assert Path(response["path"]).read_bytes() == payload
 
     def test_analyze_rejects_a_body_without_a_video(self, base_url):
         req = request.Request(

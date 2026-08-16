@@ -118,6 +118,15 @@ VERDICT_STATE: dict[str, State] = {
 # interrupted comparison keeps the render and the re-analysis, because both
 # already produced durable artifacts that the crash did not invalidate.
 RESUME_FROM: dict[str, State] = {
+    # The idle states resume where they are. Nothing was in flight when the
+    # process stopped, so there is no work to redo and nothing to roll back —
+    # the remediation is simply still waiting for a decision. They are listed
+    # rather than left out because a non-terminal state with no resume rule
+    # strands its record: findable after a crash but not continuable, which is
+    # worse than either finishing or failing.
+    "ANALYSIS_COMPLETE": "ANALYSIS_COMPLETE",
+    "SIMULATION_READY": "SIMULATION_READY",
+    "SIMULATED": "SIMULATED",
     "REMEDIATION_REQUESTED": "REMEDIATION_REQUESTED",
     "RENDERING": "REMEDIATION_REQUESTED",
     "RENDERED": "RENDERED",

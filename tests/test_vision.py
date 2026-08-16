@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from preflight.ingest.frames import Keyframe
+from preflight.perception import vision
 from preflight.perception.vision import (
     EMOTION_CEILING,
     SINGLETON_CEILING,
@@ -519,3 +520,177 @@ class TestVocabularyFiles:
         """A blocked term inside the whitelist would defeat the tripwire."""
         for label in VOCAB.canonical:
             assert not VOCAB.is_judgment(label), label
+
+
+import time as _time  # noqa: E402 - beside the class that needs it
+
+
+class TestUnreachableProvider:
+    """A dead endpoint must cost one diagnosis, not one per frame.
+
+    The run that motivated this spent 250 of its 260 seconds discovering, eight
+    separate times, that the hosted vision endpoint was not answering — 96% of
+    the wall clock re-proving the network was down. The breaker stops asking;
+    the coverage rules make sure stopping never looks like success.
+    """
+
+    @pytest.fixture
+    def many_frames(self, tmp_path):
+        frames = []
+        for index in range(12):
+            path = tmp_path / f"f{index:05d}.jpg"
+            path.write_bytes(b"\xff\xd8\xff\xe0readable")
+            frames.append(Keyframe(index=index, ts_ms=index * 1000, path=path))
+        return frames
+
+    def test_it_stops_calling_a_provider_that_keeps_failing(self, many_frames):
+        class Dead:
+            def __init__(self):
+                self.attempts = 0
+
+            def invoke(self, capability, **kwargs):
+                self.attempts += 1
+                return _Refused(f"timeout on attempt {self.attempts}")
+
+        registry = Dead()
+        result, _ = analyse(many_frames, registry)
+
+        # Bounded by the breaker, not by the frame count.
+        assert registry.attempts <= vision.TRANSPORT_FAILURE_LIMIT
+        assert registry.attempts < len(many_frames)
+
+    def test_abandoning_frames_never_raises_coverage(self, many_frames):
+        """The dangerous version of this optimisation: stop early, count the
+        unattempted frames as fine, and report a healthy modality."""
+        class Dead:
+            def invoke(self, capability, **kwargs):
+                return _Refused("connection timed out")
+
+        result, _ = analyse(many_frames, Dead())
+        assert result.coverage == 0.0
+        assert result.status in {"FAILED", "SKIPPED"}
+
+    def test_a_failed_vision_agent_says_why(self, many_frames):
+        """A FAILED agent carrying no error tells a reader the modality broke
+        and refuses to say how, which is the shape of an unexplained zero."""
+        class Mixed:
+            def __init__(self):
+                self.n = 0
+
+            def invoke(self, capability, **kwargs):
+                self.n += 1
+                return _Refused(f"distinct failure {self.n}")
+
+        result, _ = analyse(many_frames, Mixed())
+        assert result.status == "FAILED"
+        assert result.error
+        assert "distinct failure" in result.error
+
+    def test_one_bad_frame_does_not_abandon_the_modality(self, many_frames):
+        """A single timeout is ordinary on a hosted endpoint. Giving up on it
+        would be its own kind of wrong."""
+        class Flaky:
+            def __init__(self):
+                self.n = 0
+
+            def invoke(self, capability, **kwargs):
+                self.n += 1
+                if self.n == 1:
+                    return _Refused("one transient timeout")
+                return _Served({"observations": []})
+
+        registry = Flaky()
+        result, _ = analyse(many_frames, registry)
+        # Every *selected* frame — gating already reduces the set, and the
+        # breaker must not reduce it further.
+        assert registry.n == result.calls
+        assert registry.n > vision.TRANSPORT_FAILURE_LIMIT
+        assert result.coverage > 0.0
+
+    def test_an_absent_capability_still_skips_rather_than_failing(self, many_frames):
+        """Offline with no key is the default for anyone cloning this repo,
+        and nothing in that run should read as broken.
+
+        The breaker nearly broke this: abandoned frames carrying a message of
+        their own made the reason set non-uniform, which is precisely how
+        `analyse` distinguishes "the capability is absent" (SKIPPED) from "the
+        provider was there and broke" (FAILED). Inheriting the tripping reason
+        keeps that distinction intact.
+        """
+        class Offline:
+            def invoke(self, capability, **kwargs):
+                return _Refused("nvidia: skipped (offline)")
+
+        result, _ = analyse(many_frames, Offline())
+        assert result.status == "SKIPPED"
+        assert "offline" in (result.error or "")
+
+    def test_a_wall_clock_budget_bounds_a_slow_dead_provider(
+        self, many_frames, monkeypatch
+    ):
+        """The count rule alone does not bound wall time.
+
+        It only reacts after N calls have each run to their own read timeout,
+        and how those interleave depends on whether the vendor governor
+        serialises them. The same unreachable endpoint cost 253s on one run
+        and 721s on the next — identical failure count, very different clock.
+        Only a deadline bounds both.
+        """
+        monkeypatch.setattr(vision, "VISION_BUDGET_S", 0.15)
+
+        class SlowAndDead:
+            def __init__(self):
+                self.attempts = 0
+
+            def invoke(self, capability, **kwargs):
+                self.attempts += 1
+                _time.sleep(0.2)
+                return _Refused("read timed out")
+
+        registry = SlowAndDead()
+        started = _time.perf_counter()
+        result, _ = analyse(many_frames, registry)
+        elapsed = _time.perf_counter() - started
+
+        assert registry.attempts < result.calls + len(many_frames)
+        # Bounded by the budget and the in-flight batch, not by frame count.
+        assert elapsed < 0.2 * len(many_frames)
+        assert result.coverage == 0.0
+
+    def test_the_budget_does_not_interrupt_a_slow_provider_that_works(
+        self, many_frames, monkeypatch
+    ):
+        """A slow provider that is actually answering must be allowed to
+        finish. The deadline governs "nothing is working", not "this is
+        taking a while"."""
+        monkeypatch.setattr(vision, "VISION_BUDGET_S", 0.05)
+
+        class SlowButHealthy:
+            def __init__(self):
+                self.n = 0
+
+            def invoke(self, capability, **kwargs):
+                self.n += 1
+                _time.sleep(0.02)
+                return _Served({"observations": []})
+
+        registry = SlowButHealthy()
+        result, _ = analyse(many_frames, registry)
+        assert registry.n == result.calls
+        assert registry.n > vision.TRANSPORT_FAILURE_LIMIT
+        assert result.status == "OK"
+
+    def test_a_healthy_provider_is_never_tripped(self, many_frames):
+        class Healthy:
+            def __init__(self):
+                self.n = 0
+
+            def invoke(self, capability, **kwargs):
+                self.n += 1
+                return _Served({"observations": []})
+
+        registry = Healthy()
+        result, _ = analyse(many_frames, registry)
+        assert registry.n == result.calls
+        assert registry.n > vision.TRANSPORT_FAILURE_LIMIT
+        assert result.status == "OK"

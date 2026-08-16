@@ -28,6 +28,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Literal
 
+from preflight import telemetry
+
 try:  # pragma: no cover - exercised by whichever branch is installed
     from blake3 import blake3 as _blake3
 
@@ -112,7 +114,11 @@ class Entry:
         # A directory without the marker is a partial write from a crashed or
         # interrupted run. Treating it as a miss is what keeps a half-extracted
         # frame set from being served as a cache hit.
-        return self.marker.is_file()
+        hit = self.marker.is_file()
+        # The one place the cache is actually consulted, so the hit rate a
+        # report carries is measured rather than reconstructed.
+        telemetry.count(telemetry.CACHE_HITS if hit else telemetry.CACHE_MISSES)
+        return hit
 
     def path(self, *parts: str) -> Path:
         return self.root.joinpath(*parts)

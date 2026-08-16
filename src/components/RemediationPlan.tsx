@@ -21,17 +21,26 @@ export function RemediationPlan() {
   const [phase, setPhase] = useState<string | null>(null);
   const source = useAnalysis((s) => s.before.video.srcUrl);
   const setRemediatedReport = useAnalysis((s) => s.setRemediatedReport);
+  const adoptVerification = useAnalysis((s) => s.adoptVerification);
+  const applyFixEvent = useAnalysis((s) => s.applyFixEvent);
+  const beginFix = useAnalysis((s) => s.beginFix);
 
   async function apply() {
     setBusy(true);
     setPhase('starting…');
+    beginFix();
     try {
       await applyFix(source.replace(/^\.\//, ''), {}, (event) => {
+        applyFixEvent(event);
         if (event.type === 'fix.progress') setPhase(event.stage ?? null);
         if (event.type === 'run.complete') {
+          // Both Apply controls feed the same verification state. Adopting it
+          // in only one of them would make the verdict depend on which button
+          // the reader happened to press.
+          adoptVerification(event);
           if (event.afterReport) {
             setRemediatedReport(event.afterReport);
-            setPhase('verified — viewing rendered analysis');
+            setPhase(event.verification?.verdict ?? 'verified');
           } else {
             setPhase(event.rendered ? 'rendered — re-analysis unavailable' : 'nothing to fix');
           }

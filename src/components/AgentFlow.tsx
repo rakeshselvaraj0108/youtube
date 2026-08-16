@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AudioLines,
   Captions,
@@ -8,7 +8,6 @@ import {
   Film,
   Gauge,
   Mic,
-  RotateCw,
   Scale,
   ScanText,
   Tags,
@@ -23,7 +22,6 @@ import {
   edgeActive,
   edgePath,
   layoutFlow,
-  REPLAY_SPEED,
   statusAt,
   totalRunMs,
   type FlowNode,
@@ -105,41 +103,20 @@ function resolveStatus(
   live: Record<string, LiveStage>,
 ): AgentStatus {
   const stage = live[agent.id];
+  // During a live run, only an SSE event may advance an agent. Falling back
+  // to the previous report's terminal status made untouched nodes look as if
+  // they had already executed.
+  if (Object.keys(live).length > 0) return stage ? (stage.status as AgentStatus) : 'PENDING';
   return stage ? (stage.status as AgentStatus) : statusAt(agent, clock);
 }
 
 function useReplay(agents: AgentRun[]) {
   const runMs = useMemo(() => totalRunMs(agents), [agents]);
-  const [clock, setClock] = useState<number | null>(0);
-  const rafRef = useRef<number | undefined>(undefined);
-
-  const play = useCallback(() => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      setClock(null);
-      return;
-    }
-    const start = performance.now();
-    const step = (now: number) => {
-      const elapsed = (now - start) * REPLAY_SPEED;
-      if (elapsed >= runMs) {
-        setClock(null); // settle on the report's real statuses
-        return;
-      }
-      setClock(elapsed);
-      rafRef.current = requestAnimationFrame(step);
-    };
-    rafRef.current = requestAnimationFrame(step);
-  }, [runMs]);
-
-  useEffect(() => {
-    play();
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
-  }, [play]);
-
-  return { clock, play, runMs };
+  // Historical timestamps are evidence, not live progress. Replaying them on
+  // a completed report made the graph temporarily disagree with telemetry and
+  // produced an invented "partially complete" state. Live SSE stages still
+  // override these terminal report states through `resolveStatus`.
+  return { clock: null, runMs };
 }
 
 /* ------------------------------------------------------------------ */
@@ -453,7 +430,7 @@ function Telemetry({ clock, columns }: { clock: number | null; columns: string }
 function ExpandedFlow({ onClose }: { onClose: () => void }) {
   const report = useReport();
   const live = useLiveStages();
-  const { clock, play } = useReplay(report.agents);
+  const { clock } = useReplay(report.agents);
   const [hovered, setHovered] = useState<AgentId | null>(null);
 
   useEffect(() => {
@@ -476,14 +453,9 @@ function ExpandedFlow({ onClose }: { onClose: () => void }) {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={play}
-            className="flex h-8 items-center gap-1.5 rounded-chip border border-edge px-2.5 text-[10px] uppercase tracking-[0.08em] text-inkDim transition-colors duration-instant hover:border-edgeHi hover:text-ink"
-          >
-            <RotateCw className="h-3 w-3" />
-            replay analysis
-          </button>
+          <span className="num text-[9px] uppercase tracking-[0.08em] text-inkFaint" title="Recorded terminal states from this run">
+            recorded execution
+          </span>
           <button
             type="button"
             onClick={onClose}

@@ -1,4 +1,10 @@
-import type { AnalysisReport } from '@/types/analysis';
+import type {
+  AnalysisReport,
+  EvidencePair,
+  RemediationRecord,
+  Verification,
+  VerificationCertificate,
+} from '@/types/analysis';
 
 /**
  * The engine, over HTTP.
@@ -107,10 +113,8 @@ export async function fetchLatestRun(): Promise<AnalysisReport | null> {
 /**
  * Send a video to the engine and get back the path it landed on.
  *
- * The body is the raw file, not multipart: the engine needs the bytes on
- * disk and nothing else, and a multipart envelope would mean parsing a
- * boundary-delimited stream server-side to recover exactly what the browser
- * already has. The filename travels in a header instead.
+ * Uses browser-owned multipart encoding. Unicode filenames are not valid
+ * arbitrary HTTP header values, so the name belongs in the form body.
  */
 export async function uploadVideo(
   file: File,
@@ -119,13 +123,12 @@ export async function uploadVideo(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    const body = new FormData();
+    body.append('file', file, file.name);
     const response = await fetch(`${BASE}/api/upload`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        'X-Filename': file.name,
-      },
-      body: file,
+      // The browser provides the multipart boundary; never put file.name in a header.
+      body,
       signal: controller.signal,
     });
     if (!response.ok) {
@@ -161,12 +164,96 @@ export interface StageEvent {
   topology?: { id: string; tier: number; parents: string[] }[];
   /** fix.progress only — which phase of the render is running. */
   stage_label?: string;
+  /** fix.progress only — the persisted lifecycle state the engine just
+   * entered. Sent by the backend rather than inferred here, so the strip on
+   * screen and the stored transition history cannot disagree. */
+  state?: string;
+  reused?: boolean;
   ops?: number;
   output?: string;
   rendered?: boolean;
   /** A measurement of the rendered artifact, supplied only after the
    * verification pass has completed successfully. */
   afterReport?: AnalysisReport;
+
+  /* ---- the closed loop's terminal payload ------------------------- */
+
+  /** The comparison between the two runs. Present on `run.complete` for a
+   * remediation that reached a verdict. */
+  verification?: Verification;
+  certificate?: VerificationCertificate;
+  evidence?: EvidencePair[];
+  telemetry?: Record<string, unknown>;
+  lifecycle?: RemediationRecord;
+  verdict?: string;
+  remediationId?: string;
+  certificateId?: string;
+  verificationId?: string;
+  sourceRunId?: string;
+  /** Set when this run picked up a remediation an earlier process left
+   * unfinished — names the state it was interrupted in. */
+  resumedFrom?: string;
+  interruptedAt?: string;
+}
+
+export interface InterruptedRemediation {
+  remediationId: string;
+  state: string;
+  describe: string;
+  resumesAt: string | null;
+}
+
+/**
+ * Remediations the engine has on disk, including ones a crash left open.
+ *
+ * Asked once at startup. This is what makes a restart informative rather than
+ * lossy: the deck can say "REM-0001 was interrupted during REANALYSING"
+ * instead of behaving as though the operation never happened.
+ */
+export async function fetchRemediations(): Promise<{
+  remediations: RemediationRecord[];
+  interrupted: InterruptedRemediation[];
+}> {
+  try {
+    return await call<{
+      remediations: RemediationRecord[];
+      interrupted: InterruptedRemediation[];
+    }>('/api/remediations');
+  } catch {
+    return { remediations: [], interrupted: [] };
+  }
+}
+
+/** One remediation resolved through to its certificate, or null. */
+export async function fetchRemediation(id: string): Promise<
+  | (RemediationRecord & {
+      verification?: Verification;
+      certificate?: VerificationCertificate;
+      telemetry?: Record<string, unknown>;
+      certificateIntegrity?: 'VALID' | 'MISMATCH';
+    })
+  | null
+> {
+  try {
+    return await call(`/api/remediations/${encodeURIComponent(id)}`);
+  } catch {
+    return null;
+  }
+}
+
+interface JobSnapshot {
+  id: string;
+  done: boolean;
+  error: string | null;
+  events: StageEvent[];
+}
+
+async function fetchJob(id: string): Promise<JobSnapshot | null> {
+  try {
+    return await call<JobSnapshot>(`/api/jobs/${encodeURIComponent(id)}`);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -195,20 +282,47 @@ export async function startJob(
   );
 
   const stream = new EventSource(`${BASE}/api/events/${started.id}`);
+  let lastSeq = -1;
+  let closed = false;
+  const deliver = (event: StageEvent) => {
+    // SSE is replayable and the reconciliation endpoint returns the same
+    // frames. Sequence numbers make delivery idempotent across both paths.
+    if (event.seq <= lastSeq) return;
+    lastSeq = event.seq;
+    onEvent(event);
+    if (event.type === 'run.complete' || event.type === 'run.error') close();
+  };
+  const poll = window.setInterval(() => {
+    void (async () => {
+      const snapshot = await fetchJob(started.id);
+      if (!snapshot || closed) return;
+      snapshot.events.forEach(deliver);
+      if (snapshot.done && snapshot.error && lastSeq < snapshot.events.length) {
+        // A defensive terminal state for an interrupted event write. The
+        // backend's stored error is still the source, never a guessed result.
+        deliver({ seq: snapshot.events.length, type: 'run.error', error: snapshot.error });
+      }
+    })();
+  }, 1000);
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    window.clearInterval(poll);
+    stream.close();
+  };
   stream.onmessage = (message) => {
     try {
       const event = JSON.parse(message.data) as StageEvent;
-      onEvent(event);
-      // The server closes after the terminal event; closing here too stops
-      // EventSource reconnecting and replaying a finished run forever.
-      if (event.type === 'run.complete' || event.type === 'run.error') stream.close();
+      deliver(event);
     } catch {
       /* a malformed frame must not kill the stream */
     }
   };
+  // Keep reconciling the authoritative job record if a proxy/browser closes
+  // the SSE connection. This is recovery, not a second execution path.
   stream.onerror = () => stream.close();
 
-  return () => stream.close();
+  return close;
 }
 
 /**

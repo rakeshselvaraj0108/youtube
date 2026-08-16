@@ -5,6 +5,7 @@ import { useAnalysis, useSelectedFinding, useVisibleFindings } from '@/store/ana
 import { severityHex } from '@/lib/scoring';
 import type { FindingSort } from '@/lib/findings';
 import { formatTimecode } from '@/lib/time';
+import { STATUS_LABEL, statusHex } from '@/lib/verification';
 import type { Finding } from '@/types/analysis';
 
 const SORTS: { key: FindingSort; label: string }[] = [
@@ -16,6 +17,17 @@ const SORTS: { key: FindingSort; label: string }[] = [
 function FindingCard({ finding, selected }: { finding: Finding; selected: boolean }) {
   const select = useAnalysis((s) => s.select);
   const tone = severityHex(finding.severity);
+
+  // A finding is matched by whichever side of the comparison it belongs to:
+  // an original finding by `originalId`, one that only exists in the rendered
+  // file by `remediatedId`. Checking one alone would leave every NEW finding
+  // unlabelled — which is the label a reader most needs.
+  const comparison = useAnalysis(
+    (s) =>
+      s.verification?.changes.find(
+        (c) => c.originalId === finding.id || c.remediatedId === finding.id,
+      ) ?? null,
+  );
 
   return (
     <li>
@@ -39,7 +51,25 @@ function FindingCard({ finding, selected }: { finding: Finding; selected: boolea
             <span className="num text-[10px] text-inkDim">
               {formatTimecode(finding.startMs)} – {formatTimecode(finding.endMs)}
             </span>
-            <SeverityChip severity={finding.severity} />
+            <span className="flex shrink-0 items-center gap-1.5">
+              {/* What the verification concluded about this finding, if one
+                  has run. Text, never colour alone, and absent before any
+                  remediation rather than defaulting to something that reads
+                  like a result. */}
+              {comparison && (
+                <span
+                  className="num rounded-chip border px-1.5 text-[8px] uppercase tracking-[0.06em]"
+                  style={{
+                    color: statusHex(comparison.status),
+                    borderColor: `${statusHex(comparison.status)}55`,
+                  }}
+                  title={comparison.detail}
+                >
+                  {STATUS_LABEL[comparison.status] ?? comparison.status}
+                </span>
+              )}
+              <SeverityChip severity={finding.severity} />
+            </span>
           </span>
 
           <span className="truncate text-[13px] font-semibold text-ink">{finding.title}</span>

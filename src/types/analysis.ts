@@ -361,3 +361,296 @@ export interface AnalysisReport {
   segments?: Segment[];
   cost: CostRecord;
 }
+
+/* ------------------------------------------------------------------ */
+/* Verification — the closed loop's record                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * These mirror `preflight/verify.py`, `lineage.py` and `certificate.py`. They
+ * describe a *remediation that was carried out and then checked*, which is a
+ * different object from an analysis: an analysis says what is wrong with a
+ * file, this says what changed between two files and what is known about the
+ * difference.
+ *
+ * Nothing here is computed in the browser. Every count, verdict and hash is
+ * copied from the verification object the backend persisted — a second
+ * implementation of the rollup on this side would eventually disagree with
+ * the certificate, and then the page and the document it displays would be
+ * making different claims about the same run.
+ */
+
+export type FindingStatus =
+  | 'RESOLVED'
+  | 'PERSISTING'
+  | 'NEW'
+  | 'CHANGED'
+  | 'INCONCLUSIVE';
+
+/** Incidents get one status findings do not: a group can be half-fixed. */
+export type IncidentStatus =
+  | 'RESOLVED'
+  | 'PERSISTING'
+  | 'PARTIALLY_REMEDIATED'
+  | 'CHANGED'
+  | 'NEW'
+  | 'INCONCLUSIVE';
+
+export type VerificationVerdict =
+  | 'VERIFIED_SAFE'
+  | 'PARTIALLY_REMEDIATED'
+  | 'REMEDIATION_FAILED'
+  | 'NEW_RISK_DETECTED'
+  | 'INCONCLUSIVE'
+  | 'NO_CHANGE';
+
+export type PredictionOutcome =
+  | 'MATCHED'
+  | 'PARTIALLY_MATCHED'
+  | 'OVERESTIMATED'
+  | 'UNDERESTIMATED'
+  | 'FAILED'
+  | 'INCONCLUSIVE';
+
+export interface FindingChange {
+  status: FindingStatus;
+  clauseId: string;
+  category: string;
+  severity: Severity;
+  /** Null for a NEW finding — it had no counterpart in the original. */
+  originalId: string | null;
+  /** Null for a RESOLVED one — nothing in the output corresponds to it. */
+  remediatedId: string | null;
+  detail: string;
+}
+
+export interface IncidentChange {
+  status: IncidentStatus;
+  category: string;
+  severity: Severity;
+  originalId: string | null;
+  remediatedId: string | null;
+  originalSpan: [number, number] | null;
+  /** Where the original span landed after the edit, or null when the span
+   * was cut out entirely. Null is a real answer, not a missing one. */
+  mappedSpan: [number, number] | null;
+  remediatedSpan: [number, number] | null;
+  clauses: string[];
+  resolvedFindings: string[];
+  persistingFindings: string[];
+  newFindings: string[];
+  inconclusiveFindings: string[];
+  removedByCut: boolean;
+  detail: string;
+}
+
+/** One still, and the file it genuinely came from. */
+export interface EvidenceFrame {
+  tsMs: number;
+  source: 'original' | 'remediated';
+  runId: string | null;
+  width: number;
+  /** Data URI. Absent when the frame could not be extracted. */
+  image?: string;
+}
+
+export interface EvidencePair {
+  findingId: string;
+  incidentId: string | null;
+  clauseId: string;
+  category: string;
+  severity: Severity;
+  status: FindingStatus;
+  before: {
+    runId: string | null;
+    tsMs: number;
+    frame: EvidenceFrame | null;
+    transcript: string;
+    highlightSpan: [number, number];
+    confidence: number;
+    /** Null when the engine recorded no coverage — never rendered as 0%. */
+    coverage: number | null;
+  };
+  remediation: {
+    remediationId: string;
+    op: string;
+    startMs: number;
+    endMs: number;
+  } | null;
+  after: {
+    runId: string | null;
+    tsMs: number | null;
+    frame: EvidenceFrame | null;
+    /** True when the span was cut. There is no after frame and that is the
+     * correct outcome, not a failure to produce one. */
+    removedByRemediation: boolean;
+    /** Why there is no after frame, when there is none and it was not cut. */
+    unavailable: string;
+  };
+  notes: string[];
+}
+
+export interface Verification {
+  verdict: VerificationVerdict;
+  changes: FindingChange[];
+  incidentChanges: IncidentChange[];
+  originalScore: number;
+  remediatedScore: number;
+  scoreDelta: number;
+  predictedScore: number | null;
+  predictionOutcome: PredictionOutcome;
+  /** Which simulated scenario the forecast came from. */
+  predictedScenario?: string | null;
+  /** False when the forecast describes a different operation set than the one
+   * that was rendered — the compiler picks its own balanced edit, which
+   * routinely differs from the highest-scoring scenario. Only the scores are
+   * comparable then, never the resolved counts. */
+  predictionIsForThisEdit?: boolean;
+  resolved: number;
+  persisting: number;
+  new: number;
+  inconclusive: number;
+  incidentsResolved: number;
+  incidentsPersisting: number;
+  incidentsPartial: number;
+  incidentsChanged: number;
+  incidentsNew: number;
+  incidentsInconclusive: number;
+  structuralOk: boolean;
+  reanalysisOk: boolean;
+  notes: string[];
+  evidence?: {
+    pairs: number;
+    beforeFramesExtracted: number;
+    afterFramesExtracted: number;
+    removedByRemediation: number;
+    afterUnavailable: number;
+  };
+}
+
+/** A value the backend did not measure. Never substituted with a number. */
+export const NOT_MEASURED = 'NOT MEASURED';
+export type Measured<T> = T | 'NOT MEASURED';
+
+export interface CertificateArtifact {
+  artifactId: string | null;
+  contentHash: Measured<string>;
+  sizeBytes: Measured<number>;
+  durationMs: Measured<number>;
+  path: string | null;
+}
+
+export interface VerificationCertificate {
+  certificateId: string;
+  certificateHash: string;
+  certificateVersion: string;
+  issuedAt: string;
+  engineVersion: string;
+  policyVersion: string | null;
+  lineage: {
+    originalRunId: string;
+    simulationId: string | null;
+    remediationId: string;
+    verificationRunId: string | null;
+    verificationId: string;
+  };
+  artifacts: {
+    original: CertificateArtifact;
+    remediated: CertificateArtifact;
+    operations: { op: string; startMs: number; endMs: number }[];
+  };
+  scores: {
+    original: number;
+    predicted: number | null;
+    actual: Measured<number>;
+    delta: Measured<number>;
+    predictionOutcome: PredictionOutcome;
+  };
+  incidents: {
+    original: number;
+    remediated: Measured<number>;
+    resolved: number;
+    persisting: number;
+    partiallyRemediated: number;
+    changed: number;
+    new: number;
+    inconclusive: number;
+  };
+  findings: {
+    original: number;
+    remediated: Measured<number>;
+    resolved: number;
+    persisting: number;
+    new: number;
+    inconclusive: number;
+    resolvedClauses: string[];
+    persistingClauses: string[];
+    newClauses: string[];
+  };
+  verification: {
+    structural: 'PASSED' | 'FAILED';
+    postAnalysis: 'COMPLETE' | 'INCOMPLETE';
+    verdict: VerificationVerdict;
+    lifecycleState: string;
+  };
+  coverage: {
+    byAgent: Record<string, number>;
+    overall: Measured<number>;
+    absenceFloor: number;
+    belowFloor: string[];
+  };
+  telemetry: Record<string, unknown>;
+  limitations: string[];
+}
+
+export type LifecycleState =
+  | 'ANALYSIS_COMPLETE'
+  | 'SIMULATION_READY'
+  | 'SIMULATING'
+  | 'SIMULATED'
+  | 'REMEDIATION_REQUESTED'
+  | 'RENDERING'
+  | 'RENDERED'
+  | 'STRUCTURAL_VERIFYING'
+  | 'STRUCTURALLY_VALID'
+  | 'REANALYSIS_QUEUED'
+  | 'REANALYSING'
+  | 'REANALYSIS_COMPLETE'
+  | 'COMPARING'
+  | 'VERIFIED'
+  | 'PARTIALLY_REMEDIATED'
+  | 'NEW_RISK_DETECTED'
+  | 'NO_CHANGE'
+  | 'INCONCLUSIVE'
+  | 'FAILED';
+
+export interface LifecycleTransition {
+  from: LifecycleState;
+  to: LifecycleState;
+  at: string;
+  detail: string;
+  error: string;
+}
+
+export interface RemediationRecord {
+  remediationId: string;
+  sourceRunId: string;
+  simulationId: string | null;
+  verificationRunId: string | null;
+  verificationId: string | null;
+  artifactId: string | null;
+  sourcePath: string;
+  outputPath: string | null;
+  findingIds: string[];
+  incidentIds: string[];
+  ops: { op: string; startMs: number; endMs: number; reason?: string }[];
+  state: LifecycleState;
+  previousState: LifecycleState | null;
+  stateDetail: string;
+  terminal: boolean;
+  verdict: VerificationVerdict | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+  transitions: LifecycleTransition[];
+}

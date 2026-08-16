@@ -1,9 +1,12 @@
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, ImageOff } from 'lucide-react';
 
-import { Panel, SeverityChip } from '@/components/ui';
+import { Bar, Panel, SeverityChip } from '@/components/ui';
+import { ReasoningChainView } from '@/components/ReasoningChainView';
 import { useAnalysis, useReport } from '@/store/analysis';
-import { formatPrecise } from '@/lib/time';
-import type { Incident } from '@/types/analysis';
+import { formatPrecise, formatTimecode } from '@/lib/time';
+import { severityHex } from '@/lib/scoring';
+import { STATUS_LABEL, statusHex } from '@/lib/verification';
+import type { Finding, Incident, RemediationOp } from '@/types/analysis';
 
 /**
  * INCIDENTS — the investigation layer, between the timeline and the findings.
@@ -35,6 +38,122 @@ function agentTone(count: number): string {
   return '#8896B0';
 }
 
+/** The op the compiler actually wrote for this finding, if any.
+ *
+ * An incident's `suggestedFix` names what the lead finding's own agent
+ * proposed; it is not a promise the compiler acted on it. The renderable-
+ * ceiling filter in `scoring/simulation.py` and the EDL compiler both refuse
+ * edits above their own cost budget, so a suggestion and a compiled op are
+ * different facts and this panel must not conflate them.
+ */
+function opFor(ops: RemediationOp[], findingId: string): RemediationOp | undefined {
+  return ops.find((op) => op.findingId === findingId);
+}
+
+function MemberRow({
+  finding,
+  op,
+}: {
+  finding: Finding;
+  op: RemediationOp | undefined;
+}) {
+  const select = useAnalysis((s) => s.select);
+  const setHoveredOp = useAnalysis((s) => s.setHoveredOp);
+  const comparison = useAnalysis((s) =>
+    s.verification?.changes.find(
+      (c) => c.originalId === finding.id || c.remediatedId === finding.id,
+    ) ?? null,
+  );
+  const upheld = finding.adversarial.adjudicator.verdict === 'UPHELD';
+
+  return (
+    <button
+      type="button"
+      onClick={() => select(finding.id)}
+      onMouseEnter={() => op && setHoveredOp(op.index)}
+      onMouseLeave={() => op && setHoveredOp(null)}
+      title={`${finding.title}\n${finding.description}\nselect and seek to this finding`}
+      className="grid w-full grid-cols-[auto_minmax(0,1fr)_50px_auto_auto] items-center gap-2 rounded-chip px-1.5 py-1 text-left transition-colors duration-instant hover:bg-panelHi/60"
+    >
+      <SeverityChip severity={finding.severity} />
+      <span className="min-w-0 truncate text-[10px] text-inkDim">{finding.title}</span>
+      <Bar value={finding.fusedConfidence ?? finding.confidence} tone={severityHex(finding.severity)} height={3} />
+      <span
+        className="num shrink-0 rounded-chip border px-1 text-[8px] uppercase tracking-[0.04em]"
+        style={{
+          color: upheld ? '#E38B7B' : '#7BE3A8',
+          borderColor: upheld ? '#E38B7B55' : '#7BE3A855',
+        }}
+        title={
+          upheld
+            ? `ADJUDICATOR upheld the charge — ${finding.adversarial.adjudicator.rationale}`
+            : `ADJUDICATOR dismissed the charge — ${finding.adversarial.adjudicator.rationale}`
+        }
+      >
+        {upheld ? 'upheld' : 'dismissed'}
+      </span>
+      {comparison ? (
+        <span
+          className="num shrink-0 rounded-chip border px-1 text-[8px] uppercase tracking-[0.04em]"
+          style={{ color: statusHex(comparison.status), borderColor: `${statusHex(comparison.status)}55` }}
+          title={comparison.detail}
+        >
+          {STATUS_LABEL[comparison.status] ?? comparison.status}
+        </span>
+      ) : op ? (
+        <span
+          className="num shrink-0 rounded-chip border border-edge px-1 text-[8px] uppercase tracking-[0.04em] text-inkFaint"
+          title={`Compiled into the remediation plan: ${op.op} at ${formatTimecode(op.startMs)}`}
+        >
+          {op.op}
+        </span>
+      ) : (
+        <span className="w-1" />
+      )}
+    </button>
+  );
+}
+
+/** The best still frame among an incident's members — the highest-severity
+ * finding that actually carries one, so the thumbnail matches what the
+ * incident is most severely about rather than whichever member sorted
+ * first. */
+function IncidentThumbnail({ members }: { members: Finding[] }) {
+  const select = useAnalysis((s) => s.select);
+  const ranked = [...members].sort(
+    (a, b) => severityRank(b.severity) - severityRank(a.severity),
+  );
+  const withFrame = ranked.find((f) => f.evidence.frames.length > 0);
+
+  if (!withFrame) {
+    return (
+      <div className="flex aspect-video w-full max-w-[160px] shrink-0 flex-col items-center justify-center gap-1 rounded-panel border border-dashed border-edge text-inkFaint">
+        <ImageOff className="h-4 w-4" strokeWidth={1.5} />
+        <span className="num text-[8px] uppercase tracking-[0.06em]">no visual evidence</span>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => select(withFrame.id)}
+      title={`${withFrame.id} — select and seek`}
+      className="aspect-video w-full max-w-[160px] shrink-0 overflow-hidden rounded-panel border border-edge transition-colors duration-instant hover:border-inkFaint"
+    >
+      <img
+        src={withFrame.evidence.frames[0]}
+        alt={`Evidence for ${withFrame.id}`}
+        className="h-full w-full object-cover"
+      />
+    </button>
+  );
+}
+
+function severityRank(severity: string): number {
+  return { CRITICAL: 3, HIGH: 2, MEDIUM: 1, LOW: 0 }[severity] ?? 0;
+}
+
 function IncidentRow({ incident }: { incident: Incident }) {
   const report = useReport();
   const selectedId = useAnalysis((s) => s.selectedIncidentId);
@@ -42,11 +161,23 @@ function IncidentRow({ incident }: { incident: Incident }) {
   const expandedId = useAnalysis((s) => s.expandedIncidentId);
   const toggleIncident = useAnalysis((s) => s.toggleIncident);
 
+  // Matched by original id, which is what the backend's comparison keys on.
+  // The frontend never re-derives which incident is which: the second run
+  // renumbers them, and a second matching implementation here would
+  // eventually disagree with the certificate.
+  const comparison = useAnalysis((s) =>
+    s.verification?.incidentChanges.find((c) => c.originalId === incident.id) ?? null,
+  );
+
   const isSelected = selectedId === incident.id;
   const isExpanded = expandedId === incident.id;
   const members = report.findings.filter((f) => incident.findingIds.includes(f.id));
   const durationMs = incident.endMs - incident.startMs;
   const fileScoped = durationMs >= (report.video.durationMs || 0) * 0.9;
+  const ops = report.remediation.ops;
+  // The engine's cited argument for this incident, keyed by the same id the
+  // comparison and the certificate use — never re-derived here.
+  const chain = (report.reasoning ?? []).find((c) => c.incidentId === incident.id);
 
   return (
     <div
@@ -88,6 +219,22 @@ function IncidentRow({ incident }: { incident: Incident }) {
           <span className="num shrink-0 text-[10px] text-inkFaint">
             {fileScoped ? 'file-scoped' : formatPrecise(incident.startMs)}
           </span>
+          {/* What the verification concluded about this incident, when one
+              has run. A text label, never colour alone — and absent entirely
+              before a remediation, rather than defaulting to a state that
+              would read as a result. */}
+          {comparison && (
+            <span
+              className="num shrink-0 rounded-chip border px-1.5 text-[8px] uppercase tracking-[0.06em]"
+              style={{
+                color: statusHex(comparison.status),
+                borderColor: `${statusHex(comparison.status)}55`,
+              }}
+              title={comparison.detail}
+            >
+              {STATUS_LABEL[comparison.status] ?? comparison.status}
+            </span>
+          )}
         </button>
 
         <span className="flex shrink-0 items-center gap-2">
@@ -115,50 +262,124 @@ function IncidentRow({ incident }: { incident: Incident }) {
       </div>
 
       {isExpanded && (
-        <div className="flex flex-col gap-2 border-t border-edge px-2.5 py-2">
-          <Section label="Observations">
-            {incident.agents.map((agent) => (
-              <Token key={agent}>{agent}</Token>
-            ))}
-          </Section>
+        <div className="flex flex-col gap-2.5 border-t border-edge px-2.5 py-2.5">
+          <div className="flex gap-2.5">
+            <IncidentThumbnail members={members} />
 
-          <Section label="Findings">
+            <div className="flex min-w-0 flex-1 flex-col gap-2">
+              <Section label="Observations">
+                {incident.agents.map((agent) => (
+                  <Token key={agent}>{agent}</Token>
+                ))}
+              </Section>
+
+              <Section label="Policy">
+                {incident.clauses.map((c) => (
+                  <Token key={c} title={memberPolicy(members, c)}>
+                    {c}
+                  </Token>
+                ))}
+              </Section>
+
+              <Section label="Remediation">
+                {remediationSummary(incident, members, ops)}
+              </Section>
+
+              {comparison && (
+                <Section label="Verification">
+                  <span
+                    className="num rounded-chip border px-1.5 py-0.5 text-[9px] uppercase tracking-[0.04em]"
+                    style={{
+                      color: statusHex(comparison.status),
+                      borderColor: `${statusHex(comparison.status)}55`,
+                    }}
+                  >
+                    {STATUS_LABEL[comparison.status] ?? comparison.status}
+                  </span>
+                  <span className="text-[10px] text-inkFaint">{comparison.detail}</span>
+                </Section>
+              )}
+            </div>
+          </div>
+
+          {/* Every member finding, richer than an id chip: severity,
+              confidence, the adversarial verdict that actually decided
+              whether it counted, and — when a fix was rendered — the
+              verification outcome or the compiled operation. */}
+          <div className="flex flex-col gap-0.5 border-t border-edge pt-2">
+            <span className="px-1.5 text-[9px] uppercase tracking-[0.08em] text-inkFaint">
+              findings ({members.length})
+            </span>
             {members.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => useAnalysis.getState().select(f.id)}
-                title={`${f.title} — select and seek`}
-                className="num rounded-chip border border-edge px-1.5 py-0.5 text-[9px] text-inkDim hover:border-inkFaint hover:text-ink"
-              >
-                {f.id}
-              </button>
+              <MemberRow key={f.id} finding={f} op={opFor(ops, f.id)} />
             ))}
-          </Section>
+          </div>
 
-          <Section label="Policy">
-            {incident.clauses.map((c) => (
-              <Token key={c}>{c}</Token>
-            ))}
-          </Section>
-
-          <Section label="Remediation">
-            {incident.suggestedFix && incident.suggestedFix !== 'NONE' ? (
-              <Token>{incident.suggestedFix}</Token>
-            ) : (
-              <span className="text-[10px] text-inkFaint">
-                no executable remediation for this incident
-              </span>
-            )}
-          </Section>
-
-          <p className="border-t border-edge pt-1.5 text-[10px] leading-relaxed text-inkFaint">
-            {incident.reasoning}
-          </p>
+          {/* The cited reasoning chain — the engine's actual argument for
+              this incident, not a one-line summary of it. Falls back to the
+              flat summary only for a report emitted before chains existed. */}
+          {chain ? (
+            <div className="border-t border-edge pt-2">
+              <ReasoningChainView chain={chain} compact />
+            </div>
+          ) : (
+            <p className="border-t border-edge pt-1.5 text-[10px] leading-relaxed text-inkFaint">
+              {incident.reasoning}
+            </p>
+          )}
         </div>
       )}
     </div>
   );
+}
+
+/** What actually happened to this incident's remediation.
+ *
+ * Three distinct facts, and the panel used to collapse them into one token:
+ * a lead finding can *suggest* a fix that the compiler never selects — the
+ * renderable-ceiling filter in `scoring/simulation.py` refuses edits above
+ * its own cost budget — so "suggested" and "compiled" are different claims.
+ */
+function remediationSummary(
+  incident: Incident,
+  members: Finding[],
+  ops: RemediationOp[],
+): React.ReactNode {
+  const compiled = members
+    .map((f) => opFor(ops, f.id))
+    .filter((op): op is RemediationOp => op !== undefined);
+
+  if (compiled.length > 0) {
+    return (
+      <>
+        {compiled.map((op) => (
+          <Token key={op.index} title={op.details}>
+            {op.op} @ {formatTimecode(op.startMs)}
+          </Token>
+        ))}
+      </>
+    );
+  }
+
+  if (incident.suggestedFix && incident.suggestedFix !== 'NONE') {
+    return (
+      <span className="text-[10px] text-inkFaint">
+        <Token>{incident.suggestedFix}</Token> suggested by the lead finding, not
+        selected by the compiler
+      </span>
+    );
+  }
+
+  return (
+    <span className="text-[10px] text-inkFaint">
+      no executable remediation for this incident
+    </span>
+  );
+}
+
+function memberPolicy(members: Finding[], clauseId: string): string {
+  const owner = members.find((f) => f.policy.clauseId === clauseId);
+  return owner ? `${owner.policy.title} — ${owner.policy.section}` : clauseId;
 }
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
@@ -172,9 +393,12 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-function Token({ children }: { children: React.ReactNode }) {
+function Token({ children, title }: { children: React.ReactNode; title?: string }) {
   return (
-    <span className="num rounded-chip border border-edge px-1.5 py-0.5 text-[9px] text-inkDim">
+    <span
+      title={title}
+      className="num rounded-chip border border-edge px-1.5 py-0.5 text-[9px] text-inkDim"
+    >
       {children}
     </span>
   );

@@ -170,7 +170,12 @@ class Artifact:
             return False
         if path.stat().st_size != self.size_bytes:
             return False
-        return cas.hash_file(path) == self.content_hash
+        # Prefixed on both sides. `content_hash` is stored in display form
+        # (`b3:9f2c…`) so a reader can tell which algorithm produced it;
+        # comparing it against a bare digest never matches, which would fail
+        # closed — safe, but it would silently re-render every resume and make
+        # the whole reuse path dead code that looks alive.
+        return cas.prefixed(cas.hash_file(path)) == self.content_hash
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -642,6 +647,55 @@ class Lineage:
         assert record is not None
         return record
 
+    def resume(self, remediation_id: str, *, detail: str = "") -> RemediationRecord:
+        """Re-enter an interrupted remediation at the right earlier state.
+
+        This is the one move that is not a forward edge, and it is deliberately
+        a separate method rather than a relaxation of `transition`. A resume
+        goes *backwards* — REANALYSING re-enters at STRUCTURALLY_VALID,
+        because a half-finished analysis has produced nothing durable while
+        the render before it has. Letting `transition` accept backward edges to
+        support this would also let any caller walk a remediation back out of a
+        verdict, which is precisely the history-rewriting the graph exists to
+        prevent.
+
+        The destination is not the caller's choice either: it comes from
+        `lifecycle.RESUME_FROM`, so where a given interruption resumes is a
+        property of the state machine and identical on every restart.
+        """
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT state FROM remediations WHERE remediation_id = ?",
+                (remediation_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"no remediation {remediation_id}")
+            current = str(row["state"])
+            target = lifecycle.resume_state(current)
+            if target is None:
+                raise lifecycle.InvalidTransition(current, "RESUMED")
+            now = _now()
+            conn.execute(
+                "UPDATE remediations SET state = ?, previous_state = ?, "
+                "error = NULL, updated_at = ? WHERE remediation_id = ?",
+                (target, current, now, remediation_id),
+            )
+            conn.execute(
+                "INSERT INTO transitions "
+                "(remediation_id, from_state, to_state, at, detail) VALUES (?,?,?,?,?)",
+                (
+                    remediation_id,
+                    current,
+                    target,
+                    now,
+                    detail or f"resumed after interruption during {current}",
+                ),
+            )
+            conn.commit()
+        record = self.remediation(remediation_id)
+        assert record is not None
+        return record
+
     def fail(self, remediation_id: str, error: str) -> RemediationRecord:
         return self.transition(
             remediation_id, "FAILED", detail="remediation failed", error=error
@@ -719,6 +773,23 @@ class Lineage:
             )
             conn.commit()
         return verification_id
+
+    def attach_verification(self, remediation_id: str, verification_id: str) -> None:
+        """Point a remediation at its verification.
+
+        The one column written outside a lifecycle transition, and separated
+        so that is obvious. It carries no state change: the remediation has
+        already reached its terminal verdict by the time a verification row
+        exists to reference, and forcing this through `transition` would
+        require a self-edge that exists only to satisfy plumbing.
+        """
+        with closing(self._connect()) as conn:
+            conn.execute(
+                "UPDATE remediations SET verification_id = ?, updated_at = ? "
+                "WHERE remediation_id = ?",
+                (verification_id, _now(), remediation_id),
+            )
+            conn.commit()
 
     def verification(self, verification_id: str) -> dict[str, Any] | None:
         with closing(self._connect()) as conn:
@@ -856,6 +927,31 @@ def _run(row: sqlite3.Row) -> RunNode:
     )
 
 
+def _parse_ops(raw: str | None) -> tuple[dict[str, Any], ...]:
+    """Operations from a stored row, tolerating what older rows put there.
+
+    A row written before the column settled holds the whole EDL envelope
+    (`{source, durationMs, ops, warnings}`) rather than the operation list.
+    That still parses as JSON and still iterates — yielding key *strings* —
+    so a strict reader raises deep inside a list comprehension and takes the
+    entire remediation listing down with it, including every healthy row
+    beside it.
+
+    One bad row must not hide the others. The envelope is unwrapped where it
+    is recognisable and anything else degrades to empty, which the caller
+    already renders as "no operations recorded".
+    """
+    try:
+        parsed = json.loads(raw or "[]")
+    except ValueError:
+        return ()
+    if isinstance(parsed, dict):
+        parsed = parsed.get("ops", [])
+    if not isinstance(parsed, list):
+        return ()
+    return tuple(op for op in parsed if isinstance(op, dict))
+
+
 def _remediation(
     row: sqlite3.Row, history: Iterable[sqlite3.Row]
 ) -> RemediationRecord:
@@ -870,7 +966,7 @@ def _remediation(
         output_path=row["output_path"],
         finding_ids=tuple(json.loads(row["finding_ids"] or "[]")),
         incident_ids=tuple(json.loads(row["incident_ids"] or "[]")),
-        ops=tuple(json.loads(row["edl_json"] or "[]")),
+        ops=_parse_ops(row["edl_json"]),
         state=row["state"],
         previous_state=row["previous_state"],
         verdict=row["verdict"],

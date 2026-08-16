@@ -37,6 +37,15 @@ Status = Literal[
     "RESOLVED", "PERSISTING", "NEW", "CHANGED", "INCONCLUSIVE"
 ]
 
+# Incidents get one status findings do not: an incident is a group, so it can
+# be genuinely half-fixed in a way a single finding cannot. Collapsing that
+# into PERSISTING would hide real progress, and into RESOLVED would hide a
+# real remaining problem.
+IncidentStatus = Literal[
+    "RESOLVED", "PERSISTING", "PARTIALLY_REMEDIATED", "CHANGED", "NEW",
+    "INCONCLUSIVE",
+]
+
 Verdict = Literal[
     "VERIFIED_SAFE",
     "PARTIALLY_REMEDIATED",
@@ -172,9 +181,58 @@ class FindingChange:
         }
 
 
+@dataclass(frozen=True)
+class IncidentChange:
+    """One incident, across the two runs.
+
+    Carries the finding-level verdicts it was rolled up from, so a reader
+    following the verdict downwards never hits a claim without its evidence:
+    the incident says PARTIALLY_REMEDIATED *because* these two findings
+    resolved and that one did not.
+    """
+
+    status: IncidentStatus
+    category: str
+    severity: str
+    original_id: str | None = None
+    remediated_id: str | None = None
+    original_span: tuple[int, int] | None = None
+    mapped_span: tuple[int, int] | None = None
+    remediated_span: tuple[int, int] | None = None
+    clauses: tuple[str, ...] = ()
+    resolved_findings: tuple[str, ...] = ()
+    persisting_findings: tuple[str, ...] = ()
+    new_findings: tuple[str, ...] = ()
+    inconclusive_findings: tuple[str, ...] = ()
+    removed_by_cut: bool = False
+    detail: str = ""
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "category": self.category,
+            "severity": self.severity,
+            "originalId": self.original_id,
+            "remediatedId": self.remediated_id,
+            "originalSpan": list(self.original_span) if self.original_span else None,
+            "mappedSpan": list(self.mapped_span) if self.mapped_span else None,
+            "remediatedSpan": (
+                list(self.remediated_span) if self.remediated_span else None
+            ),
+            "clauses": list(self.clauses),
+            "resolvedFindings": list(self.resolved_findings),
+            "persistingFindings": list(self.persisting_findings),
+            "newFindings": list(self.new_findings),
+            "inconclusiveFindings": list(self.inconclusive_findings),
+            "removedByCut": self.removed_by_cut,
+            "detail": self.detail,
+        }
+
+
 @dataclass
 class Comparison:
     changes: list[FindingChange] = field(default_factory=list)
+    incidents: list[IncidentChange] = field(default_factory=list)
     original_score: int = 0
     remediated_score: int = 0
     structural_ok: bool = True
@@ -183,6 +241,9 @@ class Comparison:
 
     def of(self, status: Status) -> list[FindingChange]:
         return [c for c in self.changes if c.status == status]
+
+    def incidents_of(self, status: IncidentStatus) -> list[IncidentChange]:
+        return [i for i in self.incidents if i.status == status]
 
     @property
     def resolved(self) -> list[FindingChange]:
@@ -199,6 +260,7 @@ class Comparison:
     def to_json(self) -> dict[str, Any]:
         return {
             "changes": [c.to_json() for c in self.changes],
+            "incidentChanges": [i.to_json() for i in self.incidents],
             "originalScore": self.original_score,
             "remediatedScore": self.remediated_score,
             "scoreDelta": self.remediated_score - self.original_score,
@@ -206,11 +268,223 @@ class Comparison:
             "persisting": len(self.persisting),
             "new": len(self.new),
             "inconclusive": len(self.of("INCONCLUSIVE")),
+            "incidentsResolved": len(self.incidents_of("RESOLVED")),
+            "incidentsPersisting": len(self.incidents_of("PERSISTING")),
+            "incidentsPartial": len(self.incidents_of("PARTIALLY_REMEDIATED")),
+            "incidentsChanged": len(self.incidents_of("CHANGED")),
+            "incidentsNew": len(self.incidents_of("NEW")),
+            "incidentsInconclusive": len(self.incidents_of("INCONCLUSIVE")),
             "structuralOk": self.structural_ok,
             "reanalysisOk": self.reanalysis_ok,
             "verdict": verdict(self),
             "notes": list(self.notes),
         }
+
+
+SEVERITY_RANK = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
+
+
+def _incident_status(
+    resolved: list[str],
+    persisting: list[str],
+    changed: list[str],
+    inconclusive: list[str],
+) -> tuple[IncidentStatus, str]:
+    """Roll finding verdicts up into one incident verdict.
+
+    The ordering is deliberately pessimistic. An unresolved question outranks
+    a resolution, because "we could not tell" and "it is gone" are different
+    statements and only one of them is safe to act on. An incident with two
+    resolved findings and one nobody looked for is INCONCLUSIVE, not
+    PARTIALLY_REMEDIATED — the honest answer is that its fate is unknown.
+    """
+    still_there = persisting + changed
+
+    if inconclusive and not still_there:
+        return (
+            "INCONCLUSIVE",
+            f"{len(resolved)} of its findings resolved, but {len(inconclusive)} "
+            "could not be checked with the coverage available",
+        )
+    if inconclusive and still_there and not resolved:
+        return (
+            "PERSISTING",
+            f"{len(still_there)} finding(s) still detected; "
+            f"{len(inconclusive)} could not be checked",
+        )
+    if not still_there and not inconclusive:
+        if not resolved:
+            return "INCONCLUSIVE", "no finding-level evidence either way"
+        return "RESOLVED", f"all {len(resolved)} of its findings are gone"
+    if not resolved:
+        if changed and not persisting:
+            return (
+                "CHANGED",
+                f"{len(changed)} finding(s) changed severity but none resolved",
+            )
+        return "PERSISTING", f"{len(still_there)} finding(s) still detected"
+    return (
+        "PARTIALLY_REMEDIATED",
+        f"{len(resolved)} resolved, {len(still_there)} still detected"
+        + (f", {len(inconclusive)} unchecked" if inconclusive else ""),
+    )
+
+
+def compare_incidents(
+    original: list[dict[str, Any]],
+    remediated: list[dict[str, Any]],
+    changes: list[FindingChange],
+    time_map: TimeMap,
+    *,
+    reanalysis_ok: bool = True,
+) -> list[IncidentChange]:
+    """Incident-level comparison, rolled up from the finding comparison.
+
+    Incidents are *not* re-matched independently. The backend's correlation is
+    authoritative and already decided which findings describe one event; a
+    second matching pass here would be a parallel grouping implementation that
+    could disagree with it, and two answers to "how many problems are there"
+    is worse than either answer alone.
+
+    Identity is therefore transitive: original incident → its findings →
+    their matched counterparts → the remediated incident that contains them.
+    That is why ids never enter the comparison. The second run renumbers
+    INC-001 through INC-00n by timestamp, so after a cut moves everything the
+    numbers are actively misleading — INC-002 in the output is routinely a
+    different event from INC-002 in the input.
+    """
+    by_original = {c.original_id: c for c in changes if c.original_id}
+    owner: dict[str, dict[str, Any]] = {}
+    for incident in remediated:
+        for fid in incident.get("findingIds", []):
+            owner[str(fid)] = incident
+
+    out: list[IncidentChange] = []
+    claimed: set[str] = set()
+
+    for incident in original:
+        span = (int(incident.get("startMs", 0)), int(incident.get("endMs", 0)))
+        mapped = time_map.map_span(*span)
+        resolved: list[str] = []
+        persisting: list[str] = []
+        changed_ids: list[str] = []
+        inconclusive: list[str] = []
+        counterparts: list[dict[str, Any]] = []
+
+        for fid in incident.get("findingIds", []):
+            change = by_original.get(str(fid))
+            if change is None:
+                inconclusive.append(str(fid))
+                continue
+            if change.status == "RESOLVED":
+                resolved.append(str(fid))
+            elif change.status == "PERSISTING":
+                persisting.append(str(fid))
+            elif change.status == "CHANGED":
+                changed_ids.append(str(fid))
+            else:
+                inconclusive.append(str(fid))
+            if change.remediated_id and change.remediated_id in owner:
+                counterparts.append(owner[change.remediated_id])
+
+        if not reanalysis_ok:
+            status, detail = "INCONCLUSIVE", "re-analysis did not complete"
+        else:
+            status, detail = _incident_status(
+                resolved, persisting, changed_ids, inconclusive
+            )
+
+        # The counterpart is the remediated incident holding most of this
+        # one's surviving findings. Ties go to the earliest, which is stable.
+        counterpart: dict[str, Any] | None = None
+        if counterparts:
+            counts: dict[str, int] = {}
+            for c in counterparts:
+                counts[str(c["id"])] = counts.get(str(c["id"]), 0) + 1
+            best = max(sorted(counts), key=lambda k: counts[k])
+            counterpart = next(c for c in remediated if str(c["id"]) == best)
+            claimed.add(best)
+
+        severity = str(incident.get("severity", "MEDIUM"))
+        if counterpart is not None:
+            after_severity = str(counterpart.get("severity", severity))
+            if (
+                status == "PERSISTING"
+                and SEVERITY_RANK.get(after_severity, 1)
+                < SEVERITY_RANK.get(severity, 1)
+            ):
+                status = "CHANGED"
+                detail = f"severity {severity} → {after_severity}"
+            severity = after_severity
+
+        # A span the edit removed entirely. Recorded rather than inferred:
+        # the reader is told the evidence is gone because it was cut, not
+        # shown an "after" frame that does not exist.
+        removed = mapped is None and not time_map.identity
+        if removed and status == "RESOLVED":
+            detail = "the span carrying this incident was cut"
+
+        out.append(
+            IncidentChange(
+                status=status,
+                category=str(incident.get("category", "")),
+                severity=severity,
+                original_id=str(incident.get("id", "")),
+                remediated_id=str(counterpart["id"]) if counterpart else None,
+                original_span=span,
+                mapped_span=mapped,
+                remediated_span=(
+                    (
+                        int(counterpart.get("startMs", 0)),
+                        int(counterpart.get("endMs", 0)),
+                    )
+                    if counterpart
+                    else None
+                ),
+                clauses=tuple(str(c) for c in incident.get("clauses", [])),
+                resolved_findings=tuple(resolved),
+                persisting_findings=tuple(persisting + changed_ids),
+                inconclusive_findings=tuple(inconclusive),
+                removed_by_cut=removed,
+                detail=detail,
+            )
+        )
+
+    if not reanalysis_ok:
+        return out
+
+    # Anything in the output that no original incident accounts for. This is
+    # the question a render-only check never asks, and the one that produced
+    # this project's most useful result: an edit that fixed what it targeted
+    # and introduced an event that was not there before.
+    new_ids = {c.remediated_id for c in changes if c.status == "NEW"}
+    for incident in remediated:
+        incident_id = str(incident.get("id", ""))
+        if incident_id in claimed:
+            continue
+        members = [str(f) for f in incident.get("findingIds", [])]
+        if not any(m in new_ids for m in members):
+            # Every member was matched to some original finding, but no
+            # original incident claimed the group. That is a regrouping, not
+            # a new event, and calling it NEW would invent a problem.
+            continue
+        out.append(
+            IncidentChange(
+                status="NEW",
+                category=str(incident.get("category", "")),
+                severity=str(incident.get("severity", "MEDIUM")),
+                remediated_id=incident_id,
+                remediated_span=(
+                    int(incident.get("startMs", 0)),
+                    int(incident.get("endMs", 0)),
+                ),
+                clauses=tuple(str(c) for c in incident.get("clauses", [])),
+                new_findings=tuple(m for m in members if m in new_ids),
+                detail="appeared only after remediation",
+            )
+        )
+
+    return out
 
 
 def compare(
@@ -223,6 +497,8 @@ def compare(
     structural_ok: bool = True,
     reanalysis_ok: bool = True,
     coverage: dict[str, float] | None = None,
+    original_incidents: list[dict[str, Any]] | None = None,
+    remediated_incidents: list[dict[str, Any]] | None = None,
 ) -> Comparison:
     """Classify every finding across the two runs. Deterministic — no model.
 
@@ -258,6 +534,13 @@ def compare(
                     detail="re-analysis unavailable",
                 )
             )
+        result.incidents = compare_incidents(
+            original_incidents or [],
+            [],
+            result.changes,
+            time_map,
+            reanalysis_ok=False,
+        )
         return result
 
     unmatched = list(remediated)
@@ -362,6 +645,16 @@ def compare(
             )
         )
 
+    # Incidents last: the rollup reads the finding verdicts above, so it can
+    # only run once every finding has one.
+    result.incidents = compare_incidents(
+        original_incidents or [],
+        remediated_incidents or [],
+        result.changes,
+        time_map,
+        reanalysis_ok=True,
+    )
+
     return result
 
 
@@ -390,14 +683,33 @@ def verdict(comparison: Comparison) -> Verdict:
     )
 
     # A new serious problem outranks every resolution. "We fixed the thing
-    # you asked about and introduced another" is not a success.
-    if _critical(new) > 0:
+    # you asked about and introduced another" is not a success. Checked at
+    # both levels: a serious new *incident* is a serious new event even when
+    # its individual findings each look survivable, and the incident layer is
+    # where correlated evidence raises severity.
+    new_incidents = comparison.incidents_of("NEW")
+    if _critical(new) > 0 or any(
+        i.severity in {"CRITICAL", "HIGH"} for i in new_incidents
+    ):
         return "NEW_RISK_DETECTED"
+
+    # An incident nobody could check is not a clean bill of health. Findings
+    # already gate this individually; incidents catch the case where a whole
+    # correlated event fell into an unexamined region.
+    unchecked_incidents = comparison.incidents_of("INCONCLUSIVE")
+
     if not resolved and not persisting and not new:
+        # Nothing moved. Whether that is "nothing to do" or "nobody looked"
+        # depends entirely on whether anything was left unchecked, and the two
+        # must not share a name.
+        if comparison.of("INCONCLUSIVE") or unchecked_incidents:
+            return "INCONCLUSIVE"
         return "NO_CHANGE"
     if not resolved and persisting:
         return "REMEDIATION_FAILED"
-    if persisting or new:
+    if persisting or new or new_incidents or unchecked_incidents:
+        return "PARTIALLY_REMEDIATED"
+    if comparison.of("INCONCLUSIVE"):
         return "PARTIALLY_REMEDIATED"
     return "VERIFIED_SAFE"
 

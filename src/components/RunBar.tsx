@@ -23,6 +23,9 @@ export function RunBar() {
   const [health, setHealth] = useState<Health | null>(null);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [video, setVideo] = useState('data/corpus/clips/g001.mp4');
+  // `video` is the opaque server reference sent to /api/jobs. The UI never
+  // needs to expose that storage path; it shows the user-supplied filename.
+  const [videoLabel, setVideoLabel] = useState('g001.mp4');
   // Defaults to the full run. Defaulting to offline meant clicking "analyse"
   // skipped the triad, retrieval and the key entirely and returned in three
   // seconds — which reads as a broken tool rather than a deliberate mode,
@@ -66,6 +69,7 @@ export function RunBar() {
     try {
       const saved = await uploadVideo(file);
       setVideo(saved.path);
+      setVideoLabel(saved.name);
       setStatus(`${file.name} ready`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -80,6 +84,9 @@ export function RunBar() {
     setError(null);
     setStatus(null);
     useAnalysis.getState().resetLive();
+    // The request itself is an authoritative state transition. Waiting for
+    // the first SSE frame left the page visually idle during connection setup.
+    useAnalysis.setState({ analysisStatus: 'QUEUED', running: true, analysisError: null });
     try {
       await startJob(video.trim(), { offline }, (event) => {
         useAnalysis.getState().applyEvent(event);
@@ -100,7 +107,9 @@ export function RunBar() {
         }
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      setError(message);
+      useAnalysis.setState({ analysisStatus: 'FAILED', running: false, analysisError: message });
       setBusy(false);
     }
   }
@@ -157,8 +166,11 @@ export function RunBar() {
           </label>
 
           <input
-            value={video}
-            onChange={(e) => setVideo(e.target.value)}
+            value={videoLabel}
+            onChange={(e) => {
+              setVideoLabel(e.target.value);
+              setVideo(e.target.value);
+            }}
             spellCheck={false}
             placeholder="path/to/video.mp4"
             className="num min-w-0 flex-1 rounded border border-edge bg-void px-2 py-1 text-inkDim outline-none focus:border-inkFaint"
