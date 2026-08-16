@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 
 import { AgentFlow } from '@/components/AgentFlow';
 import { BeforeAfterPlayers } from '@/components/BeforeAfterPlayers';
+import { CoverageMap } from '@/components/CoverageMap';
 import { DetailPanel } from '@/components/DetailPanel';
 import { EvidencePanel } from '@/components/EvidencePanel';
 import { FfmpegBlock } from '@/components/FfmpegBlock';
@@ -80,6 +81,14 @@ export default function App() {
           <div className="grid shrink-0 grid-cols-1 gap-gutter xl:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)]">
             <RiskTimeline />
             <PolicyBreakdown />
+          </div>
+
+          {/* Row 2a — coverage. Directly under the risk timeline on purpose:
+              the timeline shows where risk was found, and this shows where
+              anything actually looked. Reading the first without the second
+              is how an unexamined stretch gets mistaken for a clean one. */}
+          <div className="grid shrink-0 grid-cols-1 gap-gutter">
+            <CoverageMap />
           </div>
 
           {/* Row 2b — incidents: the correlation layer. Placed between the
