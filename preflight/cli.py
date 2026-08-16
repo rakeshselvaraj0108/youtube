@@ -17,35 +17,49 @@ import sys
 import time
 from pathlib import Path
 
+print(f"[render-diag] module start pid={os.getpid()}", flush=True)
+_diag_t0 = time.time()
+
 import typer
 from rich.console import Console
 from rich.table import Table
 
+print(f"[render-diag] typer+rich {time.time()-_diag_t0:.2f}", flush=True)
+
 from preflight import __version__, cas, ffmpeg
 from preflight import bench as bench_mod
+print(f"[render-diag] core+bench {time.time()-_diag_t0:.2f}", flush=True)
 from preflight.ingest.pipeline import ingest
 from preflight.ingest.probe import UnsupportedInput, probe_video
+print(f"[render-diag] ingest {time.time()-_diag_t0:.2f}", flush=True)
 from preflight.models import SEVERITY_RANK
 from preflight.budget import CallBudget
 from preflight.pipeline import SURFACE_WEIGHT, run_perception
+print(f"[render-diag] pipeline {time.time()-_diag_t0:.2f}", flush=True)
 from preflight.plan import build_plan
 from preflight.agents.nim import NimClient
 from preflight.agents.roster import load_roster
+print(f"[render-diag] agents/roster {time.time()-_diag_t0:.2f}", flush=True)
 from preflight.archive import Archive
 from preflight.config import Settings
 from preflight.drift import detect, write_snapshot
+print(f"[render-diag] archive/config/drift {time.time()-_diag_t0:.2f}", flush=True)
 from preflight.policy.corpus import load_corpus
 from preflight.providers.doctor import run_doctor
 from preflight.providers.local import _hf_cached
 from preflight.providers.registry import Registry
+print(f"[render-diag] policy/providers {time.time()-_diag_t0:.2f}", flush=True)
 from preflight.report.build import build_report, validate
 from preflight.report.html import BundleMissing, emit_html
 from preflight.report.html import emit_fixture as emit_fixture_file
 from preflight.report.sarif import build_certificate, build_sarif
+print(f"[render-diag] report {time.time()-_diag_t0:.2f}", flush=True)
 from preflight.remediate.captions import write_captions
 from preflight.remediate.codegen import build_program, write_fix_script
+print(f"[render-diag] remediate {time.time()-_diag_t0:.2f}", flush=True)
 from preflight.remediate.edl import InvalidEDL, compile_edl
 from preflight.scoring.readiness import SUB_SCORE_ORDER
+print(f"[render-diag] imports done {time.time()-_diag_t0:.2f}", flush=True)
 
 # Verdicts that let CI through.
 PASSING = {"READY_TO_PUBLISH", "PUBLISH_WITH_FIXES"}
@@ -974,7 +988,9 @@ def serve(
     and `build_report` this CLI does — there is no second implementation of
     the engine behind the web surface to drift out of sync with this one.
     """
+    print(f"[render-diag] serve() entered", flush=True)
     from preflight.server import serve as _serve
+    print(f"[render-diag] server module imported", flush=True)
 
     console.print()
     if not ffmpeg.available():
