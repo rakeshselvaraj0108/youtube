@@ -1,7 +1,9 @@
 # Throwaway diagnostic image — not part of the app. Deleted once the Render
-# deploy failure is root-caused. No custom ENTRYPOINT, no USER switch, no
-# apt packages: the minimum that could possibly bind a port and answer a
-# health check, to tell "something about our Dockerfile" apart from
-# "something about this Render account/region's Docker runtime right now."
+# deploy failure is root-caused. Round 2: adds ONLY the non-root USER switch
+# on top of the round-1 image that already proved live. If this one fails
+# the same way (silence, then killed), the USER switch is the culprit.
 FROM python:3.11-slim
-CMD ["python3", "-u", "-c", "print('debug boot', flush=True); import http.server; print('binding', flush=True); http.server.HTTPServer(('0.0.0.0', 10000), http.server.SimpleHTTPRequestHandler).serve_forever()"]
+WORKDIR /app
+RUN useradd --create-home --uid 1000 preflight && chown -R preflight:preflight /app
+USER preflight
+CMD ["python3", "-u", "-c", "print('debug boot as', __import__('os').getuid(), flush=True); import http.server; print('binding', flush=True); http.server.HTTPServer(('0.0.0.0', 10000), http.server.SimpleHTTPRequestHandler).serve_forever()"]
