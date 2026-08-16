@@ -1,8 +1,16 @@
 # Throwaway diagnostic image — not part of the app. Deleted once the Render
-# deploy failure is root-caused. Round 2: adds ONLY the non-root USER switch
-# on top of the round-1 image that already proved live. If this one fails
-# the same way (silence, then killed), the USER switch is the culprit.
+# deploy failure is root-caused. Round 3: adds ONLY the apt packages on top
+# of the round-2 image that already proved live (USER switch confirmed fine).
+# If this one fails the same way, the apt layer (or something it pulls in
+# transitively) is the culprit.
 FROM python:3.11-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ffmpeg \
+      espeak-ng \
+      tesseract-ocr \
+      ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 RUN useradd --create-home --uid 1000 preflight && chown -R preflight:preflight /app
 USER preflight
