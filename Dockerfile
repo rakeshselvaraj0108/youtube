@@ -24,6 +24,10 @@ RUN apt-get update \
       ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
+# Created early, not just before USER — the weight-caching step below needs
+# /home/preflight to already exist so it has somewhere to copy the cache to.
+RUN useradd --create-home --uid 1000 preflight
+
 WORKDIR /app
 
 # Dependencies first, so a source edit does not invalidate the model layers.
@@ -31,11 +35,22 @@ COPY pyproject.toml README.md ./
 COPY preflight/__init__.py preflight/__init__.py
 RUN pip install --quiet -e '.[asr,ocr]'
 
-# Bake the ASR weights. This is the layer that makes the image self-sufficient.
+# Bake the ASR weights. This is the layer that makes the image self-sufficient
+# — but `_hf_cached()` resolves the cache through `Path.home()` of whichever
+# user is running, and this RUN still executes as root (HOME=/root) while the
+# container actually serves as the unprivileged `preflight` user (created
+# above), whose HOME is /home/preflight. Caching once and only chowning /app
+# at the end left the weights sitting where the runtime user's own lookup
+# would never find them — reported as "not cached", not as an error, so
+# ASR silently ran degraded instead of visibly failing. Copying the cache
+# into the runtime user's own HOME (not just chowning /app) is the fix.
 RUN python -c "\
 from faster_whisper import WhisperModel; \
 WhisperModel('base.en', device='cpu', compute_type='int8'); \
-print('base.en cached')"
+print('base.en cached')" \
+ && mkdir -p /home/preflight/.cache \
+ && cp -r /root/.cache/huggingface /home/preflight/.cache/huggingface \
+ && chown -R preflight:preflight /home/preflight/.cache
 
 COPY . .
 
@@ -46,8 +61,7 @@ RUN python scripts/build_corpus.py \
 
 # Never run as root. A container that writes root-owned files into a mounted
 # working directory is a small cruelty to whoever runs it.
-RUN useradd --create-home --uid 1000 preflight \
- && chown -R preflight:preflight /app
+RUN chown -R preflight:preflight /app
 USER preflight
 
 # Plain `docker run image` (no args — exactly what a PaaS does when it has

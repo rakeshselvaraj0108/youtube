@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 import logging
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -723,3 +724,36 @@ class TestUnreachableVendorFailsFast:
         )
         observed_regression_s = 1536.7
         assert worst_case_s < observed_regression_s / 4
+
+
+class TestHfCacheResolvesTheRunningUsersHome:
+    """A model baked into a Docker image at build time (as root, HOME=/root)
+    and served at runtime as a different unprivileged user (HOME=/home/x)
+    silently reports "not cached": `_hf_cached` trusts `Path.home()`, which
+    resolves per-process, not per-image. Nothing raised — capability
+    resolution just fell back to the hosted tier, which reads as "working"
+    right up until someone checks which tier actually served a request. The
+    real fix is a Dockerfile fix (copy the cache into the runtime user's own
+    HOME, not just chown /app); this locks in the function's actual
+    contract so the failure mode is at least covered by something."""
+
+    def test_a_cache_under_a_different_home_is_invisible(self, tmp_path, monkeypatch):
+        from preflight.providers.local import _hf_cached
+
+        other_home = tmp_path / "root"
+        cache = other_home / ".cache" / "huggingface" / "hub"
+        cache.mkdir(parents=True)
+        (cache / "models--Systran--faster-whisper-base.en").mkdir()
+
+        monkeypatch.setattr(Path, "home", lambda: tmp_path / "not-root")
+        assert _hf_cached("faster-whisper-base.en") is False
+
+    def test_a_cache_under_the_running_users_home_is_found(self, tmp_path, monkeypatch):
+        from preflight.providers.local import _hf_cached
+
+        cache = tmp_path / ".cache" / "huggingface" / "hub"
+        cache.mkdir(parents=True)
+        (cache / "models--Systran--faster-whisper-base.en").mkdir()
+
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        assert _hf_cached("faster-whisper-base.en") is True
