@@ -1,17 +1,23 @@
 # Throwaway diagnostic image — not part of the app. Deleted once the Render
-# deploy failure is root-caused. Round 3: adds ONLY the apt packages on top
-# of the round-2 image that already proved live (USER switch confirmed fine).
-# If this one fails the same way, the apt layer (or something it pulls in
-# transitively) is the culprit.
+# deploy failure is root-caused. Round 4: adds the real preflight package
+# (pip install, corpus/assets build — everything the production image does,
+# minus the custom ENTRYPOINT) on top of round 3, which already proved
+# ffmpeg/tesseract/espeak/USER-switch are all fine. CMD explicitly imports
+# preflight.cli via plain python -c, not the console-script, to isolate
+# "importing our actual code" from "the ENTRYPOINT/console-script mechanism."
 FROM python:3.11-slim
+ENV PYTHONUNBUFFERED=1 HF_HUB_DISABLE_TELEMETRY=1
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ffmpeg \
-      espeak-ng \
-      tesseract-ocr \
-      ca-certificates \
+      ffmpeg espeak-ng tesseract-ocr ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
+COPY pyproject.toml README.md ./
+COPY preflight/__init__.py preflight/__init__.py
+RUN pip install --quiet -e '.[asr,ocr]'
+RUN python -c "from faster_whisper import WhisperModel; WhisperModel('base.en', device='cpu', compute_type='int8'); print('base.en cached')"
+COPY . .
+RUN python scripts/build_corpus.py && python scripts/make_assets.py
 RUN useradd --create-home --uid 1000 preflight && chown -R preflight:preflight /app
 USER preflight
-CMD ["python3", "-u", "-c", "print('debug boot as', __import__('os').getuid(), flush=True); import http.server; print('binding', flush=True); http.server.HTTPServer(('0.0.0.0', 10000), http.server.SimpleHTTPRequestHandler).serve_forever()"]
+CMD ["python3", "-u", "-c", "print('debug boot', flush=True); import preflight.cli; print('cli imported', flush=True); import http.server; print('binding', flush=True); http.server.HTTPServer(('0.0.0.0', 10000), http.server.SimpleHTTPRequestHandler).serve_forever()"]
