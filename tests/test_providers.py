@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 import logging
 
 import numpy as np
@@ -522,3 +523,122 @@ class TestProvenance:
 
     def test_reports_offline_mode(self, no_env):
         assert Registry(load_secrets(), offline=True).provenance()["offlineMode"] is True
+
+
+class TestRequestDeadline:
+    """A slow-trickling response must not hold the pipeline open forever.
+
+    `urllib`'s `timeout=` governs one socket operation, not the exchange. A
+    server that dribbles a byte every few seconds resets it on every chunk,
+    so a nominal 120s ceiling becomes unbounded. Observed live: one vision
+    request held a real analysis for over eight minutes with no error raised
+    and nothing to distinguish it from a model that was merely slow. The
+    whole run simply stopped.
+
+    The deadline below is what makes a long-video run bounded regardless of
+    what the far end does.
+    """
+
+    def _trickling_server(self):
+        """A server that sends headers, then bytes forever, very slowly."""
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                # No Content-Length: chunked-ish stream we never finish.
+                self.end_headers()
+                try:
+                    while True:
+                        self.wfile.write(b" ")
+                        self.wfile.flush()
+                        time.sleep(0.05)
+                except Exception:
+                    pass
+
+            def log_message(self, *a):  # silence
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        return server
+
+    def test_a_trickling_response_hits_the_deadline(self, monkeypatch):
+        from preflight.providers import nvidia as nv
+
+        server = self._trickling_server()
+        try:
+            monkeypatch.setattr(nv, "REQUEST_DEADLINE_S", 2)
+            provider = nv.NvidiaChat(
+                CHAT_REASONING, "m", Secret("NVIDIA_API_KEY", "nvapi-" + "x" * 24, "env", True)
+            )
+            provider.base_url = f"http://127.0.0.1:{server.server_port}"
+
+            started = time.monotonic()
+            with pytest.raises(TimeoutError):
+                provider._post("/chat/completions", {"model": "m"})
+            elapsed = time.monotonic() - started
+
+            # Bounded by the deadline, not by the far end's patience.
+            assert elapsed < 10, f"deadline not enforced: took {elapsed:.1f}s"
+        finally:
+            server.shutdown()
+
+    def test_the_deadline_surfaces_as_a_retryable_failure_not_a_crash(
+        self, monkeypatch
+    ):
+        """A stuck call must degrade the modality, never take the run down."""
+        from preflight.providers import nvidia as nv
+
+        server = self._trickling_server()
+        try:
+            monkeypatch.setattr(nv, "REQUEST_DEADLINE_S", 1)
+            monkeypatch.setattr(nv, "MAX_ATTEMPTS", 2)
+            provider = nv.NvidiaChat(
+                CHAT_REASONING, "m", Secret("NVIDIA_API_KEY", "nvapi-" + "x" * 24, "env", True)
+            )
+            provider.base_url = f"http://127.0.0.1:{server.server_port}"
+
+            result = provider._call("/chat/completions", {"model": "m"})
+            assert not result
+            assert result.retryable
+            assert "unreachable" in result.reason
+        finally:
+            server.shutdown()
+
+    def test_a_prompt_response_is_unaffected(self, monkeypatch):
+        """The deadline must not penalise a server that answers normally."""
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+
+        payload = json.dumps(
+            {"choices": [{"message": {"content": "ok"}}], "usage": {}}
+        ).encode()
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def log_message(self, *a):
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            from preflight.providers import nvidia as nv
+
+            provider = nv.NvidiaChat(
+                CHAT_REASONING, "m", Secret("NVIDIA_API_KEY", "nvapi-" + "x" * 24, "env", True)
+            )
+            provider.base_url = f"http://127.0.0.1:{server.server_port}"
+            raw = provider._post("/chat/completions", {"model": "m"})
+            assert raw["choices"][0]["message"]["content"] == "ok"
+        finally:
+            server.shutdown()

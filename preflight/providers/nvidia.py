@@ -35,6 +35,21 @@ DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
 MAX_ATTEMPTS = 5
 VENDOR = "nvidia"
 
+# Per socket operation — how long a single read may stall with no bytes.
+SOCKET_TIMEOUT_S = 60
+
+# Hard wall-clock ceiling on one complete request/response exchange.
+#
+# This is the one that actually bounds a run. The socket timeout above only
+# governs a single read, so a far end that trickles bytes indefinitely resets
+# it forever and the call never returns — observed live, one request held the
+# pipeline for eight minutes against a nominal 120s setting, with no error
+# raised and nothing to distinguish it from a slow model.
+#
+# 180s is generous for a vision or reasoning call that is genuinely working
+# and short enough that a stuck one cannot swallow an analysis.
+REQUEST_DEADLINE_S = 180
+
 
 class NvidiaProvider(BaseProvider):
     """Shared plumbing: auth check, HTTP, retry policy, ledger accounting."""
@@ -97,8 +112,37 @@ class NvidiaProvider(BaseProvider):
             },
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=120) as response:
-            return json.loads(response.read().decode("utf-8"))
+        # `timeout=` is per socket operation, not for the call as a whole: a
+        # response whose body trickles in resets it on every chunk, so a
+        # nominal 120s ceiling can block for as long as the far end keeps
+        # dribbling bytes. Measured on a real run, one vision call held the
+        # pipeline for over eight minutes against that 120s setting — the
+        # whole analysis stopped, with no error and no way to tell a slow
+        # call from a dead one.
+        #
+        # `read(deadline)` below enforces a wall-clock ceiling on the entire
+        # exchange, which is the guarantee a long-video run actually needs:
+        # bounded, whatever the far end does.
+        deadline = time.monotonic() + REQUEST_DEADLINE_S
+        with urllib.request.urlopen(request, timeout=SOCKET_TIMEOUT_S) as response:
+            chunks: list[bytes] = []
+            while True:
+                if time.monotonic() > deadline:
+                    raise TimeoutError(
+                        f"response exceeded the {REQUEST_DEADLINE_S:.0f}s deadline "
+                        f"after {sum(len(c) for c in chunks)} bytes"
+                    )
+                # `read1`, not `read`. `read(n)` blocks until it has filled n
+                # bytes or hit EOF, so against a trickling server a single
+                # call can block for hours and the deadline check above never
+                # gets to run — which is the very bug this loop exists to
+                # fix. `read1` returns whatever one underlying read yields,
+                # so control comes back on every packet.
+                chunk = response.read1(65536)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+        return json.loads(b"".join(chunks).decode("utf-8"))
 
     def _call(self, path: str, payload: dict[str, Any]) -> Result:
         """One governed call with the full retry policy."""
