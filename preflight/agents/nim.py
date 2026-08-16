@@ -35,6 +35,30 @@ from preflight.config import Settings
 
 MAX_ATTEMPTS = 5
 BACKOFF_CAP_S = 30.0
+
+# Retry budget for "nothing answered at all" — a URLError, or our own
+# deadline firing — kept smaller than MAX_ATTEMPTS on purpose. HTTP 429/5xx
+# means the vendor is reachable and said try again, where retrying the full
+# budget is correct because the same endpoint moments later often succeeds.
+# A transport failure means the network path itself did not work, and
+# retrying the identical request five times against a host that never
+# answered does not test anything a second attempt did not already
+# establish. Mirrors `providers/nvidia.py::TRANSPORT_MAX_ATTEMPTS`, which
+# this client predates and does not share code with.
+TRANSPORT_MAX_ATTEMPTS = 2
+
+# Hard wall-clock ceiling on one complete request/response exchange.
+#
+# `Settings.http_timeout_s` (300s) governs a single socket operation, not
+# the exchange — a response that trickles bytes resets it on every chunk,
+# so the effective ceiling is unbounded. This is what actually stalled a
+# real run: the policy/triad stage cost 1536.7s (25.6 minutes) on an
+# 87-second video, entirely retries against an endpoint that never
+# finished answering, because nothing here ever gave up early on its own
+# terms. 90s matches the same ceiling `providers/nvidia.py` uses, chosen
+# against every working call measured live answering in under 15s.
+REQUEST_DEADLINE_S = 90
+
 FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
 
@@ -254,6 +278,7 @@ class NimClient:
         }
 
         last_error: Exception | None = None
+        transport_attempt = 0
         for attempt in range(MAX_ATTEMPTS):
             self.usage.waited_s += self.bucket.take()
             request = urllib.request.Request(url, data=body, headers=headers, method="POST")
@@ -262,7 +287,7 @@ class NimClient:
                     request, timeout=self.settings.http_timeout_s
                 ) as response:
                     self.usage.calls += 1
-                    return json.loads(response.read().decode("utf-8"))
+                    return json.loads(self._read_bounded(response).decode("utf-8"))
             except urllib.error.HTTPError as exc:
                 detail = exc.read().decode("utf-8", errors="replace")[:300]
                 if exc.code == 402:
@@ -288,9 +313,43 @@ class NimClient:
             except (urllib.error.URLError, TimeoutError) as exc:
                 last_error = exc
                 self.usage.retries += 1
+                transport_attempt += 1
+                # Bounded separately from the HTTP-status branch above, and
+                # exits the whole loop rather than falling through to
+                # MAX_ATTEMPTS — the same call that stalled a real run for
+                # 25.6 minutes retrying an unreachable host five times.
+                if transport_attempt >= TRANSPORT_MAX_ATTEMPTS:
+                    break
                 delay = min(2**attempt + random.random(), BACKOFF_CAP_S)
                 time.sleep(delay)
 
         raise NimUnavailable(
-            f"NVIDIA API unreachable after {MAX_ATTEMPTS} attempts: {last_error}"
+            f"NVIDIA API unreachable after {transport_attempt or MAX_ATTEMPTS} "
+            f"attempts: {last_error}"
         )
+
+    @staticmethod
+    def _read_bounded(response: Any) -> bytes:
+        """Read a response body against a hard wall-clock deadline.
+
+        `read()` blocks until it fills the whole body or hits EOF, so a
+        response that trickles bytes can hold the socket open for as long
+        as the far end keeps dribbling — the socket timeout above governs
+        one operation, not the exchange, and never fires. `read1()` returns
+        whatever one underlying read yields, so this loop actually gets to
+        check the deadline between chunks instead of blocking inside a
+        single call to `read()` that never returns.
+        """
+        deadline = time.monotonic() + REQUEST_DEADLINE_S
+        chunks: list[bytes] = []
+        while True:
+            if time.monotonic() > deadline:
+                raise TimeoutError(
+                    f"response exceeded the {REQUEST_DEADLINE_S:.0f}s deadline "
+                    f"after {sum(len(c) for c in chunks)} bytes"
+                )
+            chunk = response.read1(65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        return b"".join(chunks)
