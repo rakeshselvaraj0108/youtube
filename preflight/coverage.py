@@ -234,11 +234,91 @@ def absence_is_supported(
     of video that nothing read — the temporal twin of the coverage floor the
     verification comparison already applies to absence claims.
     """
+    return classify_absence(coverage, modality, start_ms, end_ms) == NEGATIVE_EVIDENCE
+
+
+# The three things "nothing found" can mean. They are not interchangeable and
+# collapsing them is how a run that never looked reports a clean video.
+#
+#   NEGATIVE_EVIDENCE     something looked across the whole span and found
+#                         nothing. The only one that supports "this is clean".
+#   INSUFFICIENT_COVERAGE something looked, but too thinly to stand behind
+#                         the absence.
+#   NO_COVERAGE           nothing looked at some part of this span at all.
+#   NOT_RUN               the modality never ran on this video.
+#
+# Kept as plain strings so they survive JSON and reach the deck unchanged.
+NEGATIVE_EVIDENCE = "NEGATIVE_EVIDENCE"
+INSUFFICIENT_COVERAGE = "INSUFFICIENT_COVERAGE"
+NO_COVERAGE = "NO_COVERAGE"
+NOT_RUN = "NOT_RUN"
+
+AbsenceState = str
+
+
+def classify_absence(
+    coverage: TemporalCoverage, modality: str, start_ms: int, end_ms: int
+) -> AbsenceState:
+    """What "nothing found here" is actually worth over this span.
+
+    The distinction the whole audit rests on. A verdict of "no secrets in
+    this video" is only meaningful when it is NEGATIVE_EVIDENCE; the other
+    three are statements about the *audit*, not about the video, and must be
+    reported as such rather than rounded to clean.
+
+    Pessimistic on purpose: a span is only as strong as its weakest band, so
+    one unexamined minute inside an otherwise covered stretch downgrades the
+    whole claim. Partial coverage of a span is not coverage of it.
+    """
+    if modality not in coverage.modalities:
+        return NOT_RUN
     if not coverage.bands:
-        return False
+        return NO_COVERAGE
+
     touched = [
         b for b in coverage.bands if b.start_ms < end_ms and b.end_ms > start_ms
     ]
     if not touched:
-        return False
-    return all(b.state_of(modality) == "EXAMINED" for b in touched)
+        return NO_COVERAGE
+
+    states = {b.state_of(modality) for b in touched}
+    if "UNEXAMINED" in states:
+        return NO_COVERAGE
+    if "THIN" in states:
+        return INSUFFICIENT_COVERAGE
+    return NEGATIVE_EVIDENCE
+
+
+def explain_absence(state: AbsenceState, modality: str) -> str:
+    """One sentence a reader can act on, for each state."""
+    return {
+        NEGATIVE_EVIDENCE: (
+            f"{modality} examined this span and found nothing — "
+            "absence is supported by evidence."
+        ),
+        INSUFFICIENT_COVERAGE: (
+            f"{modality} sampled this span too thinly to stand behind an "
+            "absence claim. Not clean; unproven."
+        ),
+        NO_COVERAGE: (
+            f"{modality} did not examine part of this span. Nothing can be "
+            "concluded about it — this is a hole in the audit, not a pass."
+        ),
+        NOT_RUN: (
+            f"{modality} did not run on this video, so it contributes no "
+            "evidence either way."
+        ),
+    }.get(state, state)
+
+
+def absence_report(
+    coverage: TemporalCoverage, start_ms: int, end_ms: int
+) -> dict[str, dict[str, str]]:
+    """Per-modality absence strength across a span, for the report."""
+    return {
+        modality: {
+            "state": (state := classify_absence(coverage, modality, start_ms, end_ms)),
+            "explanation": explain_absence(state, modality),
+        }
+        for modality in coverage.modalities
+    }

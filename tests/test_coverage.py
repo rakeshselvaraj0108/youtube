@@ -176,3 +176,87 @@ class TestReporting:
         text = cov.build(FOURTEEN_MIN, {"frames": frames}).describe()
         assert "NONE" in text
         assert "13–14" in text
+
+
+class TestNegativeEvidenceIsNotClean:
+    """"Nothing found" means three different things and only one is good news.
+
+    Collapsing them is the failure this whole module exists to prevent: a
+    modality that never ran, one that sampled a stretch too thinly, and one
+    that genuinely examined it and found nothing all produce zero findings.
+    Only the last supports "this video is clean" — the other two are
+    statements about the audit, not about the video.
+    """
+
+    def _patchy(self):
+        frames = [
+            Sample(ts)
+            for ts in range(0, FOURTEEN_MIN, 2_500)
+            if not (6 * 60_000 <= ts < 8 * 60_000)
+        ]
+        return cov.build(FOURTEEN_MIN, {"frames": frames})
+
+    def test_a_fully_examined_span_is_negative_evidence(self):
+        result = self._patchy()
+        assert (
+            cov.classify_absence(result, "frames", 60_000, 120_000)
+            == cov.NEGATIVE_EVIDENCE
+        )
+
+    def test_an_unexamined_span_is_no_coverage_not_clean(self):
+        result = self._patchy()
+        state = cov.classify_absence(result, "frames", 6 * 60_000, 7 * 60_000)
+        assert state == cov.NO_COVERAGE
+        assert state != cov.NEGATIVE_EVIDENCE
+
+    def test_one_blind_minute_downgrades_the_whole_span(self):
+        """A span is only as strong as its weakest band. Partial coverage of
+        a span is not coverage of it."""
+        result = self._patchy()
+        assert (
+            cov.classify_absence(result, "frames", 5 * 60_000, 9 * 60_000)
+            == cov.NO_COVERAGE
+        )
+
+    def test_a_thinly_sampled_span_is_insufficient_not_negative(self):
+        frames = [Sample(ts) for ts in range(0, 120_000, 2_500)]
+        frames = [f for f in frames if not (60_000 < f.ts_ms < 120_000)]
+        frames.append(Sample(90_000))
+        result = cov.build(120_000, {"frames": frames})
+        assert (
+            cov.classify_absence(result, "frames", 60_000, 120_000)
+            == cov.INSUFFICIENT_COVERAGE
+        )
+
+    def test_a_modality_that_never_ran_is_not_run(self):
+        result = self._patchy()
+        assert cov.classify_absence(result, "vision", 0, 60_000) == cov.NOT_RUN
+
+    def test_every_state_has_an_actionable_explanation(self):
+        for state in (
+            cov.NEGATIVE_EVIDENCE,
+            cov.INSUFFICIENT_COVERAGE,
+            cov.NO_COVERAGE,
+            cov.NOT_RUN,
+        ):
+            text = cov.explain_absence(state, "ocr")
+            assert "ocr" in text and len(text) > 20
+
+    def test_only_negative_evidence_says_absence_is_supported(self):
+        """The one-line guard callers actually use."""
+        result = self._patchy()
+        assert cov.absence_is_supported(result, "frames", 60_000, 120_000)
+        assert not cov.absence_is_supported(result, "frames", 6 * 60_000, 7 * 60_000)
+        assert not cov.absence_is_supported(result, "vision", 0, 60_000)
+
+    def test_the_absence_report_covers_every_modality(self):
+        result = cov.build(
+            120_000,
+            {"ocr": evenly(48, 120_000), "speech": [Sample(0)]},
+        )
+        report = cov.absence_report(result, 0, 120_000)
+        assert set(report) == {"ocr", "speech"}
+        assert report["ocr"]["state"] == cov.NEGATIVE_EVIDENCE
+        # One sample across two minutes cannot support an absence claim.
+        assert report["speech"]["state"] != cov.NEGATIVE_EVIDENCE
+        assert all("explanation" in v for v in report.values())
