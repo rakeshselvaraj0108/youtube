@@ -1,10 +1,10 @@
 # Throwaway diagnostic image — not part of the app. Deleted once the Render
-# deploy failure is root-caused. Round 4: adds the real preflight package
-# (pip install, corpus/assets build — everything the production image does,
-# minus the custom ENTRYPOINT) on top of round 3, which already proved
-# ffmpeg/tesseract/espeak/USER-switch are all fine. CMD explicitly imports
-# preflight.cli via plain python -c, not the console-script, to isolate
-# "importing our actual code" from "the ENTRYPOINT/console-script mechanism."
+# deploy failure is root-caused. Round 5: identical to round 4 (proved
+# live — real package, real deps, 2.94s import, all fine) except CMD now
+# goes through the pip-installed `preflight` console-script via ENTRYPOINT,
+# exactly like the production Dockerfile. Every other variable has already
+# been cleared; if this one fails, the console-script/ENTRYPOINT invocation
+# itself is the confirmed cause.
 FROM python:3.11-slim
 ENV PYTHONUNBUFFERED=1 HF_HUB_DISABLE_TELEMETRY=1
 RUN apt-get update \
@@ -20,4 +20,5 @@ COPY . .
 RUN python scripts/build_corpus.py && python scripts/make_assets.py
 RUN useradd --create-home --uid 1000 preflight && chown -R preflight:preflight /app
 USER preflight
-CMD ["python3", "-u", "-c", "print('debug boot', flush=True); import preflight.cli; print('cli imported', flush=True); import http.server; print('binding', flush=True); http.server.HTTPServer(('0.0.0.0', 10000), http.server.SimpleHTTPRequestHandler).serve_forever()"]
+ENTRYPOINT ["preflight"]
+CMD ["serve", "--host", "0.0.0.0", "--port", "10000"]
