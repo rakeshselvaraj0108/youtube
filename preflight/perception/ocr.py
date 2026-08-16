@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
@@ -60,6 +61,11 @@ ABSOLUTE_ALLOWANCE_MIN_LEN = 8
 # text, not one persistent element. Watermarks are exempt — a mark in the
 # corner of every shot IS one element, and that is what the ratio measures.
 CLUSTER_GAP_MS = 5_000
+
+# Concurrent tesseract subprocesses. Each spends its time in native code with
+# the GIL released, so this is close to linear; kept modest so a forensic run
+# does not saturate every core on the machine it is sharing.
+OCR_WORKERS = 4
 
 # Below this, tesseract is guessing at the pixels. Retained in artifacts so a
 # reader can see what was read and rejected, never promoted to a finding.
@@ -572,14 +578,39 @@ def analyse(
             report,
         )
 
-    frames = keyframes[:budget] if budget else keyframes
+    # Spread across the timeline, never the first N. A head slice is how a
+    # budgeted run ends up having read only the opening of the video and
+    # reporting the remainder as clean — the same bug adaptive sampling
+    # already had to fix once. Evenly spaced frames keep coverage
+    # proportional across every minute of the runtime.
+    if budget and budget < len(keyframes):
+        step = len(keyframes) / budget
+        frames = [keyframes[int(i * step)] for i in range(budget)]
+    else:
+        frames = keyframes
     sightings: list[TextSighting] = []
     log: list[str] = []
     calls = 0
     unavailable_reason = ""
 
-    for frame in frames:
-        result = registry.invoke(OCR_IMAGE, image=frame.path)
+    # Tesseract is a subprocess per frame, so the GIL is released while it
+    # runs and overlapping them is close to linear speedup. This matters at
+    # length: a fourteen-minute video now yields several hundred frames at
+    # half a second each, which is minutes of wall clock serially and well
+    # under one overlapped. `map` preserves input order, so sightings stay in
+    # timeline order regardless of which frame finishes first.
+    workers = min(OCR_WORKERS, max(1, len(frames)))
+    if workers == 1:
+        results = [(f, registry.invoke(OCR_IMAGE, image=f.path)) for f in frames]
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            results = list(
+                pool.map(
+                    lambda f: (f, registry.invoke(OCR_IMAGE, image=f.path)), frames
+                )
+            )
+
+    for frame, result in results:
         if not getattr(result, "ok", False):
             reason = getattr(result, "reason", "provider unavailable")
             if not report.frames_read:

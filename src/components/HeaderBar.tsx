@@ -1,20 +1,12 @@
 import { Download, ShieldCheck } from 'lucide-react';
 import { Chip } from '@/components/ui';
+import { Falcon } from '@/components/Falcon';
 import { useAnalysis, useReport } from '@/store/analysis';
 import { degradedAgents } from '@/lib/coverage';
 import { SIGNAL_HEX } from '@/lib/scoring';
 import { buildSarif, exitCode } from '@/lib/sarif';
 import { buildCertificate } from '@/lib/certificate';
 import { downloadJson } from '@/lib/download';
-
-/** The falcon mark. Drawn, not an emoji, not an imported asset. */
-function Falcon({ className = '' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 16" className={className} fill="none" aria-hidden="true">
-      <path d="M1 4.5 L11.2 7.4 L12 3 L12.8 7.4 L23 4.5 L14.4 9.6 L12 15 L9.6 9.6 Z" fill="currentColor" />
-    </svg>
-  );
-}
 
 export function HeaderBar() {
   const report = useReport();

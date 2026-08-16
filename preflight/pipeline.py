@@ -123,6 +123,41 @@ class PipelineResult:
         return compute_coverage(self.agents)
 
     @property
+    def temporal_coverage(self):
+        """Where on the timeline each modality actually looked.
+
+        The scalar above says how much of its own sample set an agent got
+        through; it cannot say *which minutes* those samples came from. On a
+        long upload those are different questions, and only the second one
+        supports an absence claim about a particular stretch of video.
+        """
+        from preflight import coverage as coverage_mod
+
+        frames = self.ingested.keyframes if self.ingested else []
+        evidence: dict[str, Any] = {}
+        # Only modalities that actually ran contribute a row. An agent that
+        # never ran must be absent rather than shown as a line of zeroes —
+        # "did not run" and "ran and saw nothing" are different facts.
+        if frames:
+            evidence["frames"] = frames
+        if self.ocr_items:
+            evidence["ocr"] = self.ocr_items
+        # Frames vision inspected, not tracks it produced. A frame examined
+        # and found empty is still coverage of that moment; keying this on
+        # output would report a working vision pass over a clean stretch of
+        # video as though it had never run.
+        vision_agent = self.agent("vision")
+        examined = (vision_agent.artifacts or {}).get("examined_ms") if vision_agent else None
+        if examined:
+            evidence["vision"] = [{"ts_ms": ts} for ts in examined]
+        segments = getattr(self.transcript, "segments", None) if self.transcript else None
+        if segments:
+            evidence["speech"] = segments
+        return coverage_mod.build(
+            self.ingested.meta.durationMs if self.ingested else 0, evidence
+        )
+
+    @property
     def total_calls(self) -> int:
         return sum(agent.calls for agent in self.agents)
 

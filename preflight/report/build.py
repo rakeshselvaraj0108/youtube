@@ -161,11 +161,18 @@ def build_report(
 
     sub = sub_scores(findings)
     readiness = compute_readiness(sub)
+    _temporal = result.temporal_coverage
 
     video: dict[str, Any] = meta.to_json()
     video["srcUrl"] = f"./{Path(result.source).name}"
     video["posterUrl"] = f"./{Path(result.source).stem}.poster.jpg"
-    if embed_media and result.ingested.poster.is_file():
+    # Unconditional, unlike the per-finding evidence frames below. A poster is
+    # one small JPEG; the internal reports `apply_fix` builds with
+    # `embed_media=False` to keep its comparison payload light still land in
+    # RUNS_DIR and are reachable from the deck's own "past runs" list — a
+    # report a reader can browse to should never show a placeholder for the
+    # one thing that says which video it even is.
+    if result.ingested.poster.is_file():
         video["posterDataUri"] = to_data_uri(result.ingested.poster)
 
     # The attestation binds the video, the rules and the models together. Two
@@ -195,6 +202,16 @@ def build_report(
             "engineVersion": __version__,
             "attestationHash": cas.prefixed(attestation),
             "coverage": round(result.coverage, 4),
+            # Per-minute coverage, so an absence claim over any stretch of the
+            # video can be checked against whether anything looked there. The
+            # scalar above cannot answer that: it measures how much of its own
+            # sample set each agent processed, not which minutes the samples
+            # came from.
+            **(
+                {"temporalCoverage": _temporal.to_json()}
+                if _temporal.bands
+                else {}
+            ),
         },
         "scores": {
             "overall": readiness.overall,

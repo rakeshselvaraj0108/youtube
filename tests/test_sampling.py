@@ -212,3 +212,64 @@ class TestReporting:
         payload = result.to_json()
         assert payload["uniformCount"] + payload["motionCount"] <= 20
         assert 0.0 <= payload["motionShare"] <= 1.0
+
+
+class TestLongVideoDensity:
+    """A flat frame ceiling is right for a clip and wrong for a feature.
+
+    Ninety frames across twenty seconds is dense; the same ninety across
+    fourteen minutes is one glance every 9.3 seconds, and anything
+    shorter-lived than that — a notification popup, a key on screen while
+    someone scrolls past — falls between samples entirely. The engine would
+    then report "nothing found" over material it never actually looked at.
+    """
+
+    def test_a_short_clip_is_unchanged(self):
+        from preflight.ingest.frames import MAX_FRAMES, frame_budget
+
+        assert frame_budget(20_000) == MAX_FRAMES
+        assert frame_budget(87_586) == MAX_FRAMES
+
+    def test_a_long_video_gets_proportionally_more_frames(self):
+        from preflight.ingest.frames import frame_budget
+
+        assert frame_budget(14 * 60_000) > 300
+
+    def test_spacing_stays_near_the_target_interval(self):
+        from preflight.ingest.frames import TARGET_SAMPLE_INTERVAL_S, frame_budget
+
+        duration_ms = 14 * 60_000
+        spacing = duration_ms / 1000 / frame_budget(duration_ms)
+        assert spacing <= TARGET_SAMPLE_INTERVAL_S + 0.01
+
+    def test_a_very_long_video_is_capped(self):
+        """Density is bought only up to a bounded extraction and disk cost."""
+        from preflight.ingest.frames import MAX_FRAMES_CEILING, frame_budget
+
+        assert frame_budget(6 * 60 * 60_000) == MAX_FRAMES_CEILING
+
+    def test_a_missing_duration_falls_back_to_the_default(self):
+        from preflight.ingest.frames import MAX_FRAMES, frame_budget
+
+        assert frame_budget(0) == MAX_FRAMES
+
+    def test_vision_baseline_scales_but_stays_bounded(self):
+        """Vision is billed per call, so it scales more slowly than the free
+        local frame extraction and stops at a hard ceiling."""
+        from preflight.perception.vision import (
+            BASELINE_FRAMES,
+            BASELINE_FRAMES_CEILING,
+            baseline_for,
+        )
+
+        assert baseline_for(20_000) == BASELINE_FRAMES
+        assert baseline_for(14 * 60_000) > BASELINE_FRAMES
+        assert baseline_for(6 * 60 * 60_000) == BASELINE_FRAMES_CEILING
+
+    def test_vision_baseline_covers_most_minutes_of_a_long_video(self):
+        """The point of scaling it: a fourteen-minute upload should not have
+        whole minutes that vision never glanced at."""
+        from preflight.perception.vision import baseline_for
+
+        minutes = 14
+        assert baseline_for(minutes * 60_000) >= minutes * 2

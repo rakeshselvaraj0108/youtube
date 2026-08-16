@@ -165,6 +165,43 @@ export interface VideoMeta {
   posterDataUri?: string;
 }
 
+/** One slice of the timeline, and what each modality did there. */
+export interface CoverageBand {
+  index: number;
+  /** `06–07` — the minute range this band spans. */
+  label: string;
+  startMs: number;
+  endMs: number;
+  /** How many samples each modality contributed to this band. */
+  samples: Record<string, number>;
+  /** EXAMINED | THIN | UNEXAMINED, per modality. */
+  states: Record<string, string>;
+}
+
+/**
+ * Where on the timeline each modality actually looked.
+ *
+ * `meta.coverage` is a single number: how much of its own sample set each
+ * agent processed. It cannot say *which minutes* those samples came from,
+ * and on a long upload those are different questions — an agent can report
+ * 62% coverage while never once examining minutes nine through twelve.
+ *
+ * `blindSpots` is the field that matters. A band nothing examined is
+ * UNEXAMINED, never clean: an absence of information rather than a smaller
+ * kind of safe, and a reader deciding whether to publish needs to see it as
+ * a hole in the audit.
+ */
+export interface TemporalCoverage {
+  durationMs: number;
+  bandMs: number;
+  modalities: string[];
+  bands: CoverageBand[];
+  /** Fraction of the timeline each modality genuinely examined. */
+  shareExamined: Record<string, number>;
+  /** Band labels no sample of that modality reached. */
+  blindSpots: Record<string, string[]>;
+}
+
 export interface RunMeta {
   analyzedAt: string;
   policyVersion: string;
@@ -172,6 +209,12 @@ export interface RunMeta {
   attestationHash: string;
   /** 0..1 — weighted mean of per-agent coverage. Reported, never hidden. */
   coverage: number;
+  /**
+   * Per-minute coverage, present when the run recorded any timed evidence.
+   * Absent — not empty — on a report emitted before this existed, so an old
+   * report is never mistaken for one whose every minute was examined.
+   */
+  temporalCoverage?: TemporalCoverage;
 }
 
 export interface Scores {

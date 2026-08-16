@@ -59,8 +59,36 @@ _URL = re.compile(r"\bhttps?://[^\s<>\"']{4,}", re.IGNORECASE)
 _CARD = re.compile(r"\b(?:\d[ -]?){12,18}\d\b")
 
 # Matched near a value to catch `password: hunter2` in a terminal or a slide.
+#
+# The leading alternation is the important part. A plain `\b` before the
+# keyword cannot match inside `DB_PASSWORD`, because `_` is a word character
+# and there is therefore no boundary between `DB_` and `PASSWORD`. That made
+# this miss every SCREAMING_SNAKE_CASE environment variable — which is the
+# single most common way a real secret appears on screen: `.env` files,
+# `export` lines and docker-compose blocks name things `DB_PASSWORD`,
+# `AWS_SECRET_ACCESS_KEY`, `GITHUB_TOKEN`, never bare `password`. The
+# lookbehind admits a separator-prefixed name while still refusing to match
+# mid-word inside ordinary prose.
 _CREDENTIAL_LABEL = re.compile(
-    r"\b(?:password|passwd|secret|api[_ -]?key|token|bearer)\b\s*[:=]\s*\S{4,}",
+    r"(?:\b|(?<=[_.\-]))"
+    r"(?:password|passwd|pwd|secret|api[_ .\-]?key|access[_ .\-]?key|token|auth)"
+    r"\b\s*[:=]\s*\S{4,}",
+    re.IGNORECASE,
+)
+
+# `Authorization: Bearer <token>` — a space-separated scheme, so the
+# `[:=]` form above never sees it. Common in dev tools, curl output and
+# Postman screenshots.
+_BEARER = re.compile(
+    r"\b(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{12,}", re.IGNORECASE
+)
+
+# A connection string carrying inline credentials, e.g.
+# `postgres://admin:hunter2@10.0.0.5:5432/prod`. The password sits in the
+# userinfo segment, so no keyword appears anywhere and every pattern above
+# misses it.
+_CONNECTION_STRING = re.compile(
+    r"\b[a-z][a-z0-9+.-]{1,15}://[^\s:/@]{1,64}:[^\s:/@]{1,64}@[^\s/]{1,128}",
     re.IGNORECASE,
 )
 
@@ -131,6 +159,14 @@ def scan_text(text: str) -> list[tuple[str, str, str, str]]:
 
     for match in _CREDENTIAL_LABEL.finditer(text):
         hits.append(("credential", "labelled secret", match.group(0), "CRITICAL"))
+
+    for match in _BEARER.finditer(text):
+        hits.append(("credential", "authorization header", match.group(0), "CRITICAL"))
+
+    for match in _CONNECTION_STRING.finditer(text):
+        hits.append(
+            ("credential", "connection string", match.group(0), "CRITICAL")
+        )
 
     for match in _CARD.finditer(text):
         raw = match.group(0)

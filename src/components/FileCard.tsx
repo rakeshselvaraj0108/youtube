@@ -3,29 +3,49 @@ import { Check, Copy, Film, Play } from 'lucide-react';
 import { Field, Panel } from '@/components/ui';
 import { useReport } from '@/store/analysis';
 import { formatBytes, formatTimecode, truncateHash } from '@/lib/time';
+import { useVideoFrame } from '@/lib/useVideoFrame';
 
-function Poster({ src, alt }: { src: string; alt: string }) {
+function Poster({
+  src,
+  videoSrc,
+  alt,
+}: {
+  src: string;
+  videoSrc: string;
+  alt: string;
+}) {
   const [failed, setFailed] = useState(false);
-  const hasPoster = src.length > 0 && !failed;
+  const embedded = src.length > 0 && !failed;
+
+  // The engine's own embedded poster wins when it exists — it is a frame the
+  // pipeline already extracted and does not depend on the browser being able
+  // to reach the video at all. Only when that is absent (an older report, or
+  // one `apply_fix` built internally) does this reach for the actual file
+  // and grab a real frame client-side. `null` while pending or unreachable —
+  // never a guess at what the video might look like.
+  const grabbed = useVideoFrame(embedded ? null : videoSrc);
+  const shown = embedded ? src : grabbed;
+  const hasPoster = shown !== null;
 
   return (
     <div className="relative aspect-video w-full shrink-0 overflow-hidden rounded-panel border border-edge bg-abyss">
       {hasPoster ? (
         <img
-          src={src}
+          src={shown}
           alt={alt}
           className="h-full w-full object-cover"
           onError={() => setFailed(true)}
         />
       ) : (
-        /* An honest empty state. The CLI embeds a real poster as a data URI;
-           served standalone there is no frame to show and we say so. */
+        /* An honest empty state — reached only once the embedded poster is
+           absent AND the video itself could not be read for a frame either
+           (a standalone report.html with no source file beside it). */
         <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 px-3 text-center text-inkFaint">
           <Film className="h-5 w-5" strokeWidth={1.5} />
           <span className="text-[8px] uppercase leading-relaxed tracking-[0.1em]">
-            poster embedded by
+            no frame reachable
             <br />
-            preflight check --html
+            for this source
           </span>
         </div>
       )}
@@ -84,9 +104,9 @@ export function FileCard() {
     <Panel className="min-w-0">
       <div className="flex min-w-0 gap-4">
         <div className="w-[38%] max-w-[220px] shrink-0">
-          {/* The CLI-embedded data URI wins — report.html must stay one file. */}
           <Poster
             src={video.posterDataUri ?? ''}
+            videoSrc={video.srcUrl}
             alt={`Poster frame from ${video.filename}`}
           />
         </div>

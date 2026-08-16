@@ -342,6 +342,48 @@
       ],
       "type": "object"
     },
+    "CoverageBand": {
+      "additionalProperties": false,
+      "description": "One slice of the timeline, and what each modality did there.",
+      "properties": {
+        "endMs": {
+          "type": "number"
+        },
+        "index": {
+          "type": "number"
+        },
+        "label": {
+          "description": "`06–07` — the minute range this band spans.",
+          "type": "string"
+        },
+        "samples": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "How many samples each modality contributed to this band.",
+          "type": "object"
+        },
+        "startMs": {
+          "type": "number"
+        },
+        "states": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "EXAMINED | THIN | UNEXAMINED, per modality.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "index",
+        "label",
+        "startMs",
+        "endMs",
+        "samples",
+        "states"
+      ],
+      "type": "object"
+    },
     "Finding": {
       "additionalProperties": false,
       "properties": {
@@ -731,6 +773,10 @@
         },
         "policyVersion": {
           "type": "string"
+        },
+        "temporalCoverage": {
+          "$ref": "#/definitions/TemporalCoverage",
+          "description": "Per-minute coverage, present when the run recorded any timed evidence. Absent — not empty — on a report emitted before this existed, so an old report is never mistaken for one whose every minute was examined."
         }
       },
       "required": [
@@ -1018,6 +1064,56 @@
         "metadata",
         "accessibility",
         "audio"
+      ],
+      "type": "object"
+    },
+    "TemporalCoverage": {
+      "additionalProperties": false,
+      "description": "Where on the timeline each modality actually looked.\n\n`meta.coverage` is a single number: how much of its own sample set each agent processed. It cannot say *which minutes* those samples came from, and on a long upload those are different questions — an agent can report 62% coverage while never once examining minutes nine through twelve.\n\n`blindSpots` is the field that matters. A band nothing examined is UNEXAMINED, never clean: an absence of information rather than a smaller kind of safe, and a reader deciding whether to publish needs to see it as a hole in the audit.",
+      "properties": {
+        "bandMs": {
+          "type": "number"
+        },
+        "bands": {
+          "items": {
+            "$ref": "#/definitions/CoverageBand"
+          },
+          "type": "array"
+        },
+        "blindSpots": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "description": "Band labels no sample of that modality reached.",
+          "type": "object"
+        },
+        "durationMs": {
+          "type": "number"
+        },
+        "modalities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "shareExamined": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "Fraction of the timeline each modality genuinely examined.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "durationMs",
+        "bandMs",
+        "modalities",
+        "bands",
+        "shareExamined",
+        "blindSpots"
       ],
       "type": "object"
     },

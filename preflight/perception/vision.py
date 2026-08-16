@@ -112,6 +112,30 @@ CATEGORY_SALIENCE = [
 FRAMES_PER_CALL = 5
 BASELINE_FRAMES = 8
 
+# One baseline frame roughly every half minute, so every minute of a long
+# upload gets looked at at least once.
+#
+# A flat eight-frame baseline is right for a short clip and leaves a
+# fourteen-minute one almost entirely unseen: eight frames across 840
+# seconds is one glance every 105 seconds, so most minutes are never
+# examined by vision at all. The temporal coverage report would say so
+# honestly — but "we never looked" is a worse answer than paying for a few
+# more frames when the question is whether a fourteen-minute video is safe
+# to publish.
+BASELINE_INTERVAL_S = 30.0
+
+# Ceiling on that scaling. Vision is billed per call, so a long upload gets
+# proportionally denser coverage only up to a bounded cost.
+BASELINE_FRAMES_CEILING = 48
+
+
+def baseline_for(duration_ms: int) -> int:
+    """Baseline vision frames for a video of this length."""
+    if duration_ms <= 0:
+        return BASELINE_FRAMES
+    wanted = int((duration_ms / 1000.0) / BASELINE_INTERVAL_S)
+    return max(BASELINE_FRAMES, min(wanted, BASELINE_FRAMES_CEILING))
+
 
 @dataclass(frozen=True)
 class Observation:
@@ -530,6 +554,7 @@ def analyse(
     selected = select_frames(
         keyframes,
         flagged_spans,
+        baseline=baseline_for(duration_ms),
         budget=budget,
         motion=motion,
         duration_ms=duration_ms,
@@ -722,6 +747,15 @@ def analyse(
                 "tracks": [t.to_json() for t in tracks],
                 "failures": [f.to_json() for f in failures],
                 "rejected_labels": rejected[:32],
+                # Which moments were actually inspected, as distinct from
+                # which produced a label. A frame vision examined and found
+                # nothing in is still coverage of that moment; without this
+                # the timeline report cannot tell "looked and saw nothing"
+                # from "never looked", and only one of those supports an
+                # absence claim.
+                "examined_ms": [
+                    frame.ts_ms for frame, result in results if result is not None
+                ],
             },
             elapsed_ms=int((time.perf_counter() - started) * 1000),
             log=log,

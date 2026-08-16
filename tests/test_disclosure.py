@@ -116,6 +116,68 @@ class TestCredentials:
         exactly the audience this tool serves."""
         assert "credential" not in kinds(text), text
 
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "DB_PASSWORD=hunter2supersecret",
+            "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY",
+            "GITHUB_TOKEN=abcdefghijklmnop123456",
+            "export STRIPE_SECRET=sk_live_abcdefgh",
+            "REACT_APP_API_KEY=abcd1234efgh5678",
+        ],
+    )
+    def test_screaming_snake_case_env_vars_are_caught(self, text):
+        """The commonest real shape of an on-screen leak, and it was missed.
+
+        A plain `\\b` before the keyword cannot match inside `DB_PASSWORD`:
+        `_` is a word character, so there is no boundary between `DB_` and
+        `PASSWORD`. Every `.env` file, `export` line and docker-compose block
+        names secrets exactly this way and none of them matched — the
+        detector only fired on a bare `password:`, which is the one form
+        almost nobody's screen actually shows.
+        """
+        assert "credential" in kinds(text), text
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Authorization: Bearer abc123def456ghi789",
+            "curl -H 'Authorization: Basic YWRtaW46aHVudGVyMg=='",
+        ],
+    )
+    def test_authorization_headers_are_caught(self, text):
+        """`Bearer <token>` is space-separated, so the `key: value` form
+        never sees it — and it is what every dev-tools screenshot shows."""
+        assert "credential" in kinds(text), text
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "DATABASE_URL=postgres://user:pw123@10.0.0.5:5432/prod",
+            "redis://default:p4ssw0rd@redis-prod.internal:6379",
+            "mongodb+srv://admin:s3cret@cluster0.mongodb.net/db",
+        ],
+    )
+    def test_connection_strings_with_inline_credentials_are_caught(self, text):
+        """The password sits in the userinfo segment with no keyword
+        anywhere near it, so every keyword-based pattern misses it."""
+        assert "credential" in kinds(text), text
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Bearer with me while I explain this",
+            "https://example.com/docs/api-key-guide",
+            "postgres://localhost:5432/dev",
+            "the secret sauce recipe is simple",
+        ],
+    )
+    def test_the_widened_patterns_do_not_over_match(self, text):
+        """Widening the credential patterns must not start flagging prose,
+        documentation links or a credential-free connection string — a
+        detector that cries wolf gets muted, and then misses the real one."""
+        assert "credential" not in kinds(text), text
+
 
 class TestPersonalData:
     def test_an_email_is_found(self):

@@ -24,6 +24,39 @@ SCENE_THRESHOLD = 0.35
 MAX_FRAMES = 90
 FRAME_WIDTH = 768
 
+# The longest gap we are willing to leave between sampled frames.
+#
+# A flat 90-frame ceiling is fine for a 20-second clip (0.2s apart) and
+# quietly useless for a long one: over fourteen minutes the same 90 frames
+# land 9.3 seconds apart, and anything shorter-lived than that is invisible.
+# That matters most for the highest-consequence finding this engine
+# produces — an API key or a notification popup visible on screen for two
+# seconds has roughly a one-in-five chance of falling on a sampled frame at
+# that spacing, so a "no secrets found" result would mean almost nothing.
+#
+# Two and a half seconds is chosen against that failure: a two-second
+# exposure is then more likely than not to be caught, and a four-second one
+# is near-certain. Frames are cheap here because the expensive consumer is
+# gated separately — vision runs its own budget over this set and only pays
+# for the frames it selects, while OCR is local and free.
+TARGET_SAMPLE_INTERVAL_S = 2.5
+
+# Hard ceiling regardless of duration. At 768px wide a JPEG is roughly 40KB,
+# so this bounds a long analysis to ~16MB of frames and a bounded extraction
+# pass rather than letting a three-hour upload fill the disk.
+MAX_FRAMES_CEILING = 400
+
+
+def frame_budget(duration_ms: int, floor: int = MAX_FRAMES) -> int:
+    """How many keyframes a video of this length should yield.
+
+    Never fewer than the short-video default, never more than the ceiling.
+    """
+    if duration_ms <= 0:
+        return floor
+    wanted = int((duration_ms / 1000.0) / TARGET_SAMPLE_INTERVAL_S)
+    return max(floor, min(wanted, MAX_FRAMES_CEILING))
+
 # Floor on the uniform-sampling interval. Below roughly a fifth of a second
 # consecutive frames are the same picture, so the extra files cost extraction
 # time and vision calls to tell you what the previous frame already did.

@@ -96,15 +96,43 @@ class LocalMiniLM(BaseProvider):
         )
 
 
+# Where the standard installers put tesseract when they do not touch PATH.
+# The Windows installer (UB-Mannheim) and Homebrew both routinely leave the
+# binary unreachable from a shell that was already open, and every one of
+# those machines reports "tesseract not on PATH" for a tool that is sitting
+# right there. OCR carries the entire on-screen-secret surface — a leaked API
+# key is the highest-consequence finding this engine produces — so silently
+# skipping it because of a PATH quirk is the most expensive possible way to
+# be technically correct.
+_TESSERACT_FALLBACKS = (
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    "/opt/homebrew/bin/tesseract",
+    "/usr/local/bin/tesseract",
+    "/usr/bin/tesseract",
+)
+
+
+def find_tesseract() -> str | None:
+    """PATH first, then the places the installers actually use."""
+    found = shutil.which("tesseract")
+    if found:
+        return found
+    for candidate in _TESSERACT_FALLBACKS:
+        if Path(candidate).is_file():
+            return candidate
+    return None
+
+
 class LocalTesseract(BaseProvider):
     id = "local"
     tier_label = "local"
     model = "tesseract"
 
     def available(self) -> tuple[bool, str]:
-        binary = shutil.which("tesseract")
+        binary = find_tesseract()
         if not binary:
-            return False, "tesseract not on PATH"
+            return False, "tesseract not installed"
         try:
             out = subprocess.run(
                 [binary, "--version"], capture_output=True, text=True, timeout=10
@@ -128,6 +156,13 @@ class LocalTesseract(BaseProvider):
             from PIL import Image
         except ImportError:
             return Unavailable("pytesseract/Pillow not installed", "local")
+
+        # pytesseract does its own PATH lookup and will raise
+        # TesseractNotFoundError even though `available()` just located the
+        # binary — point it at the one actually found.
+        binary = find_tesseract()
+        if binary:
+            pytesseract.pytesseract.tesseract_cmd = binary
 
         started = time.monotonic()
         with Image.open(image) as handle:

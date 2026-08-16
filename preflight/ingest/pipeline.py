@@ -139,11 +139,21 @@ def ingest(
         log.append("no audio stream — speech and copyright layers will report SKIPPED")
 
     frames_mod.extract_poster(source, poster, meta.durationMs)
+    # Scaled to the runtime rather than fixed. A flat ceiling samples a long
+    # video so sparsely that short-lived on-screen content — the two-second
+    # secret, the notification popup — falls between frames entirely, and a
+    # modality that never looked must not be able to report "nothing there".
+    # An explicit `max_frames` from the caller still wins.
+    budget = (
+        max_frames
+        if max_frames != frames_mod.MAX_FRAMES
+        else frames_mod.frame_budget(meta.durationMs)
+    )
     keyframes = frames_mod.extract_keyframes(
         source,
         frame_dir,
         threshold=scene_threshold,
-        max_frames=max_frames,
+        max_frames=budget,
         duration_ms=meta.durationMs,
     )
     if frames_mod.sampled_uniformly(keyframes):

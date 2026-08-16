@@ -650,6 +650,27 @@ class TestEveryWeightedAgentActuallyRuns:
     def test_coverage_is_a_real_number_between_zero_and_one(self, wired_run):
         assert 0.0 <= wired_run.coverage <= 1.0
 
+    def test_the_poster_embeds_even_when_evidence_frames_do_not(self, wired_run):
+        """`apply_fix` builds its internal before/after reports with
+        `embed_media=False` to keep the comparison payload light — but those
+        reports still land in RUNS_DIR and are reachable from the deck's own
+        "past runs" list. A report a reader can browse to must never show a
+        placeholder for the one thing that says which video it even is, so
+        the poster is unconditional while the heavier per-finding evidence
+        frames stay gated."""
+        from preflight.report.build import build_report
+
+        bundle = build_report(wired_run, embed_media=False)
+        assert bundle.report["video"].get("posterDataUri", "").startswith("data:image/")
+        for finding in bundle.report["findings"]:
+            assert finding["evidence"]["frames"] == []
+
+    def test_evidence_frames_still_embed_when_requested(self, wired_run):
+        from preflight.report.build import build_report
+
+        bundle = build_report(wired_run, embed_media=True)
+        assert bundle.report["video"].get("posterDataUri", "").startswith("data:image/")
+
 
 @pytest.mark.skipif(not ffmpeg.available(), reason="ffmpeg is not installed")
 class TestOrchestratorDrivesTheRealRun:

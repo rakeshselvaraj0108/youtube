@@ -63,7 +63,24 @@ MODEL_PREFERENCES: dict[str, list[str]] = {
     ],
     EMBED_TEXT: ["nvidia/nv-embedqa-e5-v5"],
     RERANK_TEXT: ["nvidia/nv-rerankqa-mistral-4b-v3"],
-    VISION_DESCRIBE: ["meta/llama-3.2-90b-vision-instruct"],
+    # Ordered by measured availability, not by parameter count.
+    #
+    # The 90B was the sole entry and it stopped answering: every request —
+    # including a 1.5KB test image — hit the full 120s read timeout, while
+    # `/v1/models` responded in 0.3s and both smaller vision models answered
+    # the real A03 prompt with correctly parsed JSON in under 15s. A single
+    # unreachable entry meant vision contributed 0% of its 22% share of the
+    # analysis surface on every run, and the only signal was a FAILED agent.
+    #
+    # The 90B stays in the chain: it is the better model when it is up, and
+    # `_resolve` walks this list in order, so restoring it costs nothing once
+    # it responds again. What it can no longer do is take the whole modality
+    # down with it.
+    VISION_DESCRIBE: [
+        "meta/llama-3.2-11b-vision-instruct",
+        "nvidia/nemotron-nano-12b-v2-vl",
+        "meta/llama-3.2-90b-vision-instruct",
+    ],
 }
 
 
@@ -150,7 +167,12 @@ class Registry:
                 NoLocalReranker(RERANK_TEXT),
             ],
             VECTOR_SEARCH: [qdrant, NumpyVectorStore(VECTOR_SEARCH)],
-            VISION_DESCRIBE: [self._nvidia(VISION_DESCRIBE, NvidiaVision, 0)],
+            # Every preferred model is a chain entry, so an unreachable one
+            # degrades to the next rather than zeroing the modality.
+            VISION_DESCRIBE: [
+                self._nvidia(VISION_DESCRIBE, NvidiaVision, index)
+                for index in range(len(MODEL_PREFERENCES[VISION_DESCRIBE]))
+            ],
             OCR_IMAGE: [LocalTesseract(OCR_IMAGE)],
         }
 
